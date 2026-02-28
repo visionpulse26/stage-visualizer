@@ -25,6 +25,7 @@ function CollabPage() {
   // ── Scene config (loaded from DB, local-only mutations — never written back) ─
   const [hdriPreset,         setHdriPreset]         = useState('none')
   const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview only
+  const [hdriFileExt,        setHdriFileExt]        = useState('hdr')  // 'hdr' | 'exr'
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -197,8 +198,10 @@ function CollabPage() {
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
+    const ext = file.name.split('.').pop().toLowerCase() || 'hdr'
     const url = URL.createObjectURL(file)
     localBlobUrlsRef.current.push(url)
+    setHdriFileExt(ext)
     setCustomHdriUrl(url)
     setHdriPreset('none')
   }, [customHdriUrl])
@@ -247,6 +250,7 @@ function CollabPage() {
         cameraControlsRef={cameraControlsRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
+        hdriFileExt={hdriFileExt}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}

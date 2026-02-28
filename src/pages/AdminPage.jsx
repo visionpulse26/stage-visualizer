@@ -57,6 +57,7 @@ function AdminPage() {
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [hdriFile,      setHdriFile]      = useState(null)
+  const [hdriFileExt,   setHdriFileExt]   = useState('hdr')   // 'hdr' | 'exr'
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
@@ -175,7 +176,9 @@ function AdminPage() {
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
+    const ext = file.name.split('.').pop().toLowerCase() || 'hdr'
     const url = URL.createObjectURL(file)
+    setHdriFileExt(ext)
     setHdriFile(file)
     setCustomHdriUrl(url)
     setHdriPreset('none')
@@ -218,6 +221,7 @@ function AdminPage() {
     }
     setCustomHdriUrl(null)
     setHdriFile(null)
+    setHdriFileExt('hdr')
   }, [customHdriUrl])
 
   // ── Stage model upload ───────────────────────────────────────────────────
@@ -415,6 +419,7 @@ function AdminPage() {
         cameraControlsRef={cameraControlsRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
+        hdriFileExt={hdriFileExt}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}

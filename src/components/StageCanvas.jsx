@@ -1,8 +1,10 @@
-import { Suspense, useEffect } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useEffect, Component } from 'react'
+import { Canvas, useLoader } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import * as THREE from 'three'
 import Scene from './Scene'
 
@@ -72,6 +74,68 @@ function ToneMappingController() {
   return null
 }
 
+// ── Local HDRI loader — bypasses drei's broken blob: URL extension detection ─
+//
+// Problem: drei's <Environment files={url}> picks the loader by checking
+//   url.endsWith('.exr'). A blob: URL has NO extension, so it always falls
+//   through to RGBELoader — which throws a binary parse error on EXR data and
+//   blacks out the entire canvas.
+//
+// Fix: read the real extension from the original File object, choose the
+//   correct loader explicitly, and process through PMREMGenerator ourselves.
+function LocalHdriLoader({ url, ext, background }) {
+  const { gl, scene } = useThree()
+  const Loader = (ext || '').toLowerCase() === 'exr' ? EXRLoader : RGBELoader
+  const texture = useLoader(Loader, url)
+
+  useEffect(() => {
+    if (!texture) return
+    const pmrem  = new THREE.PMREMGenerator(gl)
+    pmrem.compileEquirectangularShader()
+    const envMap = pmrem.fromEquirectangular(texture).texture
+    pmrem.dispose()
+
+    const prevEnv = scene.environment
+    const prevBg  = scene.background
+    scene.environment = envMap
+    if (background) scene.background = envMap
+
+    return () => {
+      scene.environment = prevEnv
+      if (background) scene.background = prevBg
+      envMap.dispose()
+    }
+  }, [texture, scene, gl, background])
+
+  return null
+}
+
+// ── Error boundary around the HDRI loader ────────────────────────────────────
+// If the loader throws (bad file, network error, parse failure) the canvas
+// stays visible — the environment is simply removed and a warning is logged.
+class HdriErrorBoundary extends Component {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() { return { hasError: true } }
+
+  componentDidCatch(err) {
+    console.warn('[HDRI] Environment load failed — scene kept visible:', err.message)
+  }
+
+  // Reset when the user picks a new file (url prop changes)
+  static getDerivedStateFromProps(props, state) {
+    if (state.prevUrl !== props.url) {
+      return { hasError: false, prevUrl: props.url }
+    }
+    return null
+  }
+
+  render() {
+    if (this.state.hasError) return null   // silently hide — never blank the canvas
+    return this.props.children
+  }
+}
+
 /**
  * Reusable 3D canvas shared across Admin, Collab, and Client views.
  * Accepts scene_config props so all roles see the identical environment.
@@ -89,6 +153,7 @@ function StageCanvas({
   // ── Scene config ──────────────────────────────────────────────────────
   hdriPreset,
   customHdriUrl,
+  hdriFileExt,          // 'hdr' | 'exr' — required for blob: URLs (no extension in URL)
   envIntensity,
   bgBlur,
   bloomStrength,
@@ -131,17 +196,36 @@ function StageCanvas({
 
         {/* HDRI Environment
             showHdriBackground=true  → HDRI is visible background + lighting
-            showHdriBackground=false → HDRI lights/reflects scene only, bg stays black */}
+            showHdriBackground=false → HDRI lights/reflects scene only, bg stays black
+            blob: URLs → LocalHdriLoader (correct loader per ext, error-boundary wrapped)
+            cloud URLs → drei <Environment files> (URL has real extension, safe)
+            preset     → drei <Environment preset> */}
         {hasEnv && (
           <>
-            {resolvedShowBg ? (
-              customHdriUrl
-                ? <Environment files={customHdriUrl} background backgroundBlurriness={resolvedBgBlur} />
-                : <Environment preset={hdriPreset}   background backgroundBlurriness={resolvedBgBlur} />
+            {customHdriUrl ? (
+              customHdriUrl.startsWith('blob:') ? (
+                // Blob URL from local file: must use explicit loader — drei would always
+                // pick RGBELoader (url.endsWith('.exr') = false for blob:) causing EXR crash.
+                <HdriErrorBoundary url={customHdriUrl}>
+                  <Suspense fallback={null}>
+                    <LocalHdriLoader
+                      url={customHdriUrl}
+                      ext={hdriFileExt || 'hdr'}
+                      background={resolvedShowBg}
+                    />
+                  </Suspense>
+                </HdriErrorBoundary>
+              ) : (
+                // Cloud URL has a real extension — drei handles it correctly
+                resolvedShowBg
+                  ? <Environment files={customHdriUrl} background backgroundBlurriness={resolvedBgBlur} />
+                  : <Environment files={customHdriUrl} />
+              )
             ) : (
-              customHdriUrl
-                ? <Environment files={customHdriUrl} />
-                : <Environment preset={hdriPreset}   />
+              // Preset
+              resolvedShowBg
+                ? <Environment preset={hdriPreset} background backgroundBlurriness={resolvedBgBlur} />
+                : <Environment preset={hdriPreset} />
             )}
             <EnvIntensityController intensity={resolvedEnvInt} />
           </>
