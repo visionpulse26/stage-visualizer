@@ -86,8 +86,24 @@ function ClientPage() {
         // Load stage model directly via its public HTTP URL
         setModelUrl(data.stage_url)
 
-        // Load video from its public HTTP URL
-        if (data.video_url) {
+        // Load full media playlist, or fall back to legacy single video_url
+        if (data.media_playlist && data.media_playlist.length > 0) {
+          const restored = data.media_playlist.map((item, i) => ({
+            id:   Date.now() + i,
+            name: item.name,
+            url:  item.url,
+            type: item.type,
+          }))
+          setVideoPlaylist(restored)
+          const first = restored[0]
+          if (first.type === 'image') {
+            setActiveImageUrl(first.url)
+            setActiveVideoId(first.id)
+            setVideoLoaded(true)
+          } else {
+            activateVideo(first.id, first.url)
+          }
+        } else if (data.video_url) {
           const id = Date.now()
           setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: data.video_url }])
           activateVideo(id, data.video_url)

@@ -162,6 +162,12 @@ function AdminPage() {
     clipCountRef.current = 0; localBlobUrlsRef.current = []
   }, [])
 
+  const handleRenameClip = useCallback((clipId, newName) => {
+    setVideoPlaylist(prev =>
+      prev.map(c => c.id === clipId ? { ...c, name: newName } : c)
+    )
+  }, [])
+
   const handlePlay       = useCallback(() => { videoRef.current?.play().catch(console.error); setIsPlaying(true)  }, [])
   const handlePause      = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
   const handleToggleLoop = useCallback(() => {
@@ -292,7 +298,29 @@ function AdminPage() {
       setHdriFile(null)
     }
 
-    if (project.video_url) {
+    // Restore full media playlist, or fall back to legacy single video_url
+    if (project.media_playlist && project.media_playlist.length > 0) {
+      const restored = project.media_playlist.map((item, i) => ({
+        id:       Date.now() + i,
+        name:     item.name,
+        url:      item.url,
+        type:     item.type,
+        external: true,
+      }))
+      clipCountRef.current = restored.length
+      setVideoPlaylist(restored)
+
+      // Auto-activate the first clip
+      const first = restored[0]
+      if (first.type === 'image') {
+        setActiveImageUrl(first.url)
+        setActiveVideoId(first.id)
+        setVideoLoaded(true)
+        setIsPlaying(false)
+      } else {
+        activateVideo(first.id, first.url)
+      }
+    } else if (project.video_url) {
       const id = Date.now()
       clipCountRef.current = 1
       const clip = { id, name: 'Cloud Video', url: project.video_url, type: 'video', external: true }
@@ -307,7 +335,6 @@ function AdminPage() {
   const handlePublish = useCallback(async ({ videoInputMode, externalVideoUrl }) => {
     if (!stageFile && !cloudStageUrl) return
 
-    // Block publish if name is empty — prevents accumulating "Untitled Project" rows
     if (!projectName.trim()) {
       setPublishStatus('error')
       setPublishError('Please enter a project name before publishing.')
@@ -329,33 +356,44 @@ function AdminPage() {
         finalStageUrl = stagePublic.publicUrl
       }
 
-      // 2. Resolve video URL — upload file OR use external/cloud URL directly
-      let finalVideoUrl = null
-      const activeClip  = videoPlaylist.find(c => c.id === activeVideoId)
-      if (activeClip) {
-        if (activeClip.external || !activeClip.file) {
-          // External CDN / already-cloud URL — no upload needed
-          finalVideoUrl = activeClip.url
-        } else if (activeClip.file) {
-          const ext       = activeClip.file.name.split('.').pop() || 'mp4'
-          const videoPath = `${projectId}/video.${ext}`
-          const { error: vidErr } = await supabase.storage.from('projects').upload(videoPath, activeClip.file, { upsert: true })
-          if (vidErr) throw new Error(`Video upload failed: ${vidErr.message}`)
-          const { data: vidPublic } = supabase.storage.from('projects').getPublicUrl(videoPath)
-          finalVideoUrl = vidPublic.publicUrl
+      // 2. Upload ALL playlist items (videos + images) to Supabase Storage.
+      //    Each clip gets its own path: {projectId}/media/{index}_{sanitised_name}.{ext}
+      //    External / already-cloud URLs are kept as-is.
+      const mediaPlaylist = []
+      for (let i = 0; i < videoPlaylist.length; i++) {
+        const clip = videoPlaylist[i]
+        let cloudUrl = clip.url
+
+        if (clip.file && !clip.external) {
+          const ext       = clip.file.name.split('.').pop() || (clip.type === 'image' ? 'png' : 'mp4')
+          const safeName  = clip.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+          const mediaPath = `${projectId}/media/${i}_${safeName}`
+          const { error: mediaErr } = await supabase.storage
+            .from('projects')
+            .upload(mediaPath, clip.file, { upsert: true })
+          if (mediaErr) throw new Error(`Media upload failed (${clip.name}): ${mediaErr.message}`)
+          const { data: mediaPublic } = supabase.storage.from('projects').getPublicUrl(mediaPath)
+          cloudUrl = mediaPublic.publicUrl
         }
+
+        mediaPlaylist.push({
+          name: clip.name,
+          url:  cloudUrl,
+          type: clip.type,
+          external: clip.external || false,
+        })
       }
 
-      // 3. HDRI is local-only by default.
-      //    Blob URLs cannot be persisted — only include a URL if it was explicitly
-      //    uploaded to cloud via "Upload to Cloud" in the Environment panel.
+      // Keep legacy video_url pointing to the first video for backwards compatibility
+      const firstVideo = mediaPlaylist.find(c => c.type === 'video')
+      const finalVideoUrl = firstVideo ? firstVideo.url : null
+
+      // 3. HDRI
       const finalHdriUrl = (customHdriUrl && !customHdriUrl.startsWith('blob:'))
         ? customHdriUrl
         : null
 
       // 4. Build scene_config snapshot
-      // NOTE: Requires a `scene_config` JSONB column in your Supabase `projects` table.
-      // Run in Supabase SQL editor: ALTER TABLE projects ADD COLUMN IF NOT EXISTS scene_config jsonb;
       const az = (sunAzimuth   * Math.PI) / 180
       const el = (sunElevation * Math.PI) / 180
       const d  = 15
@@ -373,10 +411,13 @@ function AdminPage() {
       }
 
       // 5. Upsert project record
+      // NOTE: Requires a `media_playlist` JSONB column in Supabase:
+      //   ALTER TABLE projects ADD COLUMN IF NOT EXISTS media_playlist jsonb;
       const record = {
         id:              projectId,
         stage_url:       finalStageUrl,
         video_url:       finalVideoUrl,
+        media_playlist:  mediaPlaylist,
         camera_presets:  cameraPresets,
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
@@ -385,6 +426,14 @@ function AdminPage() {
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
       if (dbErr) throw new Error(`Database save failed: ${dbErr.message}`)
+
+      // Mark playlist clips as cloud-backed so re-publish won't re-upload
+      setVideoPlaylist(prev => prev.map((clip, i) => ({
+        ...clip,
+        url:      mediaPlaylist[i]?.url ?? clip.url,
+        external: true,
+        file:     undefined,
+      })))
 
       setPublishedId(projectId)
       setCloudStageUrl(finalStageUrl)
@@ -436,6 +485,7 @@ function AdminPage() {
           videoPlaylist={videoPlaylist}
           activeVideoId={activeVideoId}
           onActivateVideo={handleActivateVideo}
+          onRenameClip={handleRenameClip}
           onClearPlaylist={handleClearPlaylist}
           isPlaying={isPlaying}
           isLooping={isLooping}

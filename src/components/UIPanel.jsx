@@ -49,7 +49,7 @@ function Slider({ label, value, min, max, step = 1, onChange }) {
 function UIPanel({
   onModelUpload, onVideoUpload, onExternalVideoAdd,
   videoLoaded, ledMaterialFound,
-  videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
+  videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
@@ -77,6 +77,9 @@ function UIPanel({
   const [presetName,    setPresetName]    = useState('')
   const [copied,        setCopied]        = useState(null)
   const [activeSection, setActiveSection] = useState('media')
+  const [editingClipId, setEditingClipId] = useState(null)
+  const [editingName,   setEditingName]   = useState('')
+  const renameInputRef  = useRef(null)
 
   // ── Video tab state ──────────────────────────────────────────────────────
   const [videoInputMode, setVideoInputMode] = useState('upload')   // 'upload' | 'external'
@@ -87,6 +90,21 @@ function UIPanel({
       setCopied(key); setTimeout(() => setCopied(null), 2000)
     })
   }, [])
+
+  const startRename = useCallback((clip) => {
+    setEditingClipId(clip.id)
+    setEditingName(clip.name)
+    setTimeout(() => renameInputRef.current?.select(), 0)
+  }, [])
+
+  const commitRename = useCallback(() => {
+    if (editingClipId != null && editingName.trim()) {
+      onRenameClip(editingClipId, editingName.trim())
+    }
+    setEditingClipId(null)
+  }, [editingClipId, editingName, onRenameClip])
+
+  const cancelRename = useCallback(() => { setEditingClipId(null) }, [])
 
   const handleAddExternal = useCallback(() => {
     const url = externalUrlInput.trim()
@@ -194,21 +212,48 @@ function UIPanel({
                 </div>
               )}
 
-              {/* Playlist */}
+              {/* Playlist — double-click name to rename */}
               {videoPlaylist.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {videoPlaylist.map(clip => (
-                    <button
-                      key={clip.id}
-                      onClick={() => onActivateVideo(clip)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
-                        clip.id === activeVideoId
-                          ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
-                          : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
-                      }`}
-                    >
-                      <span className="flex-1 truncate">{clip.name}</span>
-                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                    <div key={clip.id} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                      clip.id === activeVideoId
+                        ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
+                        : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                    }`}>
+                      {/* Type icon */}
+                      <span className="flex-shrink-0 text-white/30">
+                        {clip.type === 'image' ? (
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        ) : (
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                        )}
+                      </span>
+
+                      {/* Name — inline edit on double-click */}
+                      {editingClipId === clip.id ? (
+                        <input
+                          ref={renameInputRef}
+                          autoFocus
+                          value={editingName}
+                          onChange={e => setEditingName(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') cancelRename() }}
+                          className="flex-1 min-w-0 bg-white/10 border border-violet-500/40 rounded px-1.5 py-0.5 text-xs text-white/90 outline-none"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => onActivateVideo(clip)}
+                          onDoubleClick={(e) => { e.stopPropagation(); startRename(clip) }}
+                          className="flex-1 min-w-0 text-left truncate cursor-pointer"
+                          title="Double-click to rename"
+                        >
+                          {clip.name}
+                        </button>
+                      )}
+
+                      {/* Badges */}
+                      <span className="flex items-center gap-1 flex-shrink-0">
                         {clip.external && (
                           <span className="text-[8px] font-bold tracking-widest bg-violet-500/20 border border-violet-500/30 text-violet-400 rounded px-1 py-0.5 uppercase">
                             Ext
@@ -218,7 +263,20 @@ function UIPanel({
                           <span className="text-[9px] text-violet-400 uppercase">Active</span>
                         )}
                       </span>
-                    </button>
+
+                      {/* Rename pencil button */}
+                      {editingClipId !== clip.id && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); startRename(clip) }}
+                          className="p-1 rounded hover:bg-white/10 text-white/20 hover:text-white/60 transition-all flex-shrink-0"
+                          title="Rename"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   ))}
                   <button
                     onClick={onClearPlaylist}
