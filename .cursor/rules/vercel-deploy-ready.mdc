@@ -1,0 +1,55 @@
+---
+description: Ensures every code change is Vercel-deploy-safe and properly pushed to GitHub
+alwaysApply: true
+---
+
+# Vercel Deploy Rules
+
+This project deploys to Vercel from the `main` branch on GitHub. Every change must be deploy-ready.
+
+## Git Hygiene
+
+- **Never commit `dist/`** — Vercel builds from source. Committing `dist/` causes Vercel to serve stale old UI.
+- **Never commit `.env.local` or any `.env*` file** — Supabase keys must live in Vercel's Environment Variables dashboard only.
+- Both are already in `.gitignore` — do not remove them.
+
+## After Every Code Change
+
+Always run these steps in order:
+
+```
+git add .
+git commit -m "descriptive message"
+git push origin main
+```
+
+Never leave changes uncommitted. Vercel only deploys what is pushed to `main`.
+
+## vercel.json
+
+Do not remove or change these required fields:
+
+```json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+## Supabase Environment Variables
+
+Required in Vercel dashboard (Settings → Environment Variables):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+If these are missing from Vercel, the app will load but Supabase calls will silently fail.
+
+## Before Declaring "Done"
+
+- [ ] `git status` shows clean working tree
+- [ ] `git push` succeeded with no errors
+- [ ] No `dist/` or `.env*` files tracked (`git ls-files dist/ .env*` returns empty)
+- [ ] `vercel.json` has `buildCommand` and `outputDirectory`
