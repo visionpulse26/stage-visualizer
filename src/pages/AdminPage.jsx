@@ -325,4 +325,21 @@ function AdminPage() {
   )
 }
 
+const colorMap = {
+  violet:  { bg: 'bg-violet-500/10',  border: 'border-violet-500/30',  dot: 'bg-violet-400',  text: 'text-violet-300'  },
+  blue:    { bg: 'bg-blue-500/10',    border: 'border-blue-500/30',    dot: 'bg-blue-400',    text: 'text-blue-300'    },
+  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', dot: 'bg-emerald-400', text: 'text-emerald-300' },
+  amber:   { bg: 'bg-amber-500/10',   border: 'border-amber-500/30',   dot: 'bg-amber-400',   text: 'text-amber-300'   },
+}
+
+export function RoleBadge({ role, color = 'violet' }) {
+  const c = colorMap[color] || colorMap.violet
+  return (
+    <div className={`absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full border backdrop-blur-sm ${c.bg} ${c.border} pointer-events-none z-10`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      <span className={`text-xs font-medium tracking-wide ${c.text}`}>{role}</span>
+    </div>
+  )
+}
+
 export default AdminPage
