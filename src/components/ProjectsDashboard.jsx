@@ -70,7 +70,7 @@ function ProjectsTab({ onOpenProject }) {
   const [deletingId,  setDeletingId]  = useState(null)
   const [copied,      setCopied]      = useState(null)
 
-  const baseUrl = window.location.origin
+  const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
 
   // ── Load — extracted so it can be called after mutations ─────────────────
   const load = useCallback(async () => {

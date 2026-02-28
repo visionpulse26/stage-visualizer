@@ -98,7 +98,7 @@ function UIPanel({
     { id: 'publish', label: 'Publish',  icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m-7 7l7-7 7 7"/></svg> },
   ]
 
-  const baseUrl = window.location.origin
+  const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
 
   return (
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
