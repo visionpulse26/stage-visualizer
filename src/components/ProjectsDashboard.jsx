@@ -7,6 +7,7 @@ const IconCopy       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="cu
 const IconEdit       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 const IconTrash      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
 const IconFolderOpen = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/></svg>
+const IconRefresh    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(str) {
@@ -25,7 +26,7 @@ function fmtExt(name) {
   return name?.split('.').pop()?.toUpperCase() || '?'
 }
 
-// ── Spinner & ErrorBanner ─────────────────────────────────────────────────────
+// ── Spinner, ErrorBanner & Toast ──────────────────────────────────────────────
 function Spinner() {
   return (
     <div className="relative w-8 h-8 mx-auto">
@@ -43,38 +44,48 @@ function ErrorBanner({ msg }) {
   )
 }
 
-// ── Projects Tab ─────────────────────────────────────────────────────────────
+// Inline toast shown above the list on delete/rename errors
+function Toast({ msg, type = 'error', onDismiss }) {
+  if (!msg) return null
+  const colors = type === 'error'
+    ? 'bg-red-500/15 border-red-500/30 text-red-300'
+    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+  return (
+    <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs mb-3 ${colors}`}>
+      <span className="flex-1">{msg}</span>
+      <button onClick={onDismiss} className="opacity-60 hover:opacity-100 flex-shrink-0 mt-0.5">✕</button>
+    </div>
+  )
+}
+
+// ── Projects Tab ──────────────────────────────────────────────────────────────
 function ProjectsTab({ onOpenProject }) {
-  const [projects, setProjects]     = useState([])
-  const [loading,  setLoading]      = useState(true)
-  const [error,    setError]        = useState(null)
-  const [editingId,    setEditingId]    = useState(null)
-  const [editingName,  setEditingName]  = useState('')
-  const [confirmId,    setConfirmId]    = useState(null)
-  const [deletingId,   setDeletingId]   = useState(null)
-  const [copied,       setCopied]       = useState(null)
+  const [projects,    setProjects]    = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState(null)
+  const [toast,       setToast]       = useState(null)   // { msg, type }
+  const [editingId,   setEditingId]   = useState(null)
+  const [editingName, setEditingName] = useState('')
+  const [confirmId,   setConfirmId]   = useState(null)
+  const [deletingId,  setDeletingId]  = useState(null)
+  const [copied,      setCopied]      = useState(null)
 
   const baseUrl = window.location.origin
 
-  useEffect(() => {
-    let cancelled = false
+  // ── Load — extracted so it can be called after mutations ─────────────────
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    const { data, error: err } = await supabase
+      .from('projects')
+      .select('id, name, created_at, video_url, stage_url, camera_presets, grid_cell_size, scene_config')
+      .order('created_at', { ascending: false })
 
-    async function load() {
-      setLoading(true); setError(null)
-      const { data, error: err } = await supabase
-        .from('projects')
-        .select('id, name, created_at, video_url, stage_url, camera_presets, grid_cell_size')
-        .order('created_at', { ascending: false })
-
-      if (cancelled) return
-      if (err) { setError(err.message); setLoading(false); return }
-      setProjects(data || [])
-      setLoading(false)
-    }
-
-    load()
-    return () => { cancelled = true }
+    if (err) { setError(err.message); setLoading(false); return }
+    setProjects(data || [])
+    setLoading(false)
   }, [])
+
+  useEffect(() => { load() }, [load])
 
   const handleCopy = useCallback((text, key) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -85,35 +96,72 @@ function ProjectsTab({ onOpenProject }) {
   const handleRenameCommit = useCallback(async (id) => {
     const trimmed = editingName.trim()
     if (!trimmed) { setEditingId(null); return }
+    // Optimistic update
     setProjects(prev => prev.map(p => p.id === id ? { ...p, name: trimmed } : p))
     setEditingId(null)
-    await supabase.from('projects').update({ name: trimmed }).eq('id', id)
-  }, [editingName])
+    const { error: err } = await supabase.from('projects').update({ name: trimmed }).eq('id', id)
+    if (err) {
+      // Roll back optimistic update and show error
+      setToast({ msg: `Rename failed: ${err.message}`, type: 'error' })
+      await load()
+    }
+  }, [editingName, load])
 
   const handleDelete = useCallback(async (project) => {
-    setDeletingId(project.id); setConfirmId(null)
+    setDeletingId(project.id); setConfirmId(null); setToast(null)
 
     try {
-      // 1. List all files in the project's folder
-      const { data: files } = await supabase.storage.from('projects').list(project.id)
-      if (files && files.length > 0) {
+      // 1. Delete all storage files inside the project folder first
+      const { data: files, error: listErr } = await supabase.storage
+        .from('projects')
+        .list(project.id)
+
+      if (listErr) {
+        // Non-fatal — storage folder may not exist yet; log and continue
+        console.warn('Storage list warning:', listErr.message)
+      } else if (files && files.length > 0) {
         const paths = files.map(f => `${project.id}/${f.name}`)
-        await supabase.storage.from('projects').remove(paths)
+        const { error: removeErr } = await supabase.storage.from('projects').remove(paths)
+        if (removeErr) {
+          // Non-fatal — still try to delete the DB row
+          console.warn('Storage remove warning:', removeErr.message)
+        }
       }
 
-      // 2. Delete the database row
-      await supabase.from('projects').delete().eq('id', project.id)
+      // 2. Delete the database row — explicitly check the error object.
+      //    Supabase does NOT throw on RLS violations; it returns { error }.
+      const { error: dbErr } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', project.id)
 
-      setProjects(prev => prev.filter(p => p.id !== project.id))
+      if (dbErr) {
+        setToast({
+          msg: `Delete failed: ${dbErr.message}. Check Supabase RLS (see SQL below).`,
+          type: 'error',
+        })
+        return
+      }
+
+      // 3. Re-fetch from DB — source of truth, not filtered local state
+      await load()
+      setToast({ msg: `"${project.name || 'Untitled'}" deleted.`, type: 'success' })
     } catch (err) {
-      console.error('Delete error:', err)
+      setToast({ msg: `Unexpected error: ${err.message}`, type: 'error' })
     } finally {
       setDeletingId(null)
     }
-  }, [])
+  }, [load])
 
   if (loading) return <div className="py-10 flex flex-col items-center gap-4"><Spinner /><p className="text-white/30 text-xs">Loading projects…</p></div>
-  if (error)   return <ErrorBanner msg={error} />
+  if (error)   return (
+    <div className="space-y-3">
+      <ErrorBanner msg={error} />
+      <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-all">
+        <IconRefresh /> Retry
+      </button>
+    </div>
+  )
   if (projects.length === 0) return (
     <div className="py-12 text-center space-y-2">
       <p className="text-white/40 text-sm">No projects yet</p>
@@ -123,6 +171,8 @@ function ProjectsTab({ onOpenProject }) {
 
   return (
     <div className="space-y-2">
+      <Toast msg={toast?.msg} type={toast?.type} onDismiss={() => setToast(null)} />
+
       {projects.map(p => (
         <div
           key={p.id}
@@ -143,7 +193,9 @@ function ProjectsTab({ onOpenProject }) {
                 className="flex-1 bg-white/8 border border-white/15 rounded-lg px-2.5 py-1 text-sm text-white/90 focus:outline-none focus:border-violet-500/50"
               />
             ) : (
-              <span className="flex-1 text-sm font-medium text-white/80 truncate">{p.name || 'Untitled'}</span>
+              <span className="flex-1 text-sm font-medium text-white/80 truncate">
+                {p.name || <span className="text-amber-400/70 italic">Untitled</span>}
+              </span>
             )}
             <button
               onClick={() => { setEditingId(p.id); setEditingName(p.name || '') }}
@@ -205,10 +257,11 @@ function ProjectsTab({ onOpenProject }) {
             ) : (
               <button
                 onClick={() => setConfirmId(p.id)}
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/8 hover:bg-red-500/18 border border-red-500/15 text-red-400/60 hover:text-red-400 text-xs transition-all"
+                disabled={deletingId === p.id}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/8 hover:bg-red-500/18 border border-red-500/15 text-red-400/60 hover:text-red-400 text-xs transition-all disabled:opacity-40"
                 title="Delete project"
               >
-                <IconTrash />
+                {deletingId === p.id ? '…' : <IconTrash />}
               </button>
             )}
           </div>
@@ -220,64 +273,65 @@ function ProjectsTab({ onOpenProject }) {
 
 // ── Media Storage Tab ─────────────────────────────────────────────────────────
 function MediaStorageTab({ projectNames }) {
-  const [folders,  setFolders]  = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState(null)
-  const [confirmFile, setConfirmFile] = useState(null)  // { path, folderId }
+  const [folders,     setFolders]     = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState(null)
+  const [toast,       setToast]       = useState(null)
+  const [confirmFile, setConfirmFile] = useState(null)   // { path, folderId, fileName }
   const [deletingFile, setDeletingFile] = useState(null)
 
-  useEffect(() => {
-    let cancelled = false
+  // ── Load — extracted so it can be called after file deletions ────────────
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const { data: rootItems, error: rootErr } = await supabase.storage.from('projects').list()
+      if (rootErr) throw new Error(rootErr.message)
+      if (!rootItems || rootItems.length === 0) { setFolders([]); setLoading(false); return }
 
-    async function load() {
-      setLoading(true); setError(null)
-      try {
-        const { data: rootItems, error: rootErr } = await supabase.storage.from('projects').list()
-        if (rootErr) throw new Error(rootErr.message)
-        if (!rootItems || rootItems.length === 0) { setFolders([]); setLoading(false); return }
-
-        const folderEntries = rootItems.filter(i => !i.metadata)
-        const results = await Promise.all(
-          folderEntries.map(async (folder) => {
-            const { data: files } = await supabase.storage.from('projects').list(folder.name)
-            return { id: folder.name, files: files || [] }
-          })
-        )
-
-        if (!cancelled) setFolders(results)
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+      const folderEntries = rootItems.filter(i => !i.metadata)
+      const results = await Promise.all(
+        folderEntries.map(async (folder) => {
+          const { data: files } = await supabase.storage.from('projects').list(folder.name)
+          return { id: folder.name, files: files || [] }
+        })
+      )
+      setFolders(results.filter(f => f.files.length > 0))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
-
-    load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => { load() }, [load])
 
   const handleDeleteFile = useCallback(async (folderId, fileName) => {
     const path = `${folderId}/${fileName}`
-    setDeletingFile(path); setConfirmFile(null)
+    setDeletingFile(path); setConfirmFile(null); setToast(null)
 
     const { error: err } = await supabase.storage.from('projects').remove([path])
-    if (!err) {
-      setFolders(prev =>
-        prev.map(f =>
-          f.id === folderId
-            ? { ...f, files: f.files.filter(file => file.name !== fileName) }
-            : f
-        ).filter(f => f.files.length > 0)
-      )
-    } else {
-      console.error('File delete error:', err)
+
+    if (err) {
+      setToast({ msg: `File delete failed: ${err.message}`, type: 'error' })
+      setDeletingFile(null)
+      return
     }
 
+    // Re-fetch storage to confirm — don't just filter local state
+    await load()
     setDeletingFile(null)
-  }, [])
+    setToast({ msg: `${fileName} deleted.`, type: 'success' })
+  }, [load])
 
   if (loading) return <div className="py-10 flex flex-col items-center gap-4"><Spinner /><p className="text-white/30 text-xs">Scanning storage…</p></div>
-  if (error)   return <ErrorBanner msg={error} />
+  if (error)   return (
+    <div className="space-y-3">
+      <ErrorBanner msg={error} />
+      <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-all">
+        <IconRefresh /> Retry
+      </button>
+    </div>
+  )
   if (folders.length === 0) return (
     <div className="py-12 text-center space-y-2">
       <p className="text-white/40 text-sm">Storage is empty</p>
@@ -287,8 +341,10 @@ function MediaStorageTab({ projectNames }) {
 
   return (
     <div className="space-y-4">
+      <Toast msg={toast?.msg} type={toast?.type} onDismiss={() => setToast(null)} />
+
       {folders.map(folder => {
-        const totalSize = folder.files.reduce((acc, f) => acc + (f.metadata?.size || 0), 0)
+        const totalSize  = folder.files.reduce((acc, f) => acc + (f.metadata?.size || 0), 0)
         const projectName = projectNames[folder.id]
         return (
           <div key={folder.id} className="space-y-1.5">
@@ -306,7 +362,7 @@ function MediaStorageTab({ projectNames }) {
             </div>
 
             {folder.files.map(file => {
-              const path = `${folder.id}/${file.name}`
+              const path         = `${folder.id}/${file.name}`
               const isConfirming = confirmFile?.path === path
               const isDeleting   = deletingFile === path
 
@@ -339,11 +395,12 @@ function MediaStorageTab({ projectNames }) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => setConfirmFile({ path, folderId: folder.id })}
-                      className="p-1 rounded hover:bg-red-500/15 text-white/20 hover:text-red-400 flex-shrink-0 transition-all"
+                      onClick={() => setConfirmFile({ path, folderId: folder.id, fileName: file.name })}
+                      disabled={isDeleting}
+                      className="p-1 rounded hover:bg-red-500/15 text-white/20 hover:text-red-400 flex-shrink-0 transition-all disabled:opacity-40"
                       title="Delete file"
                     >
-                      <IconTrash />
+                      {isDeleting ? '…' : <IconTrash />}
                     </button>
                   )}
                 </div>
@@ -356,10 +413,39 @@ function MediaStorageTab({ projectNames }) {
   )
 }
 
+// ── RLS Info Banner ────────────────────────────────────────────────────────────
+function RlsBanner() {
+  const [open, setOpen] = useState(false)
+  const sql = `-- Run this in Supabase → SQL Editor to allow project deletion:
+CREATE POLICY "Allow delete" ON projects
+FOR DELETE USING (true);
+
+-- Also allow storage deletions (if using RLS on storage):
+-- Storage uses bucket-level policies in the Supabase dashboard.
+-- Go to Storage → projects bucket → Policies → Add DELETE policy.`
+
+  return (
+    <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-xs text-amber-300/70 hover:text-amber-300 transition-all"
+      >
+        <span>⚠ If deletes fail, check Supabase RLS</span>
+        <span className="text-[10px] opacity-60">{open ? '▲ hide' : '▼ show SQL'}</span>
+      </button>
+      {open && (
+        <pre className="px-4 pb-4 text-[10px] text-amber-200/50 font-mono whitespace-pre-wrap leading-relaxed">
+          {sql}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 function ProjectsDashboard({ onClose, onOpenProject }) {
   const [activeTab,    setActiveTab]    = useState('projects')
-  const [projectNames, setProjectNames] = useState({})  // id → name, for storage tab
+  const [projectNames, setProjectNames] = useState({})
 
   useEffect(() => {
     const handleKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -433,7 +519,10 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-5 scrollbar-thin">
           {activeTab === 'projects' && (
-            <ProjectsTab onOpenProject={handleOpenProject} />
+            <>
+              <ProjectsTab onOpenProject={handleOpenProject} />
+              <RlsBanner />
+            </>
           )}
           {activeTab === 'storage' && (
             <MediaStorageTab projectNames={projectNames} />

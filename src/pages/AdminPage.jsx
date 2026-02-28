@@ -248,6 +248,14 @@ function AdminPage() {
 
   const handlePublish = useCallback(async ({ videoInputMode, externalVideoUrl }) => {
     if (!stageFile && !cloudStageUrl) return
+
+    // Block publish if name is empty — prevents accumulating "Untitled Project" rows
+    if (!projectName.trim()) {
+      setPublishStatus('error')
+      setPublishError('Please enter a project name before publishing.')
+      return
+    }
+
     setIsPublishing(true); setPublishStatus(null); setPublishError(null)
 
     try {
