@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 // ── Tiny icon components ──────────────────────────────────────────────────────
 const IconUpload    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
@@ -13,6 +13,8 @@ const IconLink      = () => <svg className="w-4 h-4" fill="none" stroke="current
 const IconFolder    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
 const IconCopy      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
 const IconGrid      = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+const IconGlobe     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
+const IconSparkle   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36-6.36-.7.7M6.34 17.66l-.7.7M17.66 17.66l-.7-.7M6.34 6.34l-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
 
 function Section({ icon, title, badge, children }) {
   return (
@@ -53,9 +55,16 @@ function UIPanel({
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
   onPublish, canPublish, isPublishing, publishStatus, publishError, publishedId,
   projectName, onProjectNameChange, onOpenDashboard,
+  // ── Scene config ─────────────────────────────────────────────────────────
+  hdriPreset, onHdriPresetChange,
+  onCustomHdriUpload,
+  envIntensity, onEnvIntensityChange,
+  bgBlur, onBgBlurChange,
+  bloomStrength, onBloomStrengthChange,
 }) {
   const modelInputRef   = useRef(null)
   const videoInputRef   = useRef(null)
+  const hdriInputRef    = useRef(null)
   const [presetName,    setPresetName]    = useState('')
   const [copied,        setCopied]        = useState(null)
   const [activeSection, setActiveSection] = useState('media')
@@ -237,13 +246,76 @@ function UIPanel({
 
         {/* ── LIGHT ─────────────────────────────────────────────────────── */}
         {activeSection === 'light' && (
-          <Section icon={<IconSun />} title="Sun Settings">
-            <div className="space-y-3">
-              <Slider label="Azimuth"   value={sunAzimuth}   min={0}   max={360} onChange={onSunAzimuthChange}   />
-              <Slider label="Elevation" value={sunElevation} min={0}   max={90}  onChange={onSunElevationChange} />
-              <Slider label="Intensity" value={sunIntensity} min={0}   max={5}   step={0.05} onChange={onSunIntensityChange} />
-            </div>
-          </Section>
+          <div className="space-y-4">
+            {/* Sun */}
+            <Section icon={<IconSun />} title="Sun">
+              <div className="space-y-3">
+                <Slider label="Azimuth"   value={sunAzimuth}   min={0}   max={360} onChange={onSunAzimuthChange}   />
+                <Slider label="Elevation" value={sunElevation} min={0}   max={90}  onChange={onSunElevationChange} />
+                <Slider label="Intensity" value={sunIntensity} min={0}   max={5}   step={0.05} onChange={onSunIntensityChange} />
+              </div>
+            </Section>
+
+            {/* HDRI Environment */}
+            <Section icon={<IconGlobe />} title="Environment (HDRI)">
+              <div className="space-y-3">
+                {/* Preset picker */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Preset</span>
+                  <div className="grid grid-cols-3 gap-1 mt-1">
+                    {[
+                      { id: 'none',       label: 'Off'       },
+                      { id: 'city',       label: 'City'      },
+                      { id: 'studio',     label: 'Studio'    },
+                      { id: 'warehouse',  label: 'Warehouse' },
+                      { id: 'night',      label: 'Night'     },
+                      { id: 'apartment',  label: 'Apartment' },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => onHdriPresetChange(p.id)}
+                        className={`py-1.5 rounded-lg text-[10px] font-medium transition-all border ${
+                          hdriPreset === p.id
+                            ? 'bg-violet-500/20 border-violet-500/30 text-violet-300'
+                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/8'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom HDRI upload */}
+                <div>
+                  <button
+                    onClick={() => hdriInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
+                  >
+                    <IconUpload /><span>Upload Custom .hdr / .exr</span>
+                  </button>
+                  <input
+                    ref={hdriInputRef}
+                    type="file"
+                    accept=".hdr,.exr"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) onCustomHdriUpload(f) }}
+                  />
+                </div>
+
+                <Slider label="Env Intensity" value={envIntensity ?? 1}  min={0} max={3}   step={0.05} onChange={onEnvIntensityChange} />
+                <Slider label="BG Blur"       value={bgBlur      ?? 0}  min={0} max={1}   step={0.01} onChange={onBgBlurChange}       />
+              </div>
+            </Section>
+
+            {/* Post-FX */}
+            <Section icon={<IconSparkle />} title="Post-FX">
+              <div className="space-y-3">
+                <Slider label="Bloom Strength" value={bloomStrength ?? 0.3} min={0} max={3} step={0.05} onChange={onBloomStrengthChange} />
+                <p className="text-[9px] text-white/25 leading-snug">Bloom makes emissive LED materials radiate light. Higher values = stronger glow.</p>
+              </div>
+            </Section>
+          </div>
         )}
 
         {/* ── CAMERA ────────────────────────────────────────────────────── */}

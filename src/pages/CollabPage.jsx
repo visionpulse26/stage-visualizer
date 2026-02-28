@@ -24,6 +24,13 @@ function CollabPage() {
   // Grid — loaded from project, read-only in this view
   const [gridCellSize, setGridCellSize] = useState(1)
 
+  // ── Scene config (loaded from scene_config column) ────────────────────────
+  const [hdriPreset,    setHdriPreset]    = useState('none')
+  const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  const [envIntensity,  setEnvIntensity]  = useState(1)
+  const [bgBlur,        setBgBlur]        = useState(0)
+  const [bloomStrength, setBloomStrength] = useState(0.3)
+
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
 
@@ -96,6 +103,16 @@ function CollabPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+
+        // Restore scene_config so collaborators see the exact environment Admin set
+        const cfg = data.scene_config
+        if (cfg) {
+          setHdriPreset(cfg.hdriPreset     ?? 'none')
+          setCustomHdriUrl(cfg.customHdriUrl ?? null)
+          setEnvIntensity(cfg.envIntensity  ?? 1)
+          setBgBlur(cfg.bgBlur             ?? 0)
+          setBloomStrength(cfg.bloomStrength ?? 0.3)
+        }
       } catch (err) {
         console.error('Failed to load project:', err)
         if (!cancelled) setProjectNotFound(true)
@@ -197,6 +214,11 @@ function CollabPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
+        hdriPreset={hdriPreset}
+        customHdriUrl={customHdriUrl}
+        envIntensity={envIntensity}
+        bgBlur={bgBlur}
+        bloomStrength={bloomStrength}
       >
         <CollabPanel
           onVideoUpload={handleVideoUpload}

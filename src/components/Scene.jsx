@@ -57,10 +57,16 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
         found = true
 
         if (activeTexture) {
-          const ledMat = new THREE.MeshBasicMaterial({
-            map: activeTexture,
-            side: THREE.DoubleSide,
-            toneMapped: false,
+          // MeshStandardMaterial with emissiveMap makes Bloom glow emanate from
+          // the LED pixels — bright pixels bloom, dark pixels stay dark.
+          const ledMat = new THREE.MeshStandardMaterial({
+            emissive:          new THREE.Color(1, 1, 1),
+            emissiveMap:       activeTexture,
+            emissiveIntensity: 2.5,
+            roughness:         0,
+            metalness:         0,
+            side:              THREE.DoubleSide,
+            toneMapped:        false,
           })
           ledMat.name = LED_MATERIAL_NAME
           if (Array.isArray(child.material)) child.material[i] = ledMat

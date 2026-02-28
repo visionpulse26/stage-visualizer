@@ -46,6 +46,14 @@ function AdminPage() {
   const [publishError,  setPublishError]  = useState(null)
   const [projectName,   setProjectName]   = useState('')
 
+  // ── Scene config — environment, HDRI, bloom ──────────────────────────────
+  const [hdriPreset,    setHdriPreset]    = useState('none')
+  const [hdriFile,      setHdriFile]      = useState(null)    // File object for upload
+  const [customHdriUrl, setCustomHdriUrl] = useState(null)    // Blob (preview) or Supabase URL
+  const [envIntensity,  setEnvIntensity]  = useState(1)
+  const [bgBlur,        setBgBlur]        = useState(0)
+  const [bloomStrength, setBloomStrength] = useState(0.3)
+
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
 
@@ -132,6 +140,19 @@ function AdminPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
+  // ── Custom HDRI upload (blob preview; uploaded to Supabase on publish) ───
+  const handleCustomHdriUpload = useCallback((file) => {
+    if (!file) return
+    // Revoke previous blob URL if any
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    const url = URL.createObjectURL(file)
+    setHdriFile(file)
+    setCustomHdriUrl(url)
+    setHdriPreset('none') // custom overrides preset
+  }, [customHdriUrl])
+
   // ── Stage model upload ───────────────────────────────────────────────────
   const handleModelUpload = useCallback((file) => {
     if (!file) return
@@ -186,6 +207,17 @@ function AdminPage() {
     setPublishError(null)
     setIsDashboardOpen(false)
 
+    // Restore scene_config if present
+    const cfg = project.scene_config
+    if (cfg) {
+      setHdriPreset(cfg.hdriPreset   ?? 'none')
+      setCustomHdriUrl(cfg.customHdriUrl ?? null)
+      setEnvIntensity(cfg.envIntensity  ?? 1)
+      setBgBlur(cfg.bgBlur          ?? 0)
+      setBloomStrength(cfg.bloomStrength ?? 0.3)
+      setHdriFile(null) // cloud URL — no local file
+    }
+
     if (project.video_url) {
       const id = Date.now()
       clipCountRef.current = 1
@@ -232,7 +264,34 @@ function AdminPage() {
         }
       }
 
-      // 3. Upsert project record
+      // 3. Upload custom HDRI file if a new one was chosen locally
+      let finalHdriUrl = customHdriUrl && !customHdriUrl.startsWith('blob:') ? customHdriUrl : null
+      if (hdriFile) {
+        const ext      = hdriFile.name.split('.').pop() || 'hdr'
+        const hdriPath = `${projectId}/environment.${ext}`
+        const { error: hdriErr } = await supabase.storage.from('projects').upload(hdriPath, hdriFile, { upsert: true })
+        if (hdriErr) throw new Error(`HDRI upload failed: ${hdriErr.message}`)
+        const { data: hdriPublic } = supabase.storage.from('projects').getPublicUrl(hdriPath)
+        finalHdriUrl = hdriPublic.publicUrl
+        // Swap blob URL → permanent cloud URL
+        setCustomHdriUrl(finalHdriUrl)
+        setHdriFile(null)
+      }
+
+      // 4. Build scene_config snapshot
+      // NOTE: Requires a `scene_config` JSONB column in your Supabase `projects` table.
+      // Run in Supabase SQL editor: ALTER TABLE projects ADD COLUMN IF NOT EXISTS scene_config jsonb;
+      const scene_config = {
+        floorReflection: true,
+        hdriPreset:      hdriPreset,
+        customHdriUrl:   finalHdriUrl,
+        envIntensity:    envIntensity,
+        bgBlur:          bgBlur,
+        bloomStrength:   bloomStrength,
+        sunPosition:     sunPosition,
+      }
+
+      // 5. Upsert project record
       const record = {
         id:              projectId,
         stage_url:       finalStageUrl,
@@ -240,6 +299,7 @@ function AdminPage() {
         camera_presets:  cameraPresets,
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
+        scene_config,
       }
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
@@ -256,7 +316,8 @@ function AdminPage() {
     } finally {
       setIsPublishing(false)
     }
-  }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName])
+  }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
+      hdriFile, hdriPreset, customHdriUrl, envIntensity, bgBlur, bloomStrength, sunPosition])
 
   const sunPosition = useMemo(() => {
     const az = (sunAzimuth   * Math.PI) / 180
@@ -277,6 +338,11 @@ function AdminPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!(stageFile || cloudStageUrl)}
         cameraControlsRef={cameraControlsRef}
+        hdriPreset={hdriPreset}
+        customHdriUrl={customHdriUrl}
+        envIntensity={envIntensity}
+        bgBlur={bgBlur}
+        bloomStrength={bloomStrength}
       >
         <UIPanel
           onModelUpload={handleModelUpload}
@@ -310,6 +376,11 @@ function AdminPage() {
           projectName={projectName}
           onProjectNameChange={setProjectName}
           onOpenDashboard={() => setIsDashboardOpen(true)}
+          hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
+          onCustomHdriUpload={handleCustomHdriUpload}
+          envIntensity={envIntensity}      onEnvIntensityChange={setEnvIntensity}
+          bgBlur={bgBlur}                  onBgBlurChange={setBgBlur}
+          bloomStrength={bloomStrength}    onBloomStrengthChange={setBloomStrength}
         />
 
         <TopBar role="Admin" color="violet" />
