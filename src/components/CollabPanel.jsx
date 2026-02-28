@@ -1,13 +1,32 @@
-import { useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-const IconPlay   = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5z"/></svg>
-const IconPause  = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zM14 5v14h4V5h-4z"/></svg>
-const IconLoop   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 01-4 4H3"/></svg>
-const IconCamera = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-const IconSun    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path strokeLinecap="round" d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-const IconUpload = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
-const IconShot   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/><path strokeLinecap="round" d="M8 2l1 3M16 2l-1 3"/></svg>
+const IconUpload  = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
+const IconVideo   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="2" y="7" width="15" height="10" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M17 9l5-3v12l-5-3V9z"/></svg>
+const IconSun     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path strokeLinecap="round" d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+const IconCamera  = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+const IconPlay    = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5z"/></svg>
+const IconPause   = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zM14 5v14h4V5h-4z"/></svg>
+const IconLoop    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 01-4 4H3"/></svg>
+const IconGlobe   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
+const IconSparkle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36-6.36-.7.7M6.34 17.66l-.7.7M17.66 17.66l-.7-.7M6.34 6.34l-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+const IconEye     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+const IconShot    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+const IconCloud   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 14v-4m0 0l-2 2m2-2 2 2"/></svg>
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
+function Section({ icon, title, badge, children }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-white/40">{icon}</span>
+        <span className="text-xs font-semibold uppercase tracking-widest text-white/50">{title}</span>
+        {badge && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/30">{badge}</span>}
+      </div>
+      <div className="border-t border-white/5 pt-2">{children}</div>
+    </div>
+  )
+}
 
 function Slider({ label, value, min, max, step = 1, onChange }) {
   return (
@@ -25,156 +44,415 @@ function Slider({ label, value, min, max, step = 1, onChange }) {
   )
 }
 
+// ── Toggle ────────────────────────────────────────────────────────────────────
+function Toggle({ label, hint, active, onToggle }) {
+  return (
+    <div className="flex items-center justify-between pt-0.5">
+      <div>
+        <p className="text-[10px] text-white/40">{label}</p>
+        {hint && <p className="text-[9px] text-white/20 mt-0.5">{hint}</p>}
+      </div>
+      <button
+        onClick={onToggle}
+        className={`relative w-9 h-5 rounded-full border transition-all flex-shrink-0 ml-2 ${
+          active ? 'bg-cyan-500/30 border-cyan-500/50' : 'bg-white/5 border-white/15'
+        }`}
+      >
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+          active ? 'left-[18px] bg-cyan-400' : 'left-0.5 bg-white/30'
+        }`} />
+      </button>
+    </div>
+  )
+}
+
+// ── CollabPanel ───────────────────────────────────────────────────────────────
 function CollabPanel({
+  // ── Media ──────────────────────────────────────────────────────────────────
   onVideoUpload,
-  videoLoaded, ledMaterialFound,
+  videoLoaded,
   videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
-  sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
+  // ── Lighting ───────────────────────────────────────────────────────────────
+  sunAzimuth,   onSunAzimuthChange,
+  sunElevation, onSunElevationChange,
+  sunIntensity, onSunIntensityChange,
+  // ── HDRI Environment ───────────────────────────────────────────────────────
+  hdriPreset,        onHdriPresetChange,
+  onCustomHdriUpload,
+  envIntensity,      onEnvIntensityChange,
+  bgBlur,            onBgBlurChange,
+  showHdriBackground, onShowHdriBackgroundToggle,
+  // ── Post-FX ────────────────────────────────────────────────────────────────
+  bloomStrength,  onBloomStrengthChange,
+  bloomThreshold, onBloomThresholdChange,
+  protectLed,     onProtectLedToggle,
+  // ── Camera (read-only — view only, no add/delete) ──────────────────────────
   cameraPresets, onGoToView,
+  // ── Screenshot ─────────────────────────────────────────────────────────────
   onScreenshot,
+  // ── Sync to cloud ──────────────────────────────────────────────────────────
+  onSyncToCloud, isSyncing, syncStatus, syncError,
+  hasLocalHdri,   // true if customHdriUrl is a blob (can't be synced)
 }) {
+  const [activeSection, setActiveSection] = useState('media')
   const fileInputRef = useRef(null)
+  const hdriInputRef = useRef(null)
+
+  const handleHdriFile = useCallback((file) => {
+    if (file) onCustomHdriUpload(file)
+  }, [onCustomHdriUpload])
+
+  const sections = [
+    { id: 'media',  label: 'Media',  icon: <IconVideo />  },
+    { id: 'light',  label: 'Light',  icon: <IconSun />    },
+    { id: 'camera', label: 'Camera', icon: <IconCamera /> },
+    { id: 'sync',   label: 'Sync',   icon: <IconCloud />  },
+  ]
 
   return (
-    <div className="absolute top-4 right-4 z-10 flex flex-col gap-2" style={{ width: 260 }}>
-      <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-4 space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin">
+    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
 
-        {/* ── Add Media ─────────────────────────────────────────────────── */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-white/40"><IconUpload /></span>
-            <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Add Media</span>
-            <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-cyan-500/15 border border-cyan-500/20 text-cyan-400 rounded font-semibold">LOCAL</span>
-          </div>
-          <div className="border-t border-white/5 pt-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+      {/* Section tabs */}
+      <div className="flex gap-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-1">
+        {sections.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActiveSection(s.id)}
+            className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+              activeSection === s.id
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/20'
+                : 'text-white/30 hover:text-white/60 hover:bg-white/5'
+            }`}
+          >
+            {s.icon}
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Panel card */}
+      <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-4 space-y-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin">
+
+        {/* ── MEDIA ─────────────────────────────────────────────────────── */}
+        {activeSection === 'media' && (
+          <>
+            {/* No Stage Upload — Collab cannot modify the master 3D asset */}
+            <Section
+              icon={<IconVideo />}
+              title="Video Playlist"
+              badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}
             >
-              <IconUpload /><span>+ Add Video or Image</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*,image/*"
-              className="hidden"
-              onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
-            />
-            <p className="mt-2 text-[10px] text-white/25 text-center leading-snug">
-              Files are loaded locally — not uploaded to any server.
-            </p>
-          </div>
-        </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+              >
+                <IconUpload /><span>Add Video or Image</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*,image/*"
+                className="hidden"
+                onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
+              />
+              <p className="text-[10px] text-white/25 text-center mt-1.5 leading-snug">
+                Files are loaded locally — not uploaded to any server.
+              </p>
 
-        {/* ── Playlist ──────────────────────────────────────────────────── */}
-        {videoPlaylist.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Playlist</span>
-              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/30">{videoPlaylist.length}</span>
+              {videoPlaylist.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {videoPlaylist.map(clip => (
+                    <button
+                      key={clip.id}
+                      onClick={() => onActivateVideo(clip)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
+                        clip.id === activeVideoId
+                          ? 'bg-cyan-500/15 border border-cyan-500/25 text-white/90'
+                          : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                      }`}
+                    >
+                      <span className="flex-1 truncate">{clip.name}</span>
+                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                        {clip.file && (
+                          <span className="text-[8px] font-bold tracking-widest bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded px-1 py-0.5 uppercase">
+                            Local
+                          </span>
+                        )}
+                        {clip.id === activeVideoId && (
+                          <span className="text-[9px] text-cyan-400 uppercase">Active</span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={onClearPlaylist}
+                    className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
+                  >
+                    Clear Playlist
+                  </button>
+                </div>
+              )}
+
+              {videoLoaded && (
+                <div className="flex gap-1 mt-2">
+                  <button
+                    onClick={isPlaying ? onPause : onPlay}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs transition-all"
+                  >
+                    {isPlaying ? <IconPause /> : <IconPlay />}
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <button
+                    onClick={onToggleLoop}
+                    className={`px-3 rounded-lg border text-xs transition-all ${
+                      isLooping
+                        ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-300'
+                        : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60'
+                    }`}
+                  >
+                    <IconLoop />
+                  </button>
+                </div>
+              )}
+            </Section>
+
+            {/* Screenshot */}
+            <div className="pt-1 border-t border-white/5">
+              <button
+                onClick={onScreenshot}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 hover:bg-white/8 border border-white/10 text-white/40 hover:text-white/70 text-xs font-medium transition-all"
+              >
+                <IconShot /><span>Screenshot</span>
+              </button>
             </div>
-            <div className="border-t border-white/5 pt-2 space-y-1">
-              {videoPlaylist.map(clip => (
+          </>
+        )}
+
+        {/* ── LIGHT — full match with Admin UIPanel ────────────────────── */}
+        {activeSection === 'light' && (
+          <div className="space-y-4">
+
+            {/* Sun */}
+            <Section icon={<IconSun />} title="Sun">
+              <div className="space-y-3">
+                <Slider label="Azimuth"   value={sunAzimuth}   min={0}   max={360}  onChange={onSunAzimuthChange}   />
+                <Slider label="Elevation" value={sunElevation} min={0}   max={90}   onChange={onSunElevationChange} />
+                <Slider label="Intensity" value={sunIntensity} min={0}   max={5}    step={0.05} onChange={onSunIntensityChange} />
+              </div>
+            </Section>
+
+            {/* HDRI Environment */}
+            <Section icon={<IconGlobe />} title="Environment (HDRI)">
+              <div className="space-y-3">
+
+                {/* Preset picker */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Preset</span>
+                  <div className="grid grid-cols-3 gap-1 mt-1">
+                    {[
+                      { id: 'none',      label: 'Off'       },
+                      { id: 'city',      label: 'City'      },
+                      { id: 'studio',    label: 'Studio'    },
+                      { id: 'warehouse', label: 'Warehouse' },
+                      { id: 'night',     label: 'Night'     },
+                      { id: 'apartment', label: 'Apartment' },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => onHdriPresetChange(p.id)}
+                        className={`py-1.5 rounded-lg text-[10px] font-medium transition-all border ${
+                          hdriPreset === p.id
+                            ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-300'
+                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/8'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom HDRI — local blob preview only; blob URLs cannot be synced */}
+                <div>
+                  <button
+                    onClick={() => hdriInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+                  >
+                    <IconUpload /><span>Upload Custom .hdr / .exr</span>
+                  </button>
+                  <input
+                    ref={hdriInputRef}
+                    type="file"
+                    accept=".hdr,.exr"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleHdriFile(f); e.target.value = '' }}
+                  />
+                  {hasLocalHdri && (
+                    <p className="text-[9px] text-amber-400/60 mt-1.5 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                      ⚠ Local HDRI is preview-only — it cannot be Synced to Cloud. Use a built-in preset for persistence.
+                    </p>
+                  )}
+                </div>
+
+                <Slider label="Env Intensity" value={envIntensity ?? 1} min={0} max={3} step={0.05} onChange={onEnvIntensityChange} />
+
+                <Toggle
+                  label="Show HDRI Background"
+                  hint={showHdriBackground ? 'Visible — HDRI shown as backdrop' : 'Stealth — black bg, HDRI lights only'}
+                  active={showHdriBackground}
+                  onToggle={onShowHdriBackgroundToggle}
+                />
+
+                {showHdriBackground && (
+                  <Slider label="BG Blur" value={bgBlur ?? 0} min={0} max={1} step={0.01} onChange={onBgBlurChange} />
+                )}
+              </div>
+            </Section>
+
+            {/* Post-FX */}
+            <Section icon={<IconSparkle />} title="Post-FX">
+              <div className="space-y-3">
+                <Slider label="Bloom Strength" value={bloomStrength ?? 0.3} min={0} max={3} step={0.05} onChange={onBloomStrengthChange} />
+                <p className="text-[9px] text-white/25 leading-snug">
+                  Bloom makes emissive LED materials radiate light. Higher = stronger glow.
+                </p>
+              </div>
+            </Section>
+
+            {/* Visual Integrity */}
+            <Section icon={<IconEye />} title="Visual Integrity">
+              <div className="space-y-3">
                 <button
-                  key={clip.id}
-                  onClick={() => onActivateVideo(clip)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
-                    clip.id === activeVideoId
-                      ? 'bg-cyan-500/15 border border-cyan-500/25 text-white/90'
-                      : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                  onClick={onProtectLedToggle}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                    protectLed
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60 hover:bg-white/8'
                   }`}
                 >
-                  <span className="flex-1 truncate">{clip.name}</span>
-                  <span className="ml-auto flex items-center gap-1 flex-shrink-0">
-                    {clip.file && (
-                      <span className="text-[8px] font-bold tracking-widest bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded px-1 py-0.5 uppercase">
-                        Local
-                      </span>
-                    )}
-                    {clip.id === activeVideoId && (
-                      <span className="text-[9px] text-cyan-400 uppercase">Active</span>
-                    )}
-                  </span>
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <div className="flex-1 text-left">
+                    <p className="text-xs font-semibold leading-tight">Protect LED Colors</p>
+                    <p className="text-[9px] opacity-60 mt-0.5 leading-tight">
+                      {protectLed ? 'ON — screens immune to env & tone mapping' : 'OFF — screens affected by environment'}
+                    </p>
+                  </div>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${protectLed ? 'bg-emerald-400' : 'bg-white/20'}`} />
                 </button>
-              ))}
-              <button
-                onClick={onClearPlaylist}
-                className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
-              >
-                Clear Playlist
-              </button>
-            </div>
+
+                <Slider
+                  label="Bloom Threshold"
+                  value={bloomThreshold ?? 1.2}
+                  min={0.0} max={2.0} step={0.05}
+                  onChange={onBloomThresholdChange}
+                />
+                <p className="text-[9px] text-white/25 leading-snug">
+                  Raise threshold to reduce glow. Protect LED Colors keeps screen content pixel-perfect.
+                </p>
+              </div>
+            </Section>
           </div>
         )}
 
-        {/* ── Playback Controls ─────────────────────────────────────────── */}
-        {videoLoaded && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Playback</span>
-            </div>
-            <div className="border-t border-white/5 pt-2 flex gap-1">
-              <button
-                onClick={isPlaying ? onPause : onPlay}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs transition-all"
-              >
-                {isPlaying ? <IconPause /> : <IconPlay />}
-                {isPlaying ? 'Pause' : 'Play'}
-              </button>
-              <button
-                onClick={onToggleLoop}
-                className={`px-3 rounded-lg border text-xs transition-all ${isLooping ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-300' : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60'}`}
-              >
-                <IconLoop />
-              </button>
-            </div>
-          </div>
+        {/* ── CAMERA — read-only (view presets, no add/delete) ─────────── */}
+        {activeSection === 'camera' && (
+          <Section icon={<IconCamera />} title="Camera Presets">
+            {cameraPresets.length === 0 ? (
+              <p className="text-center text-white/20 text-[11px] py-3">
+                No camera presets saved yet. Ask the Admin to save views from the Admin panel.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {cameraPresets.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => onGoToView(p)}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/20 text-white/60 hover:text-white/90 text-xs transition-all truncate"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[9px] text-white/20 mt-3 leading-snug">
+              Collab view is read-only for camera presets. Use Free Camera to orbit manually.
+            </p>
+          </Section>
         )}
 
-        {/* ── Lighting ──────────────────────────────────────────────────── */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-white/40"><IconSun /></span>
-            <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Lighting</span>
-          </div>
-          <div className="border-t border-white/5 pt-2 space-y-3">
-            <Slider label="Azimuth"   value={sunAzimuth}   min={0}   max={360} onChange={onSunAzimuthChange}   />
-            <Slider label="Elevation" value={sunElevation} min={0}   max={90}  onChange={onSunElevationChange} />
-            <Slider label="Intensity" value={sunIntensity} min={0}   max={5}   step={0.05} onChange={onSunIntensityChange} />
-          </div>
-        </div>
-
-        {/* ── Camera Presets ────────────────────────────────────────────── */}
-        {cameraPresets.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-white/40"><IconCamera /></span>
-              <span className="text-xs font-semibold uppercase tracking-widest text-white/50">Camera Views</span>
-            </div>
-            <div className="border-t border-white/5 pt-2 space-y-1">
-              {cameraPresets.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => onGoToView(p)}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/20 text-white/55 hover:text-white/85 text-xs transition-all truncate"
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Screenshot ───────────────────────────────────────────────── */}
-        <div className="border-t border-white/5 pt-3">
-          <button
-            onClick={onScreenshot}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/5 hover:bg-white/8 border border-white/10 text-white/40 hover:text-white/70 text-xs font-medium transition-all"
+        {/* ── SYNC TO CLOUD ─────────────────────────────────────────────── */}
+        {activeSection === 'sync' && (
+          <Section
+            icon={<IconCloud />}
+            title="Sync to Cloud"
           >
-            <IconShot /><span>Screenshot</span>
-          </button>
-        </div>
+            <div className="space-y-3">
+              <p className="text-[10px] text-white/35 leading-snug">
+                Push your current Environment & Lighting settings to Supabase so the Admin and all View clients see your changes immediately.
+              </p>
+
+              {/* What gets synced */}
+              <div className="bg-white/3 border border-white/8 rounded-xl px-3 py-2.5 space-y-1">
+                <p className="text-[10px] text-white/50 font-semibold mb-1.5">What gets synced:</p>
+                {[
+                  'Sun position & intensity',
+                  'HDRI preset & intensity',
+                  'Background visibility & blur',
+                  'Bloom strength & threshold',
+                  'Protect LED Colors toggle',
+                ].map(item => (
+                  <p key={item} className="text-[9px] text-white/30 flex items-center gap-1.5">
+                    <span className="text-cyan-400/60">✓</span> {item}
+                  </p>
+                ))}
+                {hasLocalHdri && (
+                  <p className="text-[9px] text-amber-400/60 flex items-center gap-1.5 mt-1">
+                    <span>⚠</span> Local HDRI skipped (blob URL)
+                  </p>
+                )}
+              </div>
+
+              {/* Sync button */}
+              <button
+                onClick={onSyncToCloud}
+                disabled={isSyncing}
+                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${
+                  isSyncing
+                    ? 'bg-white/5 border border-white/10 text-white/20 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-white shadow-lg shadow-cyan-500/20'
+                }`}
+              >
+                {isSyncing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Syncing…
+                  </span>
+                ) : '☁ Sync Environment to Cloud'}
+              </button>
+
+              {/* Status feedback */}
+              {syncStatus === 'success' && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                  <p className="text-emerald-400 text-xs font-semibold">✓ Scene config synced!</p>
+                  <p className="text-emerald-400/50 text-[10px] mt-0.5">
+                    Admin & View clients will see your environment on next load.
+                  </p>
+                </div>
+              )}
+
+              {syncStatus === 'error' && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1">
+                  <p className="text-red-400 text-xs font-semibold">✗ Sync failed</p>
+                  {syncError && <p className="text-red-400/60 text-[10px]">{syncError}</p>}
+                  <p className="text-red-400/40 text-[10px]">Check Supabase RLS — ensure UPDATE is allowed.</p>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
 
       </div>
     </div>

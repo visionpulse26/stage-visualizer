@@ -16,27 +16,28 @@ function CollabPage() {
   const [isDbLoading,     setIsDbLoading]     = useState(true)
   const [projectNotFound, setProjectNotFound] = useState(false)
 
-  // Sun & Shadows — collab can tweak lighting live
+  // ── Sun & Grid ───────────────────────────────────────────────────────────
   const [sunAzimuth,   setSunAzimuth]   = useState(45)
   const [sunElevation, setSunElevation] = useState(45)
   const [sunIntensity, setSunIntensity] = useState(1)
-
-  // Grid — loaded from project, read-only in this view
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Scene config (loaded from scene_config column) ────────────────────────
-  const [hdriPreset,    setHdriPreset]    = useState('none')
-  const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  // ── Scene config (loaded from DB, fully editable) ────────────────────────
+  const [hdriPreset,         setHdriPreset]         = useState('none')
+  const [hdriFile,           setHdriFile]           = useState(null)   // local File object (never uploaded)
+  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
   const [bloomStrength,      setBloomStrength]      = useState(0.3)
-  const [bloomThreshold, setBloomThreshold] = useState(1.2)
-  const [protectLed,     setProtectLed]     = useState(true)
+  const [bloomThreshold,     setBloomThreshold]     = useState(1.2)
+  const [protectLed,         setProtectLed]         = useState(true)
 
+  // ── Camera ───────────────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
 
+  // ── Media playlist ────────────────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
@@ -45,17 +46,27 @@ function CollabPage() {
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
 
-  // Track blob URLs created for locally-added clips so we can revoke them on unmount
+  // ── Sync state ───────────────────────────────────────────────────────────
+  const [isSyncing,  setIsSyncing]  = useState(false)
+  const [syncStatus, setSyncStatus] = useState(null)   // 'success' | 'error' | null
+  const [syncError,  setSyncError]  = useState(null)
+
+  // Track blob URLs created locally so we can revoke them on unmount (memory safety)
   const localBlobUrlsRef = useRef([])
 
   useEffect(() => { playlistRef.current = videoPlaylist }, [videoPlaylist])
 
-  // Revoke only locally-created blob URLs on unmount — prevents RAM leaks
+  // ── Cleanup on unmount — revoke only locally-created blob URLs ───────────
   useEffect(() => {
     return () => {
       localBlobUrlsRef.current.forEach(url => { try { URL.revokeObjectURL(url) } catch (_) {} })
+      // Also revoke any local HDRI blob
+      if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+      }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Video helpers ─────────────────────────────────────────────────────────
@@ -107,17 +118,21 @@ function CollabPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
 
-        // Restore scene_config so collaborators see the exact environment Admin set
+        // Restore full scene_config so Collab starts with Admin's exact environment
         const cfg = data.scene_config
         if (cfg) {
-          setHdriPreset(cfg.hdriPreset       ?? 'none')
-          setCustomHdriUrl(cfg.customHdriUrl ?? null)
+          setHdriPreset(cfg.hdriPreset             ?? 'none')
+          setCustomHdriUrl(cfg.customHdriUrl       ?? null)
           setEnvIntensity(cfg.envIntensity          ?? 1)
-          setBgBlur(cfg.bgBlur                    ?? 0)
+          setBgBlur(cfg.bgBlur                     ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
           setBloomStrength(cfg.bloomStrength        ?? 0.3)
-          setBloomThreshold(cfg.bloomThreshold ?? 1.2)
-          setProtectLed(cfg.protectLed        ?? true)
+          setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
+          setProtectLed(cfg.protectLed              ?? true)
+
+          // Restore sun from saved sunPosition vector if available
+          // (direct azimuth/elevation aren't stored, so leave defaults if absent)
+          if (cfg.sunIntensity != null) setSunIntensity(cfg.sunIntensity)
         }
       } catch (err) {
         console.error('Failed to load project:', err)
@@ -131,11 +146,11 @@ function CollabPage() {
     return () => { cancelled = true }
   }, [projectId, activateVideo])
 
-  // ── Handlers for locally-added media (NO Supabase upload — blob URL only) ─
+  // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   const handleVideoUpload = useCallback((file) => {
     if (!file) return
     clipCountRef.current += 1
-    const url   = URL.createObjectURL(file)   // local only — never uploaded to cloud
+    const url   = URL.createObjectURL(file)
     localBlobUrlsRef.current.push(url)
     const id    = Date.now()
     const isImg = file.type.startsWith('image/')
@@ -163,7 +178,6 @@ function CollabPage() {
   const handleClearPlaylist = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
     setVideoPlaylist(prev => {
-      // Only revoke blob URLs that were locally created — never touch remote URLs
       prev.forEach(c => {
         if (localBlobUrlsRef.current.includes(c.url)) {
           try { URL.revokeObjectURL(c.url) } catch (_) {}
@@ -183,6 +197,21 @@ function CollabPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
+  // ── Custom HDRI — local preview only, NOT uploaded to Supabase ───────────
+  const handleCustomHdriUpload = useCallback((file) => {
+    if (!file) return
+    // Revoke previous local HDRI blob if there was one
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    const url = URL.createObjectURL(file)
+    localBlobUrlsRef.current.push(url)
+    setHdriFile(file)
+    setCustomHdriUrl(url)
+    setHdriPreset('none')  // custom overrides preset visually
+  }, [customHdriUrl])
+
+  // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
     cameraControlsRef.current?.setLookAt(
       preset.position.x, preset.position.y, preset.position.z,
@@ -190,19 +219,84 @@ function CollabPage() {
     )
   }, [])
 
+  // ── Screenshot ────────────────────────────────────────────────────────────
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
     const a = document.createElement('a')
-    a.download = `Stage_Collab_${projectId}.png`; a.href = canvas.toDataURL('image/png'); a.click()
+    a.download = `Stage_Collab_${projectId}.png`
+    a.href     = canvas.toDataURL('image/png')
+    a.click()
   }, [projectId])
 
+  // ── Sync Environment to Cloud ─────────────────────────────────────────────
+  // Saves the current scene_config to the Supabase project row.
+  // blob: HDRI URLs are excluded — they cannot be persisted server-side.
+  const handleSyncToCloud = useCallback(async () => {
+    setIsSyncing(true); setSyncStatus(null); setSyncError(null)
+
+    try {
+      const az = (sunAzimuth   * Math.PI) / 180
+      const el = (sunElevation * Math.PI) / 180
+      const d  = 15
+
+      // Only persist the customHdriUrl if it's a real cloud URL (not a local blob)
+      const persistedHdriUrl = customHdriUrl && !customHdriUrl.startsWith('blob:')
+        ? customHdriUrl
+        : null
+
+      const scene_config = {
+        floorReflection:    true,
+        hdriPreset,
+        customHdriUrl:      persistedHdriUrl,
+        envIntensity,
+        bgBlur,
+        showHdriBackground,
+        bloomStrength,
+        bloomThreshold,
+        protectLed,
+        sunIntensity,
+        sunPosition: [
+          d * Math.cos(el) * Math.sin(az),
+          d * Math.sin(el),
+          d * Math.cos(el) * Math.cos(az),
+        ],
+      }
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ scene_config })
+        .eq('id', projectId)
+
+      if (error) throw new Error(error.message)
+
+      setSyncStatus('success')
+      // Auto-clear the success message after 4 s
+      setTimeout(() => setSyncStatus(prev => prev === 'success' ? null : prev), 4000)
+    } catch (err) {
+      setSyncStatus('error')
+      setSyncError(err.message)
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [
+    projectId,
+    sunAzimuth, sunElevation, sunIntensity,
+    hdriPreset, customHdriUrl,
+    envIntensity, bgBlur, showHdriBackground,
+    bloomStrength, bloomThreshold, protectLed,
+  ])
+
+  // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
     const az = (sunAzimuth   * Math.PI) / 180
     const el = (sunElevation * Math.PI) / 180
     const d  = 15
     return [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)]
   }, [sunAzimuth, sunElevation])
+
+  // Whether the current customHdriUrl is a local blob (can't be synced)
+  const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
 
   if (projectNotFound) {
     return <ProjectNotFound projectId={projectId} />
@@ -230,6 +324,7 @@ function CollabPage() {
         protectLed={protectLed}
       >
         <CollabPanel
+          // ── Media ────────────────────────────────────────────────────────
           onVideoUpload={handleVideoUpload}
           videoLoaded={videoLoaded}
           ledMaterialFound={ledMaterialFound}
@@ -242,12 +337,32 @@ function CollabPage() {
           onPlay={handlePlay}
           onPause={handlePause}
           onToggleLoop={handleToggleLoop}
+          // ── Lighting ─────────────────────────────────────────────────────
           sunAzimuth={sunAzimuth}       onSunAzimuthChange={setSunAzimuth}
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}
+          // ── HDRI ─────────────────────────────────────────────────────────
+          hdriPreset={hdriPreset}              onHdriPresetChange={setHdriPreset}
+          onCustomHdriUpload={handleCustomHdriUpload}
+          envIntensity={envIntensity}          onEnvIntensityChange={setEnvIntensity}
+          bgBlur={bgBlur}                      onBgBlurChange={setBgBlur}
+          showHdriBackground={showHdriBackground}
+          onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}
+          // ── Post-FX & Visual Integrity ───────────────────────────────────
+          bloomStrength={bloomStrength}        onBloomStrengthChange={setBloomStrength}
+          bloomThreshold={bloomThreshold}      onBloomThresholdChange={setBloomThreshold}
+          protectLed={protectLed}              onProtectLedToggle={() => setProtectLed(v => !v)}
+          // ── Camera (read-only) ───────────────────────────────────────────
           cameraPresets={cameraPresets}
           onGoToView={handleGoToView}
+          // ── Screenshot ───────────────────────────────────────────────────
           onScreenshot={handleScreenshot}
+          // ── Cloud Sync ───────────────────────────────────────────────────
+          onSyncToCloud={handleSyncToCloud}
+          isSyncing={isSyncing}
+          syncStatus={syncStatus}
+          syncError={syncError}
+          hasLocalHdri={hasLocalHdri}
         />
 
         <TopBar role="Collaborator" color="cyan" />
@@ -263,7 +378,6 @@ function CollabPage() {
 }
 
 // ── Overlays ──────────────────────────────────────────────────────────────────
-
 function DbLoadingOverlay({ projectId }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-10 pointer-events-none">
