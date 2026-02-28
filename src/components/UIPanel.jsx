@@ -1,0 +1,379 @@
+import { useState, useRef, useCallback } from 'react'
+
+// ── Tiny icon components ──────────────────────────────────────────────────────
+const IconUpload    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
+const IconVideo     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="2" y="7" width="15" height="10" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M17 9l5-3v12l-5-3V9z"/></svg>
+const IconSun       = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path strokeLinecap="round" d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+const IconCamera    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+const IconPlay      = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5z"/></svg>
+const IconPause     = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zM14 5v14h4V5h-4z"/></svg>
+const IconLoop      = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 01-4 4H3"/></svg>
+const IconTrash     = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+const IconLink      = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path strokeLinecap="round" strokeLinejoin="round" d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+const IconFolder    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+const IconCopy      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+const IconGrid      = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+
+function Section({ icon, title, badge, children }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-white/40">{icon}</span>
+        <span className="text-xs font-semibold uppercase tracking-widest text-white/50">{title}</span>
+        {badge && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/30">{badge}</span>}
+      </div>
+      <div className="border-t border-white/5 pt-2">{children}</div>
+    </div>
+  )
+}
+
+function Slider({ label, value, min, max, step = 1, onChange }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-[10px] text-white/40">
+        <span>{label}</span><span className="font-mono text-white/60">{typeof value === 'number' ? value.toFixed(step < 1 ? 2 : 0) : value}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-full h-1 appearance-none rounded-full bg-white/10 accent-violet-400 cursor-pointer"
+      />
+    </div>
+  )
+}
+
+// ── Main UIPanel ──────────────────────────────────────────────────────────────
+function UIPanel({
+  onModelUpload, onVideoUpload, onExternalVideoAdd,
+  videoLoaded, ledMaterialFound,
+  videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
+  isPlaying, isLooping, onPlay, onPause, onToggleLoop,
+  sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
+  gridCellSize, onGridCellSizeChange,
+  cameraPresets, onSaveView, onGoToView, onDeletePreset,
+  onPublish, canPublish, isPublishing, publishStatus, publishError, publishedId,
+  projectName, onProjectNameChange, onOpenDashboard,
+}) {
+  const modelInputRef   = useRef(null)
+  const videoInputRef   = useRef(null)
+  const [presetName,    setPresetName]    = useState('')
+  const [copied,        setCopied]        = useState(null)
+  const [activeSection, setActiveSection] = useState('media')
+
+  // ── Video tab state ──────────────────────────────────────────────────────
+  const [videoInputMode, setVideoInputMode] = useState('upload')   // 'upload' | 'external'
+  const [externalUrlInput, setExternalUrlInput] = useState('')
+
+  const handleCopy = useCallback((text, key) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key); setTimeout(() => setCopied(null), 2000)
+    })
+  }, [])
+
+  const handleAddExternal = useCallback(() => {
+    const url = externalUrlInput.trim()
+    if (!url) return
+    onExternalVideoAdd(url, `External Clip ${videoPlaylist.length + 1}`)
+    setExternalUrlInput('')
+  }, [externalUrlInput, onExternalVideoAdd, videoPlaylist.length])
+
+  const sections = [
+    { id: 'media',   label: 'Media',    icon: <IconVideo /> },
+    { id: 'light',   label: 'Light',    icon: <IconSun /> },
+    { id: 'camera',  label: 'Camera',   icon: <IconCamera /> },
+    { id: 'publish', label: 'Publish',  icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m-7 7l7-7 7 7"/></svg> },
+  ]
+
+  const baseUrl = window.location.origin
+
+  return (
+    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
+      {/* Section tabs */}
+      <div className="flex gap-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-1">
+        {sections.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActiveSection(s.id)}
+            className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+              activeSection === s.id
+                ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20'
+                : 'text-white/30 hover:text-white/60 hover:bg-white/5'
+            }`}
+          >
+            {s.icon}
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Panel card */}
+      <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-4 space-y-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin">
+
+        {/* ── MEDIA ─────────────────────────────────────────────────────── */}
+        {activeSection === 'media' && (
+          <>
+            <Section icon={<IconUpload />} title="Stage Model">
+              <button
+                onClick={() => modelInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
+              >
+                <IconUpload /><span>Choose .glb / .gltf file</span>
+              </button>
+              <input ref={modelInputRef} type="file" accept=".glb,.gltf" className="hidden" onChange={e => onModelUpload(e.target.files?.[0])} />
+            </Section>
+
+            <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
+              {/* Video input mode tabs */}
+              <div className="flex gap-1 mb-3 bg-white/5 border border-white/10 rounded-lg p-0.5">
+                <button
+                  onClick={() => setVideoInputMode('upload')}
+                  className={`flex-1 py-1.5 rounded-md text-[11px] font-medium transition-all ${videoInputMode === 'upload' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20' : 'text-white/35 hover:text-white/60'}`}
+                >
+                  Upload File
+                </button>
+                <button
+                  onClick={() => setVideoInputMode('external')}
+                  className={`flex-1 py-1.5 rounded-md text-[11px] font-medium transition-all flex items-center justify-center gap-1 ${videoInputMode === 'external' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20' : 'text-white/35 hover:text-white/60'}`}
+                >
+                  <IconLink />External URL
+                </button>
+              </div>
+
+              {videoInputMode === 'upload' && (
+                <>
+                  <button
+                    onClick={() => videoInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
+                  >
+                    <IconVideo /><span>Add Video / Image</span>
+                  </button>
+                  <input ref={videoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => onVideoUpload(e.target.files?.[0])} />
+                </>
+              )}
+
+              {videoInputMode === 'external' && (
+                <div className="space-y-2">
+                  <div className="flex gap-1">
+                    <input
+                      type="url"
+                      value={externalUrlInput}
+                      onChange={e => setExternalUrlInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddExternal()}
+                      placeholder="https://cdn.example.com/video.mp4"
+                      className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white/80 placeholder-white/20 focus:outline-none focus:border-violet-500/50"
+                    />
+                    <button
+                      onClick={handleAddExternal}
+                      disabled={!externalUrlInput.trim()}
+                      className="px-3 py-2 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-medium disabled:opacity-40 transition-all"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-amber-400/60 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                    ⚠ External URLs must be CORS-enabled (e.g. Cloudinary, BunnyCDN) to work correctly on 3D objects.
+                  </p>
+                </div>
+              )}
+
+              {/* Playlist */}
+              {videoPlaylist.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {videoPlaylist.map(clip => (
+                    <button
+                      key={clip.id}
+                      onClick={() => onActivateVideo(clip)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
+                        clip.id === activeVideoId
+                          ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
+                          : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                      }`}
+                    >
+                      <span className="flex-1 truncate">{clip.name}</span>
+                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                        {clip.external && (
+                          <span className="text-[8px] font-bold tracking-widest bg-violet-500/20 border border-violet-500/30 text-violet-400 rounded px-1 py-0.5 uppercase">
+                            Ext
+                          </span>
+                        )}
+                        {clip.id === activeVideoId && (
+                          <span className="text-[9px] text-violet-400 uppercase">Active</span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={onClearPlaylist}
+                    className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
+                  >
+                    Clear Playlist
+                  </button>
+                </div>
+              )}
+
+              {/* Playback controls */}
+              {videoLoaded && (
+                <div className="flex gap-1 mt-2">
+                  <button onClick={isPlaying ? onPause : onPlay}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs transition-all"
+                  >
+                    {isPlaying ? <IconPause /> : <IconPlay />}
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <button onClick={onToggleLoop}
+                    className={`px-3 rounded-lg border text-xs transition-all ${isLooping ? 'bg-violet-500/20 border-violet-500/30 text-violet-300' : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60'}`}
+                  >
+                    <IconLoop />
+                  </button>
+                </div>
+              )}
+            </Section>
+
+            <Section icon={<IconGrid />} title="Grid Settings">
+              <Slider label="Cell Size" value={gridCellSize} min={0.25} max={5} step={0.25} onChange={onGridCellSizeChange} />
+            </Section>
+          </>
+        )}
+
+        {/* ── LIGHT ─────────────────────────────────────────────────────── */}
+        {activeSection === 'light' && (
+          <Section icon={<IconSun />} title="Sun Settings">
+            <div className="space-y-3">
+              <Slider label="Azimuth"   value={sunAzimuth}   min={0}   max={360} onChange={onSunAzimuthChange}   />
+              <Slider label="Elevation" value={sunElevation} min={0}   max={90}  onChange={onSunElevationChange} />
+              <Slider label="Intensity" value={sunIntensity} min={0}   max={5}   step={0.05} onChange={onSunIntensityChange} />
+            </div>
+          </Section>
+        )}
+
+        {/* ── CAMERA ────────────────────────────────────────────────────── */}
+        {activeSection === 'camera' && (
+          <Section icon={<IconCamera />} title="Camera Presets">
+            <div className="flex gap-1 mb-2">
+              <input
+                type="text"
+                value={presetName}
+                onChange={e => setPresetName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && presetName.trim()) { onSaveView(presetName.trim()); setPresetName('') } }}
+                placeholder="Preset name…"
+                className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/70 placeholder-white/25 focus:outline-none focus:border-violet-500/40"
+              />
+              <button
+                onClick={() => { if (presetName.trim()) { onSaveView(presetName.trim()); setPresetName('') } }}
+                className="px-3 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-medium transition-all"
+              >
+                Save
+              </button>
+            </div>
+            {cameraPresets.length === 0 ? (
+              <p className="text-center text-white/20 text-[11px] py-3">No presets yet. Position the camera, then save a view.</p>
+            ) : (
+              <div className="space-y-1">
+                {cameraPresets.map(p => (
+                  <div key={p.id} className="flex items-center gap-1">
+                    <button
+                      onClick={() => onGoToView(p)}
+                      className="flex-1 text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-violet-500/10 border border-white/10 hover:border-violet-500/20 text-white/60 hover:text-white/90 text-xs transition-all truncate"
+                    >
+                      {p.name}
+                    </button>
+                    <button onClick={() => onDeletePreset(p.id)} className="p-1.5 rounded-lg hover:bg-red-500/15 text-white/25 hover:text-red-400 transition-all">
+                      <IconTrash />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
+
+        {/* ── PUBLISH ───────────────────────────────────────────────────── */}
+        {activeSection === 'publish' && (
+          <Section icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m-7 7l7-7 7 7"/></svg>} title="Publish Project">
+            <div className="space-y-3">
+              {/* Dashboard Button */}
+              <button
+                onClick={onOpenDashboard}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 hover:bg-white/8 border border-white/10 text-white/50 hover:text-white/80 text-xs font-medium transition-all"
+              >
+                <IconFolder />
+                <span>🗂️ Manage Published Projects</span>
+              </button>
+
+              {/* Project Name (new projects only) */}
+              {!publishedId && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-white/35 uppercase tracking-widest">Project Name</label>
+                  <input
+                    type="text"
+                    value={projectName}
+                    onChange={e => onProjectNameChange(e.target.value)}
+                    placeholder="My Awesome Stage…"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 placeholder-white/20 focus:outline-none focus:border-violet-500/40"
+                  />
+                </div>
+              )}
+
+              {/* Publish button */}
+              <button
+                onClick={() => onPublish({ videoInputMode, externalVideoUrl: externalUrlInput })}
+                disabled={!canPublish || isPublishing}
+                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${
+                  canPublish && !isPublishing
+                    ? 'bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-400 hover:to-indigo-400 text-white shadow-lg shadow-violet-500/20'
+                    : 'bg-white/5 border border-white/10 text-white/20 cursor-not-allowed'
+                }`}
+              >
+                {isPublishing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Publishing…
+                  </span>
+                ) : publishedId ? '🔄 Re-Publish' : '🚀 TAO VẪN BỊ KHÙNG ĐỂ DÙNG'}
+              </button>
+
+              {/* Status messages */}
+              {publishStatus === 'success' && (
+                <div className="space-y-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                  <p className="text-emerald-400 text-xs font-semibold">✓ Published successfully!</p>
+                  <p className="text-white/40 text-[10px] font-mono break-all">ID: {publishedId}</p>
+
+                  <div className="space-y-1.5 mt-2">
+                    {[
+                      { label: 'Collab Link', path: `/collab/${publishedId}` },
+                      { label: 'View Link',   path: `/view/${publishedId}` },
+                    ].map(({ label, path }) => (
+                      <div key={path} className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>
+                        <button
+                          onClick={() => handleCopy(`${baseUrl}${path}`, label)}
+                          className="flex-1 flex items-center justify-between gap-1 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] text-white/50 hover:text-white/70 font-mono transition-all truncate"
+                        >
+                          <span className="truncate">{path}</span>
+                          {copied === label ? <span className="text-emerald-400 flex-shrink-0 text-[9px]">Copied!</span> : <IconCopy />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {publishStatus === 'error' && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1">
+                  <p className="text-red-400 text-xs font-semibold">✗ Publish failed</p>
+                  {publishError && <p className="text-red-400/60 text-[10px]">{publishError}</p>}
+                </div>
+              )}
+
+              {!canPublish && (
+                <p className="text-center text-white/20 text-[11px]">Upload a .glb stage model first to enable publishing.</p>
+              )}
+            </div>
+          </Section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default UIPanel
