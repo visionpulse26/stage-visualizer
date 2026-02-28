@@ -60,12 +60,14 @@ function EnvIntensityController({ intensity }) {
   return null
 }
 
-// ── Tone-mapping controller — ACES hardcoded for cinema quality ───────────────
+// ── Tone-mapping controller — ACES + clamped exposure for HDR control ────────
+// FIX 3 — toneMappingExposure = 0.8 compresses highlights so video content
+//          never clips to pure white before Bloom can evaluate it.
 function ToneMappingController() {
   const { gl } = useThree()
   useEffect(() => {
     gl.toneMapping         = THREE.ACESFilmicToneMapping
-    gl.toneMappingExposure = 1.0
+    gl.toneMappingExposure = 0.8
   }, [gl])
   return null
 }
@@ -95,12 +97,17 @@ function StageCanvas({
   showHdriBackground,   // boolean    show HDRI as visible background (Stealth = OFF)
   children,
 }) {
-  const hasEnv         = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
-  const resolvedBloom      = bloomStrength      ?? 0.3
-  const resolvedEnvInt     = envIntensity       ?? 1
-  const resolvedBgBlur     = bgBlur             ?? 0
-  const resolvedThreshold  = bloomThreshold     ?? 1.2
-  const resolvedShowBg     = showHdriBackground ?? false
+  const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
+  const resolvedBloom     = bloomStrength      ?? 0.3
+  const resolvedEnvInt    = envIntensity       ?? 1
+  const resolvedBgBlur    = bgBlur             ?? 0
+  const resolvedShowBg    = showHdriBackground ?? false
+
+  // FIX 5 — auto-raise threshold when LED is protected so bloom doesn't eat
+  //          into visual content. Manual slider still controls the floor value.
+  const resolvedThreshold = protectLed
+    ? Math.max(bloomThreshold ?? 1.2, 1.5)
+    : (bloomThreshold ?? 1.2)
 
   return (
     <div className="w-full h-full relative bg-[#0a0a0c]">
@@ -111,7 +118,7 @@ function StageCanvas({
           alpha:                 false,
           preserveDrawingBuffer: true,
           toneMapping:           THREE.ACESFilmicToneMapping,
-          toneMappingExposure:   1.0,
+          toneMappingExposure:   0.8,   // FIX 3 — clamp HDR highlights
         }}
         shadows
       >

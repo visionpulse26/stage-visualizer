@@ -3,11 +3,11 @@ import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
 
-const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
+const LED_MATERIAL_NAME  = 'LED_MASTER_MAT'
+const EMISSIVE_TARGET    = 1.5   // final emissiveIntensity in glow mode
+const EMISSIVE_FADE_SECS = 0.5   // seconds to reach full brightness on clip swap
 
 // ── LED screen light sources ──────────────────────────────────────────────────
-// Renders a PointLight at each LED screen position so the screens genuinely
-// cast colored light onto the surrounding stage geometry.
 function LedLights({ positions, color, active }) {
   if (!active || positions.length === 0) return null
   return (
@@ -30,20 +30,23 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
 
-  // Positions of LED mesh centres in world space — used to spawn lights
   const [ledPositions, setLedPositions] = useState([])
-  // Sampled average color of the current LED content
-  const [ledColor, setLedColor]         = useState('#ffffff')
+  const [ledColor,     setLedColor]     = useState('#ffffff')
+
+  // Live refs to glow-mode LED materials — updated by useFrame for fade-in
+  const ledMaterialsRef    = useRef([])
+  const emissiveCurrentRef = useRef(0)
 
   const clonedScene = useMemo(() => gltf.scene.clone(true), [gltf])
 
-  // ── Video texture (updates every frame) ──────────────────────────────────
+  // ── Video texture ─────────────────────────────────────────────────────────
   const videoTexture = useMemo(() => {
     if (!videoElement) return null
     const t = new THREE.VideoTexture(videoElement)
     t.minFilter   = THREE.LinearFilter
     t.magFilter   = THREE.LinearFilter
-    t.format      = THREE.RGBAFormat
+    // FIX 2 — explicit sRGB color space prevents washed-out / over-saturated colors
+    // format is intentionally omitted — Three.js r138+ auto-detects video format
     t.colorSpace  = THREE.SRGBColorSpace
     t.flipY       = false
     t.wrapS       = THREE.ClampToEdgeWrapping
@@ -52,7 +55,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     return t
   }, [videoElement])
 
-  // ── Image texture (static) ────────────────────────────────────────────────
+  // ── Image texture ─────────────────────────────────────────────────────────
   const imageTexture = useMemo(() => {
     if (!activeImageUrl) return null
     const t = new THREE.TextureLoader().load(activeImageUrl)
@@ -65,14 +68,22 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
 
   const activeTexture = videoTexture || imageTexture
 
+  // FIX 4 — reset fade counter every time the active texture changes (new clip)
+  const prevTextureRef = useRef(null)
+  useEffect(() => {
+    if (activeTexture && activeTexture !== prevTextureRef.current) {
+      prevTextureRef.current    = activeTexture
+      emissiveCurrentRef.current = 0   // restart lerp from black
+    }
+  }, [activeTexture])
+
   // ── Sample average color from active video each second ───────────────────
   const colorSampleRef = useRef(null)
   useEffect(() => {
     if (!videoElement) { setLedColor('#ffffff'); return }
 
-    const canvas  = document.createElement('canvas')
-    canvas.width  = 16
-    canvas.height = 16
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 16
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
     const sample = () => {
@@ -80,15 +91,11 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
       try {
         ctx.drawImage(videoElement, 0, 0, 16, 16)
         const data = ctx.getImageData(0, 0, 16, 16).data
-        let r = 0, g = 0, b = 0, count = 0
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i]; g += data[i + 1]; b += data[i + 2]; count++
-        }
-        r = Math.round(r / count); g = Math.round(g / count); b = Math.round(b / count)
-        // Boost saturation so the light color is vivid, not washed out
-        const max = Math.max(r, g, b, 1)
-        const boost = 255 / max
-        setLedColor(`rgb(${Math.min(255, r * boost)},${Math.min(255, g * boost)},${Math.min(255, b * boost)})`)
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++ }
+        r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
+        const boost = 255 / Math.max(r, g, b, 1)
+        setLedColor(`rgb(${Math.min(255,r*boost)},${Math.min(255,g*boost)},${Math.min(255,b*boost)})`)
       } catch (_) {}
     }
 
@@ -96,7 +103,6 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     return () => clearInterval(colorSampleRef.current)
   }, [videoElement])
 
-  // When showing a static image, sample its dominant color once
   useEffect(() => {
     if (!activeImageUrl) return
     const img = new Image()
@@ -104,28 +110,26 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas')
-        canvas.width = 8; canvas.height = 8
+        canvas.width = canvas.height = 8
         const ctx = canvas.getContext('2d', { willReadFrequently: true })
         ctx.drawImage(img, 0, 0, 8, 8)
         const data = ctx.getImageData(0, 0, 8, 8).data
-        let r = 0, g = 0, b = 0, count = 0
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i]; g += data[i + 1]; b += data[i + 2]; count++
-        }
-        r = Math.round(r / count); g = Math.round(g / count); b = Math.round(b / count)
-        const max = Math.max(r, g, b, 1)
-        const boost = 255 / max
-        setLedColor(`rgb(${Math.min(255, r * boost)},${Math.min(255, g * boost)},${Math.min(255, b * boost)})`)
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++ }
+        r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
+        const boost = 255 / Math.max(r, g, b, 1)
+        setLedColor(`rgb(${Math.min(255,r*boost)},${Math.min(255,g*boost)},${Math.min(255,b*boost)})`)
       } catch (_) {}
     }
     img.src = activeImageUrl
   }, [activeImageUrl])
 
-  // ── Material pass — LED + stage materials ─────────────────────────────────
+  // ── Material pass — LED + stage ───────────────────────────────────────────
   useEffect(() => {
     if (!clonedScene) return
 
-    let found     = false
+    ledMaterialsRef.current = []   // clear stale material refs before rebuilding
+    let found = false
     const newLedPositions = []
 
     clonedScene.traverse((child) => {
@@ -138,41 +142,40 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
         if (!mat) return
 
         if (mat.name === LED_MATERIAL_NAME) {
-          // ── LED screen ──────────────────────────────────────────────────
           found = true
 
-          // Collect world-space centre for the light source
           child.updateWorldMatrix(true, false)
           const box    = new THREE.Box3().setFromObject(child)
           const centre = box.getCenter(new THREE.Vector3())
-          // Push light slightly in front of the screen face (toward viewer)
           newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
 
           if (activeTexture) {
             let ledMat
 
             if (protectLed) {
-              // PROTECTED MODE — MeshBasicMaterial bypasses ALL lighting,
-              // environment maps, ACES tone mapping and exposure.
-              // Colors are pixel-perfect to the original video/image file.
+              // PROTECTED — MeshBasicMaterial: zero lighting, zero tone-mapping, pixel-perfect
               ledMat = new THREE.MeshBasicMaterial({
                 map:        activeTexture,
                 side:       THREE.DoubleSide,
                 toneMapped: false,
               })
             } else {
-              // GLOW MODE — emissive so Bloom radiates light from the screen.
-              // Affected by environment and tone mapping.
+              // GLOW MODE
+              // FIX 1 — color: black zeroes the diffuse (map) channel so only
+              //          the emissive channel contributes. Prevents double-exposure.
+              // FIX 4 — emissiveIntensity starts at 0; useFrame lerps it to target.
               ledMat = new THREE.MeshStandardMaterial({
-                map:               activeTexture,
+                color:             new THREE.Color(0, 0, 0),
+                map:               activeTexture,   // kept for reflections but muted by black color
                 emissive:          new THREE.Color(1, 1, 1),
                 emissiveMap:       activeTexture,
-                emissiveIntensity: 1.5,
+                emissiveIntensity: 0,               // fade starts here
                 roughness:         0,
                 metalness:         0,
                 side:              THREE.DoubleSide,
                 toneMapped:        true,
               })
+              ledMaterialsRef.current.push(ledMat) // register for fade-in
             }
 
             ledMat.name = LED_MATERIAL_NAME
@@ -181,15 +184,11 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
           }
 
         } else {
-          // ── Stage / structural mesh ─────────────────────────────────────
-          // Dark metallic finish so LED light and env map reflect correctly.
-          // We reduce roughness and add metalness while keeping the original
-          // color/map so the model still looks like the artist intended.
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-            mat.roughness        = Math.min(mat.roughness ?? 1, 0.25)
-            mat.metalness        = Math.max(mat.metalness ?? 0, 0.45)
-            mat.envMapIntensity  = 2.5
-            mat.needsUpdate      = true
+            mat.roughness       = Math.min(mat.roughness ?? 1, 0.25)
+            mat.metalness       = Math.max(mat.metalness ?? 0, 0.45)
+            mat.envMapIntensity = 2.5
+            mat.needsUpdate     = true
           }
         }
       })
@@ -198,7 +197,6 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     setLedPositions(newLedPositions)
     onLedMaterialStatus(found)
 
-    // Centre the model
     const box    = new THREE.Box3().setFromObject(clonedScene)
     const center = box.getCenter(new THREE.Vector3())
     const size   = box.getSize(new THREE.Vector3())
@@ -207,21 +205,25 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
 
   }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed])
 
-  // ── Keep video texture refreshed every frame ──────────────────────────────
-  useFrame(() => {
+  // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
+  useFrame((_, delta) => {
+    // Keep video texture current
     if (videoTextureRef.current && videoElement && !videoElement.paused) {
       videoTextureRef.current.needsUpdate = true
+    }
+
+    // FIX 4 — lerp emissiveIntensity 0 → EMISSIVE_TARGET over EMISSIVE_FADE_SECS
+    if (ledMaterialsRef.current.length > 0) {
+      const step = (EMISSIVE_TARGET / EMISSIVE_FADE_SECS) * delta
+      emissiveCurrentRef.current = Math.min(emissiveCurrentRef.current + step, EMISSIVE_TARGET)
+      ledMaterialsRef.current.forEach(m => { m.emissiveIntensity = emissiveCurrentRef.current })
     }
   })
 
   return (
     <>
       <primitive object={clonedScene} />
-      <LedLights
-        positions={ledPositions}
-        color={ledColor}
-        active={!!activeTexture}
-      />
+      <LedLights positions={ledPositions} color={ledColor} active={!!activeTexture} />
     </>
   )
 }
