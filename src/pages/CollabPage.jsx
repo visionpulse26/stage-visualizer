@@ -22,10 +22,9 @@ function CollabPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Scene config (loaded from DB, fully editable) ────────────────────────
+  // ── Scene config (loaded from DB, local-only mutations — never written back) ─
   const [hdriPreset,         setHdriPreset]         = useState('none')
-  const [hdriFile,           setHdriFile]           = useState(null)   // local File object (never uploaded)
-  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview
+  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview only
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -45,11 +44,6 @@ function CollabPage() {
   const videoRef     = useRef(null)
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
-
-  // ── Sync state ───────────────────────────────────────────────────────────
-  const [isSyncing,  setIsSyncing]  = useState(false)
-  const [syncStatus, setSyncStatus] = useState(null)   // 'success' | 'error' | null
-  const [syncError,  setSyncError]  = useState(null)
 
   // Track blob URLs created locally so we can revoke them on unmount (memory safety)
   const localBlobUrlsRef = useRef([])
@@ -197,18 +191,16 @@ function CollabPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
-  // ── Custom HDRI — local preview only, NOT uploaded to Supabase ───────────
+  // ── Custom HDRI — local preview only, blob URL, never written to Supabase ──
   const handleCustomHdriUpload = useCallback((file) => {
     if (!file) return
-    // Revoke previous local HDRI blob if there was one
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
     const url = URL.createObjectURL(file)
     localBlobUrlsRef.current.push(url)
-    setHdriFile(file)
     setCustomHdriUrl(url)
-    setHdriPreset('none')  // custom overrides preset visually
+    setHdriPreset('none')
   }, [customHdriUrl])
 
   // ── Camera navigation (read-only) ────────────────────────────────────────
@@ -229,64 +221,6 @@ function CollabPage() {
     a.click()
   }, [projectId])
 
-  // ── Sync Environment to Cloud ─────────────────────────────────────────────
-  // Saves the current scene_config to the Supabase project row.
-  // blob: HDRI URLs are excluded — they cannot be persisted server-side.
-  const handleSyncToCloud = useCallback(async () => {
-    setIsSyncing(true); setSyncStatus(null); setSyncError(null)
-
-    try {
-      const az = (sunAzimuth   * Math.PI) / 180
-      const el = (sunElevation * Math.PI) / 180
-      const d  = 15
-
-      // Only persist the customHdriUrl if it's a real cloud URL (not a local blob)
-      const persistedHdriUrl = customHdriUrl && !customHdriUrl.startsWith('blob:')
-        ? customHdriUrl
-        : null
-
-      const scene_config = {
-        floorReflection:    true,
-        hdriPreset,
-        customHdriUrl:      persistedHdriUrl,
-        envIntensity,
-        bgBlur,
-        showHdriBackground,
-        bloomStrength,
-        bloomThreshold,
-        protectLed,
-        sunIntensity,
-        sunPosition: [
-          d * Math.cos(el) * Math.sin(az),
-          d * Math.sin(el),
-          d * Math.cos(el) * Math.cos(az),
-        ],
-      }
-
-      const { error } = await supabase
-        .from('projects')
-        .update({ scene_config })
-        .eq('id', projectId)
-
-      if (error) throw new Error(error.message)
-
-      setSyncStatus('success')
-      // Auto-clear the success message after 4 s
-      setTimeout(() => setSyncStatus(prev => prev === 'success' ? null : prev), 4000)
-    } catch (err) {
-      setSyncStatus('error')
-      setSyncError(err.message)
-    } finally {
-      setIsSyncing(false)
-    }
-  }, [
-    projectId,
-    sunAzimuth, sunElevation, sunIntensity,
-    hdriPreset, customHdriUrl,
-    envIntensity, bgBlur, showHdriBackground,
-    bloomStrength, bloomThreshold, protectLed,
-  ])
-
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
     const az = (sunAzimuth   * Math.PI) / 180
@@ -294,9 +228,6 @@ function CollabPage() {
     const d  = 15
     return [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)]
   }, [sunAzimuth, sunElevation])
-
-  // Whether the current customHdriUrl is a local blob (can't be synced)
-  const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
 
   if (projectNotFound) {
     return <ProjectNotFound projectId={projectId} />
@@ -357,12 +288,6 @@ function CollabPage() {
           onGoToView={handleGoToView}
           // ── Screenshot ───────────────────────────────────────────────────
           onScreenshot={handleScreenshot}
-          // ── Cloud Sync ───────────────────────────────────────────────────
-          onSyncToCloud={handleSyncToCloud}
-          isSyncing={isSyncing}
-          syncStatus={syncStatus}
-          syncError={syncError}
-          hasLocalHdri={hasLocalHdri}
         />
 
         <TopBar role="Collaborator" color="cyan" />

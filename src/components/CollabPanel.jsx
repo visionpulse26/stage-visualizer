@@ -12,7 +12,6 @@ const IconGlobe   = () => <svg className="w-4 h-4" fill="none" stroke="currentCo
 const IconSparkle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36-6.36-.7.7M6.34 17.66l-.7.7M17.66 17.66l-.7-.7M6.34 6.34l-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
 const IconEye     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
 const IconShot    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-const IconCloud   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 14v-4m0 0l-2 2m2-2 2 2"/></svg>
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 function Section({ icon, title, badge, children }) {
@@ -91,9 +90,6 @@ function CollabPanel({
   cameraPresets, onGoToView,
   // ── Screenshot ─────────────────────────────────────────────────────────────
   onScreenshot,
-  // ── Sync to cloud ──────────────────────────────────────────────────────────
-  onSyncToCloud, isSyncing, syncStatus, syncError,
-  hasLocalHdri,   // true if customHdriUrl is a blob (can't be synced)
 }) {
   const [activeSection, setActiveSection] = useState('media')
   const fileInputRef = useRef(null)
@@ -107,11 +103,19 @@ function CollabPanel({
     { id: 'media',  label: 'Media',  icon: <IconVideo />  },
     { id: 'light',  label: 'Light',  icon: <IconSun />    },
     { id: 'camera', label: 'Camera', icon: <IconCamera /> },
-    { id: 'sync',   label: 'Sync',   icon: <IconCloud />  },
   ]
 
   return (
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
+
+      {/* ── Sandbox Mode badge ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20">
+        <span className="text-amber-400 text-xs leading-none flex-shrink-0">⚡</span>
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold text-amber-300/80 uppercase tracking-widest leading-tight">Sandbox Mode</p>
+          <p className="text-[9px] text-amber-400/40 leading-tight mt-0.5 truncate">Changes are temporary — nothing is saved</p>
+        </div>
+      </div>
 
       {/* Section tabs */}
       <div className="flex gap-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-1">
@@ -157,7 +161,7 @@ function CollabPanel({
                 onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
               />
               <p className="text-[10px] text-white/25 text-center mt-1.5 leading-snug">
-                Files are loaded locally — not uploaded to any server.
+                Local only — files disappear when you close this tab.
               </p>
 
               {videoPlaylist.length > 0 && (
@@ -273,7 +277,7 @@ function CollabPanel({
                   </div>
                 </div>
 
-                {/* Custom HDRI — local blob preview only; blob URLs cannot be synced */}
+                {/* Custom HDRI — local preview only, sandbox session */}
                 <div>
                   <button
                     onClick={() => hdriInputRef.current?.click()}
@@ -288,11 +292,9 @@ function CollabPanel({
                     className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleHdriFile(f); e.target.value = '' }}
                   />
-                  {hasLocalHdri && (
-                    <p className="text-[9px] text-amber-400/60 mt-1.5 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
-                      ⚠ Local HDRI is preview-only — it cannot be Synced to Cloud. Use a built-in preset for persistence.
-                    </p>
-                  )}
+                  <p className="text-[9px] text-amber-400/50 mt-1.5 leading-snug">
+                    ⚡ Local preview only — resets when you close this tab.
+                  </p>
                 </div>
 
                 <Slider label="Env Intensity" value={envIntensity ?? 1} min={0} max={3} step={0.05} onChange={onEnvIntensityChange} />
@@ -380,77 +382,6 @@ function CollabPanel({
             <p className="text-[9px] text-white/20 mt-3 leading-snug">
               Collab view is read-only for camera presets. Use Free Camera to orbit manually.
             </p>
-          </Section>
-        )}
-
-        {/* ── SYNC TO CLOUD ─────────────────────────────────────────────── */}
-        {activeSection === 'sync' && (
-          <Section
-            icon={<IconCloud />}
-            title="Sync to Cloud"
-          >
-            <div className="space-y-3">
-              <p className="text-[10px] text-white/35 leading-snug">
-                Push your current Environment & Lighting settings to Supabase so the Admin and all View clients see your changes immediately.
-              </p>
-
-              {/* What gets synced */}
-              <div className="bg-white/3 border border-white/8 rounded-xl px-3 py-2.5 space-y-1">
-                <p className="text-[10px] text-white/50 font-semibold mb-1.5">What gets synced:</p>
-                {[
-                  'Sun position & intensity',
-                  'HDRI preset & intensity',
-                  'Background visibility & blur',
-                  'Bloom strength & threshold',
-                  'Protect LED Colors toggle',
-                ].map(item => (
-                  <p key={item} className="text-[9px] text-white/30 flex items-center gap-1.5">
-                    <span className="text-cyan-400/60">✓</span> {item}
-                  </p>
-                ))}
-                {hasLocalHdri && (
-                  <p className="text-[9px] text-amber-400/60 flex items-center gap-1.5 mt-1">
-                    <span>⚠</span> Local HDRI skipped (blob URL)
-                  </p>
-                )}
-              </div>
-
-              {/* Sync button */}
-              <button
-                onClick={onSyncToCloud}
-                disabled={isSyncing}
-                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${
-                  isSyncing
-                    ? 'bg-white/5 border border-white/10 text-white/20 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-white shadow-lg shadow-cyan-500/20'
-                }`}
-              >
-                {isSyncing ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Syncing…
-                  </span>
-                ) : '☁ Sync Environment to Cloud'}
-              </button>
-
-              {/* Status feedback */}
-              {syncStatus === 'success' && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                  <p className="text-emerald-400 text-xs font-semibold">✓ Scene config synced!</p>
-                  <p className="text-emerald-400/50 text-[10px] mt-0.5">
-                    Admin & View clients will see your environment on next load.
-                  </p>
-                </div>
-              )}
-
-              {syncStatus === 'error' && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1">
-                  <p className="text-red-400 text-xs font-semibold">✗ Sync failed</p>
-                  {syncError && <p className="text-red-400/60 text-[10px]">{syncError}</p>}
-                  <p className="text-red-400/40 text-[10px]">Check Supabase RLS — ensure UPDATE is allowed.</p>
-                </div>
-              )}
-            </div>
           </Section>
         )}
 
