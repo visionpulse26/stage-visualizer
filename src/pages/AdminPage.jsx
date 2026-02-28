@@ -58,9 +58,10 @@ function AdminPage() {
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [hdriFile,      setHdriFile]      = useState(null)
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
-  const [envIntensity,  setEnvIntensity]  = useState(1)
-  const [bgBlur,        setBgBlur]        = useState(0)
-  const [bloomStrength, setBloomStrength] = useState(0.3)
+  const [envIntensity,       setEnvIntensity]       = useState(1)
+  const [bgBlur,             setBgBlur]             = useState(0)
+  const [showHdriBackground, setShowHdriBackground] = useState(false)
+  const [bloomStrength,      setBloomStrength]      = useState(0.3)
 
   // ── Visual integrity — bloom threshold, LED color protection ─────────────
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
@@ -224,9 +225,10 @@ function AdminPage() {
     if (cfg) {
       setHdriPreset(cfg.hdriPreset      ?? 'none')
       setCustomHdriUrl(cfg.customHdriUrl   ?? null)
-      setEnvIntensity(cfg.envIntensity    ?? 1)
-      setBgBlur(cfg.bgBlur              ?? 0)
-      setBloomStrength(cfg.bloomStrength  ?? 0.3)
+      setEnvIntensity(cfg.envIntensity          ?? 1)
+      setBgBlur(cfg.bgBlur                    ?? 0)
+      setShowHdriBackground(cfg.showHdriBackground ?? false)
+      setBloomStrength(cfg.bloomStrength        ?? 0.3)
       setBloomThreshold(cfg.bloomThreshold ?? 1.2)
       setProtectLed(cfg.protectLed        ?? true)
       setHdriFile(null)
@@ -302,9 +304,10 @@ function AdminPage() {
         floorReflection: true,
         hdriPreset:      hdriPreset,
         customHdriUrl:   finalHdriUrl,
-        envIntensity:    envIntensity,
-        bgBlur:          bgBlur,
-        bloomStrength:   bloomStrength,
+        envIntensity:        envIntensity,
+        bgBlur:              bgBlur,
+        showHdriBackground:  showHdriBackground,
+        bloomStrength:       bloomStrength,
         sunPosition:     [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
         bloomThreshold:  bloomThreshold,
         protectLed:      protectLed,
@@ -355,6 +358,7 @@ function AdminPage() {
         customHdriUrl={customHdriUrl}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
+        showHdriBackground={showHdriBackground}
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
@@ -393,8 +397,9 @@ function AdminPage() {
           onOpenDashboard={() => setIsDashboardOpen(true)}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           onCustomHdriUpload={handleCustomHdriUpload}
-          envIntensity={envIntensity}      onEnvIntensityChange={setEnvIntensity}
-          bgBlur={bgBlur}                  onBgBlurChange={setBgBlur}
+          envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
+          bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
+          showHdriBackground={showHdriBackground}   onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}
           bloomStrength={bloomStrength}    onBloomStrengthChange={setBloomStrength}
           bloomThreshold={bloomThreshold}  onBloomThresholdChange={setBloomThreshold}
           protectLed={protectLed}          onProtectLedToggle={() => setProtectLed(v => !v)}

@@ -61,6 +61,7 @@ function UIPanel({
   onCustomHdriUpload,
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
+  showHdriBackground, onShowHdriBackgroundToggle,
   bloomStrength, onBloomStrengthChange,
   // ── Visual integrity ──────────────────────────────────────────────────────
   bloomThreshold, onBloomThresholdChange,
@@ -307,8 +308,34 @@ function UIPanel({
                   />
                 </div>
 
-                <Slider label="Env Intensity" value={envIntensity ?? 1}  min={0} max={3}   step={0.05} onChange={onEnvIntensityChange} />
-                <Slider label="BG Blur"       value={bgBlur      ?? 0}  min={0} max={1}   step={0.01} onChange={onBgBlurChange}       />
+                <Slider label="Env Intensity" value={envIntensity ?? 1} min={0} max={3} step={0.05} onChange={onEnvIntensityChange} />
+
+                {/* Show HDRI Background toggle */}
+                <div className="flex items-center justify-between pt-0.5">
+                  <div>
+                    <p className="text-[10px] text-white/40">Show HDRI Background</p>
+                    <p className="text-[9px] text-white/20 mt-0.5">
+                      {showHdriBackground ? 'Visible — HDRI shown as backdrop' : 'Stealth — black bg, HDRI lights only'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={onShowHdriBackgroundToggle}
+                    className={`relative w-9 h-5 rounded-full border transition-all flex-shrink-0 ml-2 ${
+                      showHdriBackground
+                        ? 'bg-violet-500/30 border-violet-500/50'
+                        : 'bg-white/5 border-white/15'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                      showHdriBackground ? 'left-[18px] bg-violet-400' : 'left-0.5 bg-white/30'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* BG Blur — only relevant when background is visible */}
+                {showHdriBackground && (
+                  <Slider label="BG Blur" value={bgBlur ?? 0} min={0} max={1} step={0.01} onChange={onBgBlurChange} />
+                )}
               </div>
             </Section>
 

@@ -27,9 +27,10 @@ function CollabPage() {
   // ── Scene config (loaded from scene_config column) ────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
-  const [envIntensity,  setEnvIntensity]  = useState(1)
-  const [bgBlur,        setBgBlur]        = useState(0)
-  const [bloomStrength, setBloomStrength] = useState(0.3)
+  const [envIntensity,       setEnvIntensity]       = useState(1)
+  const [bgBlur,             setBgBlur]             = useState(0)
+  const [showHdriBackground, setShowHdriBackground] = useState(false)
+  const [bloomStrength,      setBloomStrength]      = useState(0.3)
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
   const [protectLed,     setProtectLed]     = useState(true)
 
@@ -111,9 +112,10 @@ function CollabPage() {
         if (cfg) {
           setHdriPreset(cfg.hdriPreset       ?? 'none')
           setCustomHdriUrl(cfg.customHdriUrl ?? null)
-          setEnvIntensity(cfg.envIntensity   ?? 1)
-          setBgBlur(cfg.bgBlur               ?? 0)
-          setBloomStrength(cfg.bloomStrength ?? 0.3)
+          setEnvIntensity(cfg.envIntensity          ?? 1)
+          setBgBlur(cfg.bgBlur                    ?? 0)
+          setShowHdriBackground(cfg.showHdriBackground ?? false)
+          setBloomStrength(cfg.bloomStrength        ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold ?? 1.2)
           setProtectLed(cfg.protectLed        ?? true)
         }
@@ -222,6 +224,7 @@ function CollabPage() {
         customHdriUrl={customHdriUrl}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
+        showHdriBackground={showHdriBackground}
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}

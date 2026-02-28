@@ -90,15 +90,17 @@ function StageCanvas({
   envIntensity,
   bgBlur,
   bloomStrength,
-  bloomThreshold,  // 0.0 – 2.0  only pixels above this luminance bloom
-  protectLed,      // boolean    isolate LED material from env/tone mapping
+  bloomThreshold,       // 0.0 – 2.0  only pixels above this luminance bloom
+  protectLed,           // boolean    isolate LED material from env/tone mapping
+  showHdriBackground,   // boolean    show HDRI as visible background (Stealth = OFF)
   children,
 }) {
   const hasEnv         = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
-  const resolvedBloom      = bloomStrength ?? 0.3
-  const resolvedEnvInt     = envIntensity  ?? 1
-  const resolvedBgBlur     = bgBlur        ?? 0
-  const resolvedThreshold  = bloomThreshold ?? 1.2
+  const resolvedBloom      = bloomStrength      ?? 0.3
+  const resolvedEnvInt     = envIntensity       ?? 1
+  const resolvedBgBlur     = bgBlur             ?? 0
+  const resolvedThreshold  = bloomThreshold     ?? 1.2
+  const resolvedShowBg     = showHdriBackground ?? false
 
   return (
     <div className="w-full h-full relative bg-[#0a0a0c]">
@@ -116,16 +118,24 @@ function StageCanvas({
         {/* ACES filmic tone mapping — hardcoded for cinema quality */}
         <ToneMappingController />
 
-        <color attach="background" args={['#0a0a0c']} />
+        {/* Background — black in stealth mode, overridden by HDRI when visible */}
+        <color attach="background" args={['#000000']} />
         <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
 
-        {/* HDRI Environment */}
+        {/* HDRI Environment
+            showHdriBackground=true  → HDRI is visible background + lighting
+            showHdriBackground=false → HDRI lights/reflects scene only, bg stays black */}
         {hasEnv && (
           <>
-            {customHdriUrl
-              ? <Environment files={customHdriUrl} background backgroundBlurriness={resolvedBgBlur} />
-              : <Environment preset={hdriPreset}   background backgroundBlurriness={resolvedBgBlur} />
-            }
+            {resolvedShowBg ? (
+              customHdriUrl
+                ? <Environment files={customHdriUrl} background backgroundBlurriness={resolvedBgBlur} />
+                : <Environment preset={hdriPreset}   background backgroundBlurriness={resolvedBgBlur} />
+            ) : (
+              customHdriUrl
+                ? <Environment files={customHdriUrl} />
+                : <Environment preset={hdriPreset}   />
+            )}
             <EnvIntensityController intensity={resolvedEnvInt} />
           </>
         )}
