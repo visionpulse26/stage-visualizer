@@ -67,6 +67,9 @@ function AdminPage() {
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
   const [protectLed,     setProtectLed]     = useState(true)
 
+  // ── HDRI cloud upload ─────────────────────────────────────────────────────
+  const [isUploadingHdri, setIsUploadingHdri] = useState(false)
+
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
 
@@ -78,6 +81,17 @@ function AdminPage() {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     }
   }, [])
+
+  // Revoke HDRI blob URL whenever it changes (new file selected) or on unmount.
+  // handleCustomHdriUpload already revokes synchronously; this covers edge cases
+  // such as navigating away mid-session or hot-reloading in dev.
+  useEffect(() => {
+    return () => {
+      if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+      }
+    }
+  }, [customHdriUrl])
 
   // ── Video helpers ────────────────────────────────────────────────────────
   const activateVideo = useCallback((id, url) => {
@@ -153,17 +167,57 @@ function AdminPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
-  // ── Custom HDRI upload (blob preview; uploaded to Supabase on publish) ───
+  // ── Custom HDRI — always loaded from local RAM (blob URL), never auto-uploaded ──
+  // The blob URL is passed directly to <Environment files={blobUrl} />, which
+  // bypasses Supabase Storage entirely and avoids all CORS issues.
   const handleCustomHdriUpload = useCallback((file) => {
     if (!file) return
-    // Revoke previous blob URL if any
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
     const url = URL.createObjectURL(file)
     setHdriFile(file)
     setCustomHdriUrl(url)
-    setHdriPreset('none') // custom overrides preset
+    setHdriPreset('none')
+  }, [customHdriUrl])
+
+  // Explicit opt-in: upload the local HDRI to Supabase so it becomes permanent
+  // and visible to Collab/View clients. Requires an existing published project.
+  const handleUploadHdriToCloud = useCallback(async () => {
+    if (!hdriFile || !publishedId) return
+    setIsUploadingHdri(true)
+    try {
+      const ext      = hdriFile.name.split('.').pop() || 'hdr'
+      const hdriPath = `${publishedId}/environment.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('projects')
+        .upload(hdriPath, hdriFile, { upsert: true })
+      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`)
+
+      const { data: hdriPublic } = supabase.storage.from('projects').getPublicUrl(hdriPath)
+      const cloudUrl = hdriPublic.publicUrl
+
+      // Revoke the blob — we now have a permanent URL
+      if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+      }
+      setCustomHdriUrl(cloudUrl)
+      setHdriFile(null)
+    } catch (err) {
+      console.error('HDRI cloud upload error:', err)
+      alert(`HDRI upload failed: ${err.message}`)
+    } finally {
+      setIsUploadingHdri(false)
+    }
+  }, [hdriFile, publishedId, customHdriUrl])
+
+  // Clear the active custom HDRI (local or cloud) — returns to preset picker
+  const handleClearHdri = useCallback(() => {
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(null)
+    setHdriFile(null)
   }, [customHdriUrl])
 
   // ── Stage model upload ───────────────────────────────────────────────────
@@ -288,19 +342,12 @@ function AdminPage() {
         }
       }
 
-      // 3. Upload custom HDRI file if a new one was chosen locally
-      let finalHdriUrl = customHdriUrl && !customHdriUrl.startsWith('blob:') ? customHdriUrl : null
-      if (hdriFile) {
-        const ext      = hdriFile.name.split('.').pop() || 'hdr'
-        const hdriPath = `${projectId}/environment.${ext}`
-        const { error: hdriErr } = await supabase.storage.from('projects').upload(hdriPath, hdriFile, { upsert: true })
-        if (hdriErr) throw new Error(`HDRI upload failed: ${hdriErr.message}`)
-        const { data: hdriPublic } = supabase.storage.from('projects').getPublicUrl(hdriPath)
-        finalHdriUrl = hdriPublic.publicUrl
-        // Swap blob URL → permanent cloud URL
-        setCustomHdriUrl(finalHdriUrl)
-        setHdriFile(null)
-      }
+      // 3. HDRI is local-only by default.
+      //    Blob URLs cannot be persisted — only include a URL if it was explicitly
+      //    uploaded to cloud via "Upload to Cloud" in the Environment panel.
+      const finalHdriUrl = (customHdriUrl && !customHdriUrl.startsWith('blob:'))
+        ? customHdriUrl
+        : null
 
       // 4. Build scene_config snapshot
       // NOTE: Requires a `scene_config` JSONB column in your Supabase `projects` table.
@@ -347,8 +394,12 @@ function AdminPage() {
       setIsPublishing(false)
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
-      hdriFile, hdriPreset, customHdriUrl, envIntensity, bgBlur, bloomStrength, sunAzimuth, sunElevation,
+      hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
       bloomThreshold, protectLed])
+
+  // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
+  const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
+  const hasCloudHdri = !!(customHdriUrl && !customHdriUrl.startsWith('blob:'))
 
   return (
     <div className="w-full h-full relative">
@@ -405,6 +456,12 @@ function AdminPage() {
           onOpenDashboard={() => setIsDashboardOpen(true)}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           onCustomHdriUpload={handleCustomHdriUpload}
+          hasLocalHdri={hasLocalHdri}
+          hasCloudHdri={hasCloudHdri}
+          isUploadingHdri={isUploadingHdri}
+          onUploadHdriToCloud={handleUploadHdriToCloud}
+          onClearHdri={handleClearHdri}
+          canUploadHdriToCloud={!!(hdriFile && publishedId)}
           envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}   onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}

@@ -59,6 +59,10 @@ function UIPanel({
   // ── Scene config ─────────────────────────────────────────────────────────
   hdriPreset, onHdriPresetChange,
   onCustomHdriUpload,
+  // HDRI status flags
+  hasLocalHdri, hasCloudHdri,
+  isUploadingHdri, onUploadHdriToCloud, onClearHdri,
+  canUploadHdriToCloud,   // true only when hdriFile + publishedId both exist
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -291,21 +295,76 @@ function UIPanel({
                   </div>
                 </div>
 
-                {/* Custom HDRI upload */}
-                <div>
+                {/* Custom HDRI — local file picker */}
+                <div className="space-y-2">
                   <button
                     onClick={() => hdriInputRef.current?.click()}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
                   >
-                    <IconUpload /><span>Upload Custom .hdr / .exr</span>
+                    <IconUpload />
+                    <span>{hasLocalHdri || hasCloudHdri ? 'Replace .hdr / .exr' : 'Upload Custom .hdr / .exr'}</span>
                   </button>
                   <input
                     ref={hdriInputRef}
                     type="file"
                     accept=".hdr,.exr"
                     className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) onCustomHdriUpload(f) }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) onCustomHdriUpload(f); e.target.value = '' }}
                   />
+
+                  {/* ── Local HDRI active — warning + Cloud upload ── */}
+                  {hasLocalHdri && (
+                    <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 space-y-2">
+                      <p className="text-[10px] font-semibold text-amber-300 flex items-center gap-1.5">
+                        <span>⚡</span> Local HDRI Active
+                      </p>
+                      <p className="text-[9px] text-amber-400/60 leading-snug">
+                        Loaded from your RAM only. Not visible to others and will disappear after refresh.
+                      </p>
+                      <div className="flex gap-1.5 pt-0.5">
+                        <button
+                          onClick={onUploadHdriToCloud}
+                          disabled={isUploadingHdri || !canUploadHdriToCloud}
+                          title={!canUploadHdriToCloud ? 'Publish the project first to enable cloud upload' : ''}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-[10px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          {isUploadingHdri ? (
+                            <>
+                              <span className="w-3 h-3 rounded-full border-2 border-violet-300/30 border-t-violet-300 animate-spin" />
+                              Uploading…
+                            </>
+                          ) : '☁ Upload to Cloud'}
+                        </button>
+                        <button
+                          onClick={onClearHdri}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 text-white/40 hover:text-red-400 text-[10px] transition-all"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      {!canUploadHdriToCloud && (
+                        <p className="text-[9px] text-amber-400/40">
+                          Publish the project first to enable cloud upload.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Cloud HDRI active ── */}
+                  {hasCloudHdri && (
+                    <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
+                      <div>
+                        <p className="text-[10px] font-semibold text-emerald-300">☁ Cloud HDRI Active</p>
+                        <p className="text-[9px] text-emerald-400/50 mt-0.5">Saved — visible to all clients.</p>
+                      </div>
+                      <button
+                        onClick={onClearHdri}
+                        className="px-2 py-1 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/20 text-white/30 hover:text-red-400 text-[9px] transition-all flex-shrink-0 ml-2"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <Slider label="Env Intensity" value={envIntensity ?? 1} min={0} max={3} step={0.05} onChange={onEnvIntensityChange} />
