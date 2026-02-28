@@ -35,6 +35,14 @@ function AdminPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
+  // ── Sun position vector (must be declared before any useCallback that uses it) ──
+  const sunPosition = useMemo(() => {
+    const az = (sunAzimuth   * Math.PI) / 180
+    const el = (sunElevation * Math.PI) / 180
+    const d  = 15
+    return [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)]
+  }, [sunAzimuth, sunElevation])
+
   // ── Camera presets ───────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
@@ -281,6 +289,9 @@ function AdminPage() {
       // 4. Build scene_config snapshot
       // NOTE: Requires a `scene_config` JSONB column in your Supabase `projects` table.
       // Run in Supabase SQL editor: ALTER TABLE projects ADD COLUMN IF NOT EXISTS scene_config jsonb;
+      const az = (sunAzimuth   * Math.PI) / 180
+      const el = (sunElevation * Math.PI) / 180
+      const d  = 15
       const scene_config = {
         floorReflection: true,
         hdriPreset:      hdriPreset,
@@ -288,7 +299,7 @@ function AdminPage() {
         envIntensity:    envIntensity,
         bgBlur:          bgBlur,
         bloomStrength:   bloomStrength,
-        sunPosition:     sunPosition,
+        sunPosition:     [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
       }
 
       // 5. Upsert project record
@@ -317,14 +328,7 @@ function AdminPage() {
       setIsPublishing(false)
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
-      hdriFile, hdriPreset, customHdriUrl, envIntensity, bgBlur, bloomStrength, sunPosition])
-
-  const sunPosition = useMemo(() => {
-    const az = (sunAzimuth   * Math.PI) / 180
-    const el = (sunElevation * Math.PI) / 180
-    const d  = 15
-    return [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)]
-  }, [sunAzimuth, sunElevation])
+      hdriFile, hdriPreset, customHdriUrl, envIntensity, bgBlur, bloomStrength, sunAzimuth, sunElevation])
 
   return (
     <div className="w-full h-full relative">
