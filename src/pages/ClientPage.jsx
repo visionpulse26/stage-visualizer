@@ -27,9 +27,8 @@ function ClientPage() {
   const [envIntensity,  setEnvIntensity]  = useState(1)
   const [bgBlur,        setBgBlur]        = useState(0)
   const [bloomStrength, setBloomStrength] = useState(0.3)
-  const [exposure,       setExposure]       = useState(1.0)
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
-  const [acesEnabled,    setAcesEnabled]    = useState(true)
+  const [protectLed,     setProtectLed]     = useState(true)
 
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
@@ -104,9 +103,8 @@ function ClientPage() {
           setEnvIntensity(cfg.envIntensity   ?? 1)
           setBgBlur(cfg.bgBlur               ?? 0)
           setBloomStrength(cfg.bloomStrength ?? 0.3)
-          setExposure(cfg.exposure           ?? 1.0)
           setBloomThreshold(cfg.bloomThreshold ?? 1.2)
-          setAcesEnabled(cfg.acesEnabled     ?? true)
+          setProtectLed(cfg.protectLed        ?? true)
         }
       } catch (err) {
         console.error('Failed to load project:', err)
@@ -173,9 +171,8 @@ function ClientPage() {
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         bloomStrength={bloomStrength}
-        exposure={exposure}
         bloomThreshold={bloomThreshold}
-        acesEnabled={acesEnabled}
+        protectLed={protectLed}
       >
         <ClientPanel
           cameraPresets={cameraPresets}

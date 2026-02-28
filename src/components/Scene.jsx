@@ -26,7 +26,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
+function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed }) {
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
 
@@ -149,19 +149,32 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
           newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
 
           if (activeTexture) {
-            // map         → base color, responds to exposure + tone mapping
-            // emissiveMap → self-illumination for Bloom glow
-            // toneMapped:true → ACES + exposure slider control color richness
-            const ledMat = new THREE.MeshStandardMaterial({
-              map:               activeTexture,
-              emissive:          new THREE.Color(1, 1, 1),
-              emissiveMap:       activeTexture,
-              emissiveIntensity: 1.5,
-              roughness:         0,
-              metalness:         0,
-              side:              THREE.DoubleSide,
-              toneMapped:        true,
-            })
+            let ledMat
+
+            if (protectLed) {
+              // PROTECTED MODE — MeshBasicMaterial bypasses ALL lighting,
+              // environment maps, ACES tone mapping and exposure.
+              // Colors are pixel-perfect to the original video/image file.
+              ledMat = new THREE.MeshBasicMaterial({
+                map:        activeTexture,
+                side:       THREE.DoubleSide,
+                toneMapped: false,
+              })
+            } else {
+              // GLOW MODE — emissive so Bloom radiates light from the screen.
+              // Affected by environment and tone mapping.
+              ledMat = new THREE.MeshStandardMaterial({
+                map:               activeTexture,
+                emissive:          new THREE.Color(1, 1, 1),
+                emissiveMap:       activeTexture,
+                emissiveIntensity: 1.5,
+                roughness:         0,
+                metalness:         0,
+                side:              THREE.DoubleSide,
+                toneMapped:        true,
+              })
+            }
+
             ledMat.name = LED_MATERIAL_NAME
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
@@ -192,7 +205,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
     clonedScene.position.sub(center)
     clonedScene.position.y += size.y / 2
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus])
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed])
 
   // ── Keep video texture refreshed every frame ──────────────────────────────
   useFrame(() => {
@@ -213,7 +226,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
   )
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed }) {
   return (
     <group>
       {modelUrl && (
@@ -222,6 +235,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus }) 
           videoElement={videoElement}
           activeImageUrl={activeImageUrl}
           onLedMaterialStatus={onLedMaterialStatus}
+          protectLed={protectLed}
         />
       )}
     </group>

@@ -63,9 +63,8 @@ function UIPanel({
   bgBlur, onBgBlurChange,
   bloomStrength, onBloomStrengthChange,
   // ── Visual integrity ──────────────────────────────────────────────────────
-  exposure, onExposureChange,
   bloomThreshold, onBloomThresholdChange,
-  acesEnabled, onAcesToggle,
+  protectLed, onProtectLedToggle,
 }) {
   const modelInputRef   = useRef(null)
   const videoInputRef   = useRef(null)
@@ -324,38 +323,38 @@ function UIPanel({
             {/* Visual Integrity */}
             <Section icon={<IconEye />} title="Visual Integrity">
               <div className="space-y-3">
-                <Slider
-                  label="Exposure Compensation"
-                  value={exposure ?? 1.0}
-                  min={0.1} max={2.0} step={0.05}
-                  onChange={onExposureChange}
-                />
+
+                {/* Protect LED Colors toggle */}
+                <button
+                  onClick={onProtectLedToggle}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                    protectLed
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60 hover:bg-white/8'
+                  }`}
+                >
+                  {/* Shield icon */}
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <div className="flex-1 text-left">
+                    <p className="text-xs font-semibold leading-tight">Protect LED Colors</p>
+                    <p className="text-[9px] opacity-60 mt-0.5 leading-tight">
+                      {protectLed ? 'ON — screens immune to env & tone mapping' : 'OFF — screens affected by environment'}
+                    </p>
+                  </div>
+                  {/* Indicator dot */}
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${protectLed ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                </button>
+
                 <Slider
                   label="Bloom Threshold"
                   value={bloomThreshold ?? 1.2}
                   min={0.0} max={2.0} step={0.05}
                   onChange={onBloomThresholdChange}
                 />
-                {/* ACES toggle */}
-                <div className="flex items-center justify-between pt-0.5">
-                  <span className="text-[10px] text-white/40">ACES Filmic Tone Map</span>
-                  <button
-                    onClick={onAcesToggle}
-                    className={`relative w-9 h-5 rounded-full border transition-all ${
-                      acesEnabled
-                        ? 'bg-violet-500/30 border-violet-500/50'
-                        : 'bg-white/5 border-white/15'
-                    }`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-                      acesEnabled
-                        ? 'left-[18px] bg-violet-400'
-                        : 'left-0.5 bg-white/30'
-                    }`} />
-                  </button>
-                </div>
                 <p className="text-[9px] text-white/25 leading-snug">
-                  Raise Bloom Threshold to protect LED colors. Lower Exposure if screens look washed out.
+                  Raise Bloom Threshold to reduce glow intensity. Protect LED Colors keeps screen content pixel-perfect.
                 </p>
               </div>
             </Section>

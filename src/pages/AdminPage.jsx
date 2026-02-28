@@ -62,10 +62,9 @@ function AdminPage() {
   const [bgBlur,        setBgBlur]        = useState(0)
   const [bloomStrength, setBloomStrength] = useState(0.3)
 
-  // ── Visual integrity — exposure, bloom threshold, tone mapping ────────────
-  const [exposure,       setExposure]       = useState(1.0)
+  // ── Visual integrity — bloom threshold, LED color protection ─────────────
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
-  const [acesEnabled,    setAcesEnabled]    = useState(true)
+  const [protectLed,     setProtectLed]     = useState(true)
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
@@ -228,9 +227,8 @@ function AdminPage() {
       setEnvIntensity(cfg.envIntensity    ?? 1)
       setBgBlur(cfg.bgBlur              ?? 0)
       setBloomStrength(cfg.bloomStrength  ?? 0.3)
-      setExposure(cfg.exposure          ?? 1.0)
       setBloomThreshold(cfg.bloomThreshold ?? 1.2)
-      setAcesEnabled(cfg.acesEnabled    ?? true)
+      setProtectLed(cfg.protectLed        ?? true)
       setHdriFile(null)
     }
 
@@ -308,9 +306,8 @@ function AdminPage() {
         bgBlur:          bgBlur,
         bloomStrength:   bloomStrength,
         sunPosition:     [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
-        exposure:        exposure,
         bloomThreshold:  bloomThreshold,
-        acesEnabled:     acesEnabled,
+        protectLed:      protectLed,
       }
 
       // 5. Upsert project record
@@ -340,7 +337,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriFile, hdriPreset, customHdriUrl, envIntensity, bgBlur, bloomStrength, sunAzimuth, sunElevation,
-      exposure, bloomThreshold, acesEnabled])
+      bloomThreshold, protectLed])
 
   return (
     <div className="w-full h-full relative">
@@ -359,9 +356,8 @@ function AdminPage() {
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         bloomStrength={bloomStrength}
-        exposure={exposure}
         bloomThreshold={bloomThreshold}
-        acesEnabled={acesEnabled}
+        protectLed={protectLed}
       >
         <UIPanel
           onModelUpload={handleModelUpload}
@@ -400,9 +396,8 @@ function AdminPage() {
           envIntensity={envIntensity}      onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                  onBgBlurChange={setBgBlur}
           bloomStrength={bloomStrength}    onBloomStrengthChange={setBloomStrength}
-          exposure={exposure}              onExposureChange={setExposure}
           bloomThreshold={bloomThreshold}  onBloomThresholdChange={setBloomThreshold}
-          acesEnabled={acesEnabled}        onAcesToggle={() => setAcesEnabled(v => !v)}
+          protectLed={protectLed}          onProtectLedToggle={() => setProtectLed(v => !v)}
         />
 
         <TopBar role="Admin" color="violet" />

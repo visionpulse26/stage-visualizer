@@ -60,13 +60,13 @@ function EnvIntensityController({ intensity }) {
   return null
 }
 
-// ── Tone-mapping + exposure controller (reactive, works after Canvas mount) ───
-function ToneMappingController({ exposure, acesEnabled }) {
+// ── Tone-mapping controller — ACES hardcoded for cinema quality ───────────────
+function ToneMappingController() {
   const { gl } = useThree()
   useEffect(() => {
-    gl.toneMapping         = acesEnabled ? THREE.ACESFilmicToneMapping : THREE.LinearToneMapping
-    gl.toneMappingExposure = exposure
-  }, [gl, exposure, acesEnabled])
+    gl.toneMapping         = THREE.ACESFilmicToneMapping
+    gl.toneMappingExposure = 1.0
+  }, [gl])
   return null
 }
 
@@ -90,36 +90,31 @@ function StageCanvas({
   envIntensity,
   bgBlur,
   bloomStrength,
-  // ── Visual integrity ──────────────────────────────────────────────────
-  exposure,        // 0.1 – 2.0  controls renderer toneMappingExposure
   bloomThreshold,  // 0.0 – 2.0  only pixels above this luminance bloom
-  acesEnabled,     // boolean    ACESFilmic vs Linear tone mapping
+  protectLed,      // boolean    isolate LED material from env/tone mapping
   children,
 }) {
-  const hasEnv          = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
-  const resolvedBloom   = bloomStrength  ?? 0.3
-  const resolvedEnvInt  = envIntensity   ?? 1
-  const resolvedBgBlur  = bgBlur         ?? 0
-  const resolvedExposure   = exposure        ?? 1.0
-  const resolvedThreshold  = bloomThreshold  ?? 1.2
-  const resolvedAces       = acesEnabled     ?? true
+  const hasEnv         = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
+  const resolvedBloom      = bloomStrength ?? 0.3
+  const resolvedEnvInt     = envIntensity  ?? 1
+  const resolvedBgBlur     = bgBlur        ?? 0
+  const resolvedThreshold  = bloomThreshold ?? 1.2
 
   return (
     <div className="w-full h-full relative bg-[#0a0a0c]">
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50 }}
         gl={{
-          antialias:            true,
-          alpha:                false,
+          antialias:             true,
+          alpha:                 false,
           preserveDrawingBuffer: true,
-          // Initial values — ToneMappingController keeps them reactive after mount
-          toneMapping:         resolvedAces ? THREE.ACESFilmicToneMapping : THREE.LinearToneMapping,
-          toneMappingExposure: resolvedExposure,
+          toneMapping:           THREE.ACESFilmicToneMapping,
+          toneMappingExposure:   1.0,
         }}
         shadows
       >
-        {/* Reactive tone-mapping — updates without remounting the Canvas */}
-        <ToneMappingController exposure={resolvedExposure} acesEnabled={resolvedAces} />
+        {/* ACES filmic tone mapping — hardcoded for cinema quality */}
+        <ToneMappingController />
 
         <color attach="background" args={['#0a0a0c']} />
         <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
@@ -182,6 +177,7 @@ function StageCanvas({
               videoElement={videoElement}
               activeImageUrl={activeImageUrl}
               onLedMaterialStatus={onLedMaterialStatus}
+              protectLed={protectLed ?? true}
             />
           )}
         </Suspense>
