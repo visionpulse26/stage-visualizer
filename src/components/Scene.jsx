@@ -26,7 +26,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed }) {
+function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity }) {
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
 
@@ -223,12 +223,14 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   return (
     <>
       <primitive object={clonedScene} />
-      <LedLights positions={ledPositions} color={ledColor} active={!!activeTexture} />
+      {/* LedLights only fire when sunIntensity > 0 — prevents residual light
+          when the user zeroes out all light controls */}
+      <LedLights positions={ledPositions} color={ledColor} active={!!activeTexture && sunIntensity > 0} />
     </>
   )
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity }) {
   return (
     <group>
       {modelUrl && (
@@ -238,6 +240,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
           activeImageUrl={activeImageUrl}
           onLedMaterialStatus={onLedMaterialStatus}
           protectLed={protectLed}
+          sunIntensity={sunIntensity}
         />
       )}
     </group>

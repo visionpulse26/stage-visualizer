@@ -147,8 +147,10 @@ function StageCanvas({
           </>
         )}
 
-        {/* Lighting */}
-        <ambientLight intensity={hasEnv ? 0.1 : 0.3} />
+        {/* Lighting
+            ambientLight scales with sunIntensity so dragging sun to 0 kills
+            all ambient fill as well — no residual glow when everything is off. */}
+        <ambientLight intensity={sunIntensity * 0.15} />
         <directionalLight
           position={sunPosition}
           intensity={sunIntensity}
@@ -160,7 +162,6 @@ function StageCanvas({
           shadow-camera-top={20}
           shadow-camera-bottom={-20}
         />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} color="#8b5cf6" />
 
         {/* Placeholder cube — only shown before a model is loaded */}
         {!modelLoaded && (
@@ -195,6 +196,7 @@ function StageCanvas({
               activeImageUrl={activeImageUrl}
               onLedMaterialStatus={onLedMaterialStatus}
               protectLed={protectLed ?? true}
+              sunIntensity={sunIntensity ?? 1}
             />
           )}
         </Suspense>
