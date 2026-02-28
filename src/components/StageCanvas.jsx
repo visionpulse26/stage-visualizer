@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import * as THREE from 'three'
 import Scene from './Scene'
 
 // ── Atmospheric dust particles ────────────────────────────────────────────────
@@ -44,12 +45,10 @@ function ReflectiveFloor() {
 function EnvIntensityController({ intensity }) {
   const { scene } = useThree()
   useEffect(() => {
-    // r163+ path
     if ('environmentIntensity' in scene) {
       scene.environmentIntensity = intensity
       return
     }
-    // r160 fallback: traverse and set envMapIntensity on each material
     scene.traverse(obj => {
       if (!obj.isMesh) return
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
@@ -58,6 +57,16 @@ function EnvIntensityController({ intensity }) {
       })
     })
   }, [scene, intensity])
+  return null
+}
+
+// ── Tone-mapping + exposure controller (reactive, works after Canvas mount) ───
+function ToneMappingController({ exposure, acesEnabled }) {
+  const { gl } = useThree()
+  useEffect(() => {
+    gl.toneMapping         = acesEnabled ? THREE.ACESFilmicToneMapping : THREE.LinearToneMapping
+    gl.toneMappingExposure = exposure
+  }, [gl, exposure, acesEnabled])
   return null
 }
 
@@ -76,25 +85,42 @@ function StageCanvas({
   modelLoaded,
   cameraControlsRef,
   // ── Scene config ──────────────────────────────────────────────────────
-  hdriPreset,      // 'city' | 'studio' | 'warehouse' | 'night' | 'apartment' | null
-  customHdriUrl,   // blob URL (preview) or Supabase URL (published)
-  envIntensity,    // 0 – 3
-  bgBlur,          // 0 – 1
-  bloomStrength,   // 0 – 3
+  hdriPreset,
+  customHdriUrl,
+  envIntensity,
+  bgBlur,
+  bloomStrength,
+  // ── Visual integrity ──────────────────────────────────────────────────
+  exposure,        // 0.1 – 2.0  controls renderer toneMappingExposure
+  bloomThreshold,  // 0.0 – 2.0  only pixels above this luminance bloom
+  acesEnabled,     // boolean    ACESFilmic vs Linear tone mapping
   children,
 }) {
-  const hasEnv = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
+  const hasEnv          = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom   = bloomStrength  ?? 0.3
   const resolvedEnvInt  = envIntensity   ?? 1
   const resolvedBgBlur  = bgBlur         ?? 0
+  const resolvedExposure   = exposure        ?? 1.0
+  const resolvedThreshold  = bloomThreshold  ?? 1.2
+  const resolvedAces       = acesEnabled     ?? true
 
   return (
     <div className="w-full h-full relative bg-[#0a0a0c]">
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50 }}
-        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
+        gl={{
+          antialias:            true,
+          alpha:                false,
+          preserveDrawingBuffer: true,
+          // Initial values — ToneMappingController keeps them reactive after mount
+          toneMapping:         resolvedAces ? THREE.ACESFilmicToneMapping : THREE.LinearToneMapping,
+          toneMappingExposure: resolvedExposure,
+        }}
         shadows
       >
+        {/* Reactive tone-mapping — updates without remounting the Canvas */}
+        <ToneMappingController exposure={resolvedExposure} acesEnabled={resolvedAces} />
+
         <color attach="background" args={['#0a0a0c']} />
         <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
 
@@ -135,7 +161,7 @@ function StageCanvas({
         {/* Reflective floor */}
         <ReflectiveFloor />
 
-        {/* Infinite grid — depthWrite:false so floor reflections show through */}
+        {/* Infinite grid */}
         <Grid
           position={[0, -0.05, 0]}
           infiniteGrid
@@ -167,17 +193,16 @@ function StageCanvas({
           dollySpeed={0.5}
         />
 
-        {/* Bloom post-processing — makes emissive LED materials radiate light */}
+        {/* Bloom — luminanceThreshold driven by admin slider */}
         <EffectComposer>
           <Bloom
-            luminanceThreshold={0.15}
+            luminanceThreshold={resolvedThreshold}
             luminanceSmoothing={0.9}
             intensity={resolvedBloom}
           />
         </EffectComposer>
       </Canvas>
 
-      {/* HTML overlays rendered on top of the WebGL canvas */}
       {children}
     </div>
   )

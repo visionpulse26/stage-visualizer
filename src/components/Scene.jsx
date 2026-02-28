@@ -149,14 +149,18 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus }) {
           newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
 
           if (activeTexture) {
+            // map         → base color, responds to exposure + tone mapping
+            // emissiveMap → self-illumination for Bloom glow
+            // toneMapped:true → ACES + exposure slider control color richness
             const ledMat = new THREE.MeshStandardMaterial({
+              map:               activeTexture,
               emissive:          new THREE.Color(1, 1, 1),
               emissiveMap:       activeTexture,
-              emissiveIntensity: 2.5,
+              emissiveIntensity: 1.5,
               roughness:         0,
               metalness:         0,
               side:              THREE.DoubleSide,
-              toneMapped:        false,
+              toneMapped:        true,
             })
             ledMat.name = LED_MATERIAL_NAME
             if (Array.isArray(child.material)) child.material[i] = ledMat

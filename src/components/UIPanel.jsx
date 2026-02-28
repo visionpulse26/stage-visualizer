@@ -15,6 +15,7 @@ const IconCopy      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="cur
 const IconGrid      = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
 const IconGlobe     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
 const IconSparkle   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36-6.36-.7.7M6.34 17.66l-.7.7M17.66 17.66l-.7-.7M6.34 6.34l-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+const IconEye       = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
 
 function Section({ icon, title, badge, children }) {
   return (
@@ -61,6 +62,10 @@ function UIPanel({
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   bloomStrength, onBloomStrengthChange,
+  // ── Visual integrity ──────────────────────────────────────────────────────
+  exposure, onExposureChange,
+  bloomThreshold, onBloomThresholdChange,
+  acesEnabled, onAcesToggle,
 }) {
   const modelInputRef   = useRef(null)
   const videoInputRef   = useRef(null)
@@ -313,6 +318,45 @@ function UIPanel({
               <div className="space-y-3">
                 <Slider label="Bloom Strength" value={bloomStrength ?? 0.3} min={0} max={3} step={0.05} onChange={onBloomStrengthChange} />
                 <p className="text-[9px] text-white/25 leading-snug">Bloom makes emissive LED materials radiate light. Higher values = stronger glow.</p>
+              </div>
+            </Section>
+
+            {/* Visual Integrity */}
+            <Section icon={<IconEye />} title="Visual Integrity">
+              <div className="space-y-3">
+                <Slider
+                  label="Exposure Compensation"
+                  value={exposure ?? 1.0}
+                  min={0.1} max={2.0} step={0.05}
+                  onChange={onExposureChange}
+                />
+                <Slider
+                  label="Bloom Threshold"
+                  value={bloomThreshold ?? 1.2}
+                  min={0.0} max={2.0} step={0.05}
+                  onChange={onBloomThresholdChange}
+                />
+                {/* ACES toggle */}
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[10px] text-white/40">ACES Filmic Tone Map</span>
+                  <button
+                    onClick={onAcesToggle}
+                    className={`relative w-9 h-5 rounded-full border transition-all ${
+                      acesEnabled
+                        ? 'bg-violet-500/30 border-violet-500/50'
+                        : 'bg-white/5 border-white/15'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                      acesEnabled
+                        ? 'left-[18px] bg-violet-400'
+                        : 'left-0.5 bg-white/30'
+                    }`} />
+                  </button>
+                </div>
+                <p className="text-[9px] text-white/25 leading-snug">
+                  Raise Bloom Threshold to protect LED colors. Lower Exposure if screens look washed out.
+                </p>
               </div>
             </Section>
           </div>

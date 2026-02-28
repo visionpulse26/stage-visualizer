@@ -27,6 +27,9 @@ function ClientPage() {
   const [envIntensity,  setEnvIntensity]  = useState(1)
   const [bgBlur,        setBgBlur]        = useState(0)
   const [bloomStrength, setBloomStrength] = useState(0.3)
+  const [exposure,       setExposure]       = useState(1.0)
+  const [bloomThreshold, setBloomThreshold] = useState(1.2)
+  const [acesEnabled,    setAcesEnabled]    = useState(true)
 
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
@@ -96,11 +99,14 @@ function ClientPage() {
         // Restore scene_config so client sees the exact environment Admin set
         const cfg = data.scene_config
         if (cfg) {
-          setHdriPreset(cfg.hdriPreset     ?? 'none')
+          setHdriPreset(cfg.hdriPreset       ?? 'none')
           setCustomHdriUrl(cfg.customHdriUrl ?? null)
-          setEnvIntensity(cfg.envIntensity  ?? 1)
-          setBgBlur(cfg.bgBlur             ?? 0)
+          setEnvIntensity(cfg.envIntensity   ?? 1)
+          setBgBlur(cfg.bgBlur               ?? 0)
           setBloomStrength(cfg.bloomStrength ?? 0.3)
+          setExposure(cfg.exposure           ?? 1.0)
+          setBloomThreshold(cfg.bloomThreshold ?? 1.2)
+          setAcesEnabled(cfg.acesEnabled     ?? true)
         }
       } catch (err) {
         console.error('Failed to load project:', err)
@@ -167,6 +173,9 @@ function ClientPage() {
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         bloomStrength={bloomStrength}
+        exposure={exposure}
+        bloomThreshold={bloomThreshold}
+        acesEnabled={acesEnabled}
       >
         <ClientPanel
           cameraPresets={cameraPresets}
