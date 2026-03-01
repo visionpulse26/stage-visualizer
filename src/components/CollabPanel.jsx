@@ -81,8 +81,10 @@ function CollabPanel({
   hdriPreset,        onHdriPresetChange,
   hdriRotationX,     onHdriRotationXChange,
   hdriRotationY,     onHdriRotationYChange,
+  hdriLoading,
   customHdriUrl,
   onCustomHdriUpload,
+  onSetHdriUrl,
   envIntensity,      onEnvIntensityChange,
   bgBlur,            onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -108,20 +110,13 @@ function CollabPanel({
 
   const handleSelectPreset = useCallback((preset) => {
     if (preset.url) {
-      onCustomHdriUpload(null)
-      onHdriPresetChange('none')
-      if (typeof onCustomHdriUpload === 'function') {
-        fetch(preset.url).then(r => r.blob()).then(blob => {
-          const ext = preset.url.split('.').pop() || 'hdr'
-          const file = new File([blob], `${preset.label}.${ext}`, { type: blob.type })
-          onCustomHdriUpload(file)
-        }).catch(() => {})
-      }
+      onSetHdriUrl(preset.url)
     } else {
       onHdriPresetChange(preset.id)
+      onSetHdriUrl(null)
     }
     setHdriDropdownOpen(false)
-  }, [onHdriPresetChange, onCustomHdriUpload])
+  }, [onHdriPresetChange, onSetHdriUrl])
 
   const sections = [
     { id: 'media',  label: 'Media',  icon: <IconVideo />  },
@@ -274,18 +269,33 @@ function CollabPanel({
             <Section icon={<IconGlobe />} title="Environment (HDRI)">
               <div className="space-y-3">
 
-                {/* HDRI Preset Dropdown */}
+                {/* HDRI Preset Dropdown — locked during loading */}
                 <div className="space-y-1">
-                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Environment</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-white/40 uppercase tracking-widest">Environment</span>
+                    {hdriLoading && (
+                      <span className="flex items-center gap-1.5 text-[9px] text-[#ff5500]">
+                        <span className="w-2.5 h-2.5 rounded-full border-2 border-[#ff5500]/30 border-t-[#ff5500] animate-spin" />
+                        Loading…
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <button
-                      onClick={() => setHdriDropdownOpen(v => !v)}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-[#ff5500]/40 text-left text-xs text-white/70 transition-all"
+                      onClick={() => !hdriLoading && setHdriDropdownOpen(v => !v)}
+                      disabled={hdriLoading}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 border text-left text-xs transition-all ${
+                        hdriLoading
+                          ? 'border-[#ff5500]/30 text-white/40 cursor-wait'
+                          : 'border-white/10 hover:border-[#ff5500]/40 text-white/70'
+                      }`}
                     >
                       <span className="truncate">
-                        {customHdriUrl
-                          ? (customHdriUrl.startsWith('blob:') ? '🎨 Custom (Local)' : '🎨 Custom')
-                          : nasHdriPresets.find(p => p.id === hdriPreset)?.label || hdriPreset || 'Off'
+                        {hdriLoading
+                          ? 'Processing HDRI…'
+                          : customHdriUrl
+                            ? (customHdriUrl.startsWith('blob:') ? '🎨 Custom (Local)' : '🎨 Custom')
+                            : nasHdriPresets.find(p => p.id === hdriPreset)?.label || hdriPreset || 'Off'
                         }
                       </span>
                       <svg className={`w-4 h-4 text-white/30 transition-transform ${hdriDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>

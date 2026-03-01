@@ -29,6 +29,7 @@ function CollabPage() {
   const [hdriFileExt,        setHdriFileExt]        = useState('hdr')  // 'hdr' | 'exr'
   const [hdriRotationX,      setHdriRotationX]      = useState(0)      // 0 to 2π
   const [hdriRotationY,      setHdriRotationY]      = useState(0)      // 0 to 2π
+  const [hdriLoading,        setHdriLoading]        = useState(false)  // loading lock
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -230,6 +231,15 @@ function CollabPage() {
     setHdriPreset('none')
   }, [customHdriUrl])
 
+  // ── Set HDRI from NAS URL directly (avoids downloading the whole file) ──
+  const handleSetHdriUrl = useCallback((url) => {
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(url)
+    setHdriPreset('none')
+  }, [customHdriUrl])
+
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
     cameraControlsRef.current?.setLookAt(
@@ -281,6 +291,7 @@ function CollabPage() {
         hdriFileExt={hdriFileExt}
         hdriRotationX={hdriRotationX}
         hdriRotationY={hdriRotationY}
+        onHdriLoading={setHdriLoading}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -310,8 +321,10 @@ function CollabPage() {
           hdriPreset={hdriPreset}              onHdriPresetChange={setHdriPreset}
           hdriRotationX={hdriRotationX}        onHdriRotationXChange={setHdriRotationX}
           hdriRotationY={hdriRotationY}        onHdriRotationYChange={setHdriRotationY}
+          hdriLoading={hdriLoading}
           customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
+          onSetHdriUrl={handleSetHdriUrl}
           envIntensity={envIntensity}          onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                      onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}

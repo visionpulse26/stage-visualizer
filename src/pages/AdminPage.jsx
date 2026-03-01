@@ -61,6 +61,7 @@ function AdminPage() {
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
   const [hdriRotationX, setHdriRotationX] = useState(0)       // 0 to 2π
   const [hdriRotationY, setHdriRotationY] = useState(0)       // 0 to 2π
+  const [hdriLoading,   setHdriLoading]   = useState(false)   // loading lock
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -589,6 +590,7 @@ function AdminPage() {
         hdriFileExt={hdriFileExt}
         hdriRotationX={hdriRotationX}
         hdriRotationY={hdriRotationY}
+        onHdriLoading={setHdriLoading}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -632,6 +634,7 @@ function AdminPage() {
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriRotationX={hdriRotationX}    onHdriRotationXChange={setHdriRotationX}
           hdriRotationY={hdriRotationY}    onHdriRotationYChange={setHdriRotationY}
+          hdriLoading={hdriLoading}
           customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
           hasLocalHdri={hasLocalHdri}

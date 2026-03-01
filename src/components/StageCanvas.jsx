@@ -1,5 +1,5 @@
-import { Suspense, useEffect, Component } from 'react'
-import { Canvas, useLoader } from '@react-three/fiber'
+import { Suspense, useEffect, useRef } from 'react'
+import { Canvas } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
@@ -89,66 +89,155 @@ function ToneMappingController() {
   return null
 }
 
-// ── Local HDRI loader — bypasses drei's broken blob: URL extension detection ─
-//
-// Problem: drei's <Environment files={url}> picks the loader by checking
-//   url.endsWith('.exr'). A blob: URL has NO extension, so it always falls
-//   through to RGBELoader — which throws a binary parse error on EXR data and
-//   blacks out the entire canvas.
-//
-// Fix: read the real extension from the original File object, choose the
-//   correct loader explicitly, and process through PMREMGenerator ourselves.
-function LocalHdriLoader({ url, ext, background }) {
+// ── Managed HDRI Environment ─────────────────────────────────────────────────
+// Full lifecycle control with strict disposal, loading lock, and memory guard.
+// Prevents GPU memory leaks when cycling through 100+ high-res EXR files.
+
+// Singleton PMREMGenerator — reused across all loads instead of creating new ones
+let sharedPmrem = null
+let loadCount   = 0
+
+function ManagedHdriEnvironment({ url, ext, background, bgBlur = 0, onLoadingChange }) {
   const { gl, scene } = useThree()
-  const Loader = (ext || '').toLowerCase() === 'exr' ? EXRLoader : RGBELoader
-  const texture = useLoader(Loader, url)
+  const envMapRef     = useRef(null)
+  const rawTexRef     = useRef(null)
+  const abortRef      = useRef(null)
+  const loadingRef    = useRef(false)
+  const bgRef         = useRef(background)
+  const bgBlurRef     = useRef(bgBlur)
+  bgRef.current       = background
+  bgBlurRef.current   = bgBlur
+
+  // Helper: strict cleanup of current textures
+  const disposeCurrentHdri = () => {
+    scene.environment = null
+    scene.background  = null
+    if (envMapRef.current) {
+      envMapRef.current.dispose()
+      envMapRef.current = null
+    }
+    if (rawTexRef.current) {
+      rawTexRef.current.dispose()
+      rawTexRef.current = null
+    }
+  }
+
+  // Memory guard: check every 5 loads
+  const checkMemory = () => {
+    loadCount++
+    if (loadCount % 5 === 0 && gl.info) {
+      const texCount = gl.info.memory?.textures ?? 0
+      console.log(`[HDRI Memory] Load #${loadCount} — GPU textures: ${texCount}`)
+      if (texCount > 20) {
+        console.warn('[HDRI Memory] High texture count detected! Possible leak.')
+      }
+      gl.info.reset()
+    }
+  }
 
   useEffect(() => {
-    if (!texture) return
-    const pmrem  = new THREE.PMREMGenerator(gl)
-    pmrem.compileEquirectangularShader()
-    const envMap = pmrem.fromEquirectangular(texture).texture
-    pmrem.dispose()
+    if (!url) {
+      disposeCurrentHdri()
+      onLoadingChange?.(false)
+      return
+    }
 
-    const prevEnv = scene.environment
-    const prevBg  = scene.background
-    scene.environment = envMap
-    if (background) scene.background = envMap
+    // Abort any previous load in progress
+    if (abortRef.current) {
+      abortRef.current.aborted = true
+    }
+    const abortToken = { aborted: false }
+    abortRef.current = abortToken
+
+    // STRICT DISPOSAL — clear old HDRI BEFORE starting new load
+    disposeCurrentHdri()
+
+    // Set loading lock
+    loadingRef.current = true
+    onLoadingChange?.(true)
+
+    const isBlob = url.startsWith('blob:')
+    const isExr  = isBlob
+      ? (ext || '').toLowerCase() === 'exr'
+      : url.toLowerCase().endsWith('.exr')
+    const loader = isExr ? new EXRLoader() : new RGBELoader()
+
+    // Initialize or reuse shared PMREM generator
+    if (!sharedPmrem || sharedPmrem.disposed) {
+      sharedPmrem = new THREE.PMREMGenerator(gl)
+      sharedPmrem.compileEquirectangularShader()
+    }
+
+    loader.load(
+      url,
+      (texture) => {
+        // Check abort token — if user selected a different HDRI, discard this result
+        if (abortToken.aborted) {
+          texture.dispose()
+          return
+        }
+
+        rawTexRef.current = texture
+
+        // Generate env map using shared PMREM
+        const envMap = sharedPmrem.fromEquirectangular(texture).texture
+        envMapRef.current = envMap
+
+        // Apply to scene
+        scene.environment = envMap
+        if (bgRef.current) scene.background = envMap
+        if ('backgroundBlurriness' in scene) {
+          scene.backgroundBlurriness = bgRef.current ? bgBlurRef.current : 0
+        }
+
+        // Release loading lock
+        loadingRef.current = false
+        onLoadingChange?.(false)
+
+        // Memory guard
+        checkMemory()
+      },
+      undefined,
+      (err) => {
+        if (!abortToken.aborted) {
+          console.warn('[HDRI] Load failed:', err?.message || err)
+          loadingRef.current = false
+          onLoadingChange?.(false)
+        }
+      },
+    )
 
     return () => {
-      scene.environment = prevEnv
-      if (background) scene.background = prevBg
-      envMap.dispose()
+      abortToken.aborted = true
+      disposeCurrentHdri()
+      loadingRef.current = false
     }
-  }, [texture, scene, gl, background])
+  }, [url, ext, gl, scene, onLoadingChange])
+
+  // Toggle background visibility without reloading the texture
+  useEffect(() => {
+    if (!envMapRef.current) return
+    scene.background = background ? envMapRef.current : null
+  }, [background, scene])
+
+  // Background blur
+  useEffect(() => {
+    if ('backgroundBlurriness' in scene) {
+      scene.backgroundBlurriness = background ? bgBlur : 0
+    }
+  }, [scene, bgBlur, background])
+
+  // Cleanup shared PMREM when component fully unmounts (page navigation)
+  useEffect(() => {
+    return () => {
+      if (sharedPmrem) {
+        sharedPmrem.dispose()
+        sharedPmrem = null
+      }
+    }
+  }, [])
 
   return null
-}
-
-// ── Error boundary around the HDRI loader ────────────────────────────────────
-// If the loader throws (bad file, network error, parse failure) the canvas
-// stays visible — the environment is simply removed and a warning is logged.
-class HdriErrorBoundary extends Component {
-  state = { hasError: false }
-
-  static getDerivedStateFromError() { return { hasError: true } }
-
-  componentDidCatch(err) {
-    console.warn('[HDRI] Environment load failed — scene kept visible:', err.message)
-  }
-
-  // Reset when the user picks a new file (url prop changes)
-  static getDerivedStateFromProps(props, state) {
-    if (state.prevUrl !== props.url) {
-      return { hasError: false, prevUrl: props.url }
-    }
-    return null
-  }
-
-  render() {
-    if (this.state.hasError) return null   // silently hide — never blank the canvas
-    return this.props.children
-  }
 }
 
 /**
@@ -171,6 +260,7 @@ function StageCanvas({
   hdriFileExt,          // 'hdr' | 'exr' — required for blob: URLs (no extension in URL)
   hdriRotationX,        // 0 to 2π — HDRI rotation around X axis
   hdriRotationY,        // 0 to 2π — HDRI rotation around Y axis
+  onHdriLoading,        // callback(boolean) — loading lock for UI
   envIntensity,
   bgBlur,
   bloomStrength,
@@ -211,35 +301,20 @@ function StageCanvas({
         <color attach="background" args={['#000000']} />
         <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
 
-        {/* HDRI Environment
-            showHdriBackground=true  → HDRI is visible background + lighting
-            showHdriBackground=false → HDRI lights/reflects scene only, bg stays black
-            blob: URLs → LocalHdriLoader (correct loader per ext, error-boundary wrapped)
-            cloud URLs → drei <Environment files> (URL has real extension, safe)
-            preset     → drei <Environment preset> */}
+        {/* HDRI Environment — managed loader with proper .dispose() lifecycle.
+            customHdriUrl  → ManagedHdriEnvironment (blob or NAS URL, manual load)
+            hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
         {hasEnv && (
           <>
             {customHdriUrl ? (
-              customHdriUrl.startsWith('blob:') ? (
-                // Blob URL from local file: must use explicit loader — drei would always
-                // pick RGBELoader (url.endsWith('.exr') = false for blob:) causing EXR crash.
-                <HdriErrorBoundary url={customHdriUrl}>
-                  <Suspense fallback={null}>
-                    <LocalHdriLoader
-                      url={customHdriUrl}
-                      ext={hdriFileExt || 'hdr'}
-                      background={resolvedShowBg}
-                    />
-                  </Suspense>
-                </HdriErrorBoundary>
-              ) : (
-                // Cloud URL has a real extension — drei handles it correctly
-                resolvedShowBg
-                  ? <Environment files={customHdriUrl} background backgroundBlurriness={resolvedBgBlur} />
-                  : <Environment files={customHdriUrl} />
-              )
+              <ManagedHdriEnvironment
+                url={customHdriUrl}
+                ext={hdriFileExt}
+                background={resolvedShowBg}
+                onLoadingChange={onHdriLoading}
+                bgBlur={resolvedBgBlur}
+              />
             ) : (
-              // Preset
               resolvedShowBg
                 ? <Environment preset={hdriPreset} background backgroundBlurriness={resolvedBgBlur} />
                 : <Environment preset={hdriPreset} />
