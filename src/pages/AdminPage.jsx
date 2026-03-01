@@ -73,6 +73,7 @@ function AdminPage() {
 
   // ── NAS upload ──────────────────────────────────────────────────────────
   const [isNasUploading, setIsNasUploading] = useState(false)
+  const [nasError,       setNasError]       = useState(null)
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
@@ -233,6 +234,45 @@ function AdminPage() {
     setHdriFileExt('hdr')
   }, [customHdriUrl])
 
+  // ── Shared NAS fetch with timeout + robust error handling ───────────────
+  const nasUploadFetch = useCallback(async (file, label) => {
+    const NAS_URL = 'https://visual.tooawake.online/upload.php'
+    const TIMEOUT = 120_000 // 2 minutes for large files
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT)
+
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('project_name', projectName.trim())
+
+    let res
+    try {
+      res = await fetch(NAS_URL, { method: 'POST', body: fd, signal: controller.signal })
+    } catch (netErr) {
+      if (netErr.name === 'AbortError') throw new Error(`Upload timed out after ${TIMEOUT / 1000}s — is the NAS server online?`)
+      throw new Error(`Network error — cannot reach NAS server (${netErr.message}). Check if https://visual.tooawake.online is reachable and CORS is enabled.`)
+    } finally {
+      clearTimeout(timer)
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`NAS returned HTTP ${res.status}: ${body.slice(0, 200) || 'empty response'}`)
+    }
+
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`NAS returned non-JSON (${contentType}). Body: ${body.slice(0, 200)}`)
+    }
+
+    const json = await res.json()
+    if (!json.success) throw new Error(json.error || json.message || `NAS ${label} failed — server returned success:false`)
+    if (!json.url)     throw new Error(`NAS ${label} succeeded but returned no URL`)
+    return json
+  }, [projectName])
+
   // ── NAS upload — video / image → Too:Awake NAS server ───────────────────
   const handleNasUpload = useCallback(async (file) => {
     if (!file) return
@@ -240,14 +280,9 @@ function AdminPage() {
       alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
       return
     }
-    setIsNasUploading(true)
+    setIsNasUploading(true); setNasError(null)
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('project_name', projectName.trim())
-      const res  = await fetch('https://visual.tooawake.online/upload.php', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'NAS upload failed')
+      const json = await nasUploadFetch(file, 'media upload')
 
       clipCountRef.current += 1
       const id    = Date.now()
@@ -265,11 +300,11 @@ function AdminPage() {
       }
     } catch (err) {
       console.error('NAS upload error:', err)
-      alert(`NAS upload failed: ${err.message}`)
+      setNasError(err.message)
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, activateVideo])
+  }, [projectName, activateVideo, nasUploadFetch])
 
   // ── NAS upload — HDRI → Too:Awake NAS server ──────────────────────────
   const handleNasHdriUpload = useCallback(async (file) => {
@@ -278,14 +313,9 @@ function AdminPage() {
       alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
       return
     }
-    setIsNasUploading(true)
+    setIsNasUploading(true); setNasError(null)
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('project_name', projectName.trim())
-      const res  = await fetch('https://visual.tooawake.online/upload.php', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'NAS HDRI upload failed')
+      const json = await nasUploadFetch(file, 'HDRI upload')
 
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
@@ -295,11 +325,11 @@ function AdminPage() {
       setHdriPreset('none')
     } catch (err) {
       console.error('NAS HDRI upload error:', err)
-      alert(`NAS HDRI upload failed: ${err.message}`)
+      setNasError(err.message)
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, customHdriUrl])
+  }, [projectName, customHdriUrl, nasUploadFetch])
 
   // ── External HDRI URL — paste a direct link to an .hdr / .exr file ─────
   const handleExternalHdriUrl = useCallback((url) => {
@@ -603,6 +633,8 @@ function AdminPage() {
           onNasHdriUpload={handleNasHdriUpload}
           onExternalHdriUrl={handleExternalHdriUrl}
           isNasUploading={isNasUploading}
+          nasError={nasError}
+          onDismissNasError={() => setNasError(null)}
           envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}   onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}

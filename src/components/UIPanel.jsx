@@ -70,6 +70,7 @@ function UIPanel({
   onNasHdriUpload,        // (file) => upload HDRI to NAS
   onExternalHdriUrl,      // (url)  => set external HDRI URL
   isNasUploading,
+  nasError, onDismissNasError,
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -274,6 +275,15 @@ function UIPanel({
                     )}
                   </button>
                   <input ref={nasVideoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasUpload(f); e.target.value = '' }} />
+                  {nasError && (
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[10px] font-semibold text-red-400">NAS Upload Failed</p>
+                        <button onClick={onDismissNasError} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
+                      </div>
+                      <p className="text-[9px] text-red-400/70 leading-snug break-words">{nasError}</p>
+                    </div>
+                  )}
                   <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
                     Files are sent to your private NAS. Requires a saved project name.
                   </p>
@@ -510,6 +520,15 @@ function UIPanel({
                         )}
                       </button>
                       <input ref={nasHdriInputRef} type="file" accept=".hdr,.exr" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasHdriUpload(f); e.target.value = '' }} />
+                      {nasError && (
+                        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[10px] font-semibold text-red-400">NAS Upload Failed</p>
+                            <button onClick={onDismissNasError} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
+                          </div>
+                          <p className="text-[9px] text-red-400/70 leading-snug break-words">{nasError}</p>
+                        </div>
+                      )}
                       <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
                         HDRI sent to your private NAS. Requires a saved project name.
                       </p>
