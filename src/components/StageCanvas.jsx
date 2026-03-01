@@ -82,13 +82,13 @@ function ToneMappingController() {
 // Full lifecycle control with strict disposal, loading lock, memory guard, and
 // built-in rotation (Three.js 0.160 lacks scene.environmentRotation).
 //
-// Rotation: the raw equirectangular texture is re-processed through PMREM with
-// a custom rotation shader. Regeneration is debounced (250ms) so slider
-// dragging stays smooth — only the final position triggers a re-process.
+// Rotation: PMREM ignores texture.offset/rotation, so we pre-rotate the
+// equirectangular image data using Canvas2D before PMREM processing.
+// This is expensive (~50ms) so rotation changes are debounced (300ms).
 
 let sharedPmrem = null
 let loadCount   = 0
-const ROTATION_DEBOUNCE_MS = 250
+const ROTATION_DEBOUNCE_MS = 300
 
 function ManagedHdriEnvironment({
   url, ext, background, bgBlur = 0,
@@ -97,9 +97,11 @@ function ManagedHdriEnvironment({
 }) {
   const { gl, scene } = useThree()
   const envMapRef     = useRef(null)
-  const rawTexRef     = useRef(null)
+  const rawTexRef     = useRef(null)       // original unrotated texture
+  const rotatedTexRef = useRef(null)       // canvas-rotated texture for PMREM
   const abortRef      = useRef(null)
   const rotTimerRef   = useRef(null)
+  const prevRotRef    = useRef({ x: 0, y: 0 })
   const bgRef         = useRef(background)
   const bgBlurRef     = useRef(bgBlur)
   bgRef.current       = background
@@ -122,33 +124,123 @@ function ManagedHdriEnvironment({
     }
   }
 
+  const disposeRotatedTex = () => {
+    if (rotatedTexRef.current) {
+      rotatedTexRef.current.dispose()
+      rotatedTexRef.current = null
+    }
+  }
+
   const disposeAll = () => {
     disposeEnvMap()
+    disposeRotatedTex()
     if (rawTexRef.current) {
       rawTexRef.current.dispose()
       rawTexRef.current = null
     }
   }
 
+  // Create a rotated copy of the equirectangular texture using Canvas2D
+  // rotY = horizontal pan (shift pixels left/right, wrapping)
+  // rotX = vertical shift (shift pixels up/down, clamping at poles)
+  const createRotatedTexture = (srcTex, rotY, rotX) => {
+    const img = srcTex.image
+    if (!img) return srcTex
+
+    // For HDR data textures (Float/Half arrays), we can't easily use canvas
+    // In that case, fall back to the original texture with offset (partial support)
+    if (!img.width || !img.height || img instanceof Float32Array || img instanceof Uint16Array) {
+      srcTex.offset.set(-rotY / (2 * Math.PI), -rotX / (2 * Math.PI))
+      srcTex.wrapS = THREE.RepeatWrapping
+      srcTex.wrapT = THREE.ClampToEdgeWrapping
+      srcTex.needsUpdate = true
+      return srcTex
+    }
+
+    const w = img.width
+    const h = img.height
+
+    // Calculate pixel shifts
+    const shiftX = Math.round((rotY / (2 * Math.PI)) * w) % w
+    const shiftY = Math.round((rotX / Math.PI) * h)
+
+    // Create offscreen canvas
+    const canvas = document.createElement('canvas')
+    canvas.width  = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+
+    // Horizontal wrap (rotY) — draw image shifted and wrap around
+    if (shiftX !== 0) {
+      const absShift = Math.abs(shiftX)
+      if (shiftX > 0) {
+        ctx.drawImage(img, absShift, 0, w - absShift, h, 0, 0, w - absShift, h)
+        ctx.drawImage(img, 0, 0, absShift, h, w - absShift, 0, absShift, h)
+      } else {
+        ctx.drawImage(img, 0, 0, w - absShift, h, absShift, 0, w - absShift, h)
+        ctx.drawImage(img, w - absShift, 0, absShift, h, 0, 0, absShift, h)
+      }
+    } else {
+      ctx.drawImage(img, 0, 0)
+    }
+
+    // Vertical shift (rotX) — shift image data up/down with clamping
+    if (shiftY !== 0) {
+      const imgData = ctx.getImageData(0, 0, w, h)
+      const data = imgData.data
+      const newData = new Uint8ClampedArray(data.length)
+
+      for (let y = 0; y < h; y++) {
+        const srcY = Math.max(0, Math.min(h - 1, y + shiftY))
+        for (let x = 0; x < w; x++) {
+          const dstIdx = (y * w + x) * 4
+          const srcIdx = (srcY * w + x) * 4
+          newData[dstIdx]     = data[srcIdx]
+          newData[dstIdx + 1] = data[srcIdx + 1]
+          newData[dstIdx + 2] = data[srcIdx + 2]
+          newData[dstIdx + 3] = data[srcIdx + 3]
+        }
+      }
+      imgData.data.set(newData)
+      ctx.putImageData(imgData, 0, 0)
+    }
+
+    // Create new texture from rotated canvas
+    const rotTex = new THREE.CanvasTexture(canvas)
+    rotTex.mapping = THREE.EquirectangularReflectionMapping
+    rotTex.colorSpace = srcTex.colorSpace || THREE.SRGBColorSpace
+    rotTex.needsUpdate = true
+    return rotTex
+  }
+
   // Build env map from the current raw texture + rotation and apply it
-  const applyEnvMap = () => {
+  const applyEnvMap = (forceRegen = false) => {
     const rawTex = rawTexRef.current
     if (!rawTex) return
 
-    // Dispose previous env map before creating new one
-    disposeEnvMap()
+    // Check if rotation actually changed
+    const rotChanged = prevRotRef.current.x !== rotationX || prevRotRef.current.y !== rotationY
+    if (!forceRegen && !rotChanged && envMapRef.current) return
+    prevRotRef.current = { x: rotationX, y: rotationY }
 
-    // Apply rotation via UV offset on the equirectangular texture.
-    // Y rotation = horizontal pan (maps 1:1 to U offset since equirect wraps 2π)
-    // X rotation = vertical shift (approximation — good for ±45°)
-    rawTex.offset.set(-rotationY / (2 * Math.PI), -rotationX / (2 * Math.PI))
-    rawTex.repeat.set(1, 1)
-    rawTex.wrapS = THREE.RepeatWrapping
-    rawTex.wrapT = THREE.RepeatWrapping
-    rawTex.needsUpdate = true
+    // Dispose previous env map and rotated texture
+    disposeEnvMap()
+    disposeRotatedTex()
+
+    // Create rotated texture (or use original if rotation is 0)
+    let texForPmrem = rawTex
+    if (Math.abs(rotationX) > 0.01 || Math.abs(rotationY) > 0.01) {
+      texForPmrem = createRotatedTexture(rawTex, rotationY, rotationX)
+      if (texForPmrem !== rawTex) {
+        rotatedTexRef.current = texForPmrem
+      }
+    }
+
+    // Ensure equirectangular mapping
+    texForPmrem.mapping = THREE.EquirectangularReflectionMapping
 
     const pmrem  = getPmrem()
-    const envMap = pmrem.fromEquirectangular(rawTex).texture
+    const envMap = pmrem.fromEquirectangular(texForPmrem).texture
     envMapRef.current = envMap
 
     scene.environment = envMap
@@ -191,8 +283,10 @@ function ManagedHdriEnvironment({
       url,
       (texture) => {
         if (abortToken.aborted) { texture.dispose(); return }
+        texture.mapping = THREE.EquirectangularReflectionMapping
         rawTexRef.current = texture
-        applyEnvMap()
+        prevRotRef.current = { x: -999, y: -999 } // force regen
+        applyEnvMap(true)
         onLoadingChange?.(false)
       },
       undefined,
