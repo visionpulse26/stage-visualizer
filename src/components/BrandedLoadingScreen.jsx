@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 const FADE_MS    = 700
-const MIN_SHOW   = 1800  // minimum display time so it doesn't just flash
+const MIN_SHOW   = 3000  // minimum display time — 3 seconds
 
 function BrandedLoadingScreen({ isLoaded }) {
   const [visible, setVisible] = useState(true)
@@ -35,28 +35,31 @@ function BrandedLoadingScreen({ isLoaded }) {
         pointerEvents:   fading ? 'none' : 'auto',
       }}
     >
-      <p
-        className="text-[11px] tracking-[0.35em] uppercase mb-5 font-medium"
-        style={{ color: 'rgba(0,0,0,0.45)' }}
-      >
-        powered by
-      </p>
+      {/* Breathing container — text + logo fade in/out slowly */}
+      <div className="flex flex-col items-center" style={{ animation: 'breathe 2.5s ease-in-out infinite' }}>
+        <p
+          className="text-[15px] tracking-[0.35em] uppercase mb-6 font-medium"
+          style={{ color: 'rgba(0,0,0,0.5)' }}
+        >
+          powered by
+        </p>
 
-      <img
-        src="https://visual.tooawake.online/logo_tooawake.png"
-        alt="Too:Awake Studio"
-        className="h-10 object-contain mb-10"
-        draggable={false}
-      />
+        <img
+          src="https://visual.tooawake.online/logo_tooawake.png"
+          alt="Too:Awake Studio"
+          className="h-14 object-contain mb-12"
+          draggable={false}
+        />
+      </div>
 
-      {/* Pulsating dots */}
-      <div className="flex items-center gap-2">
+      {/* Pulsating dots — 35% bigger */}
+      <div className="flex items-center gap-3">
         {[0, 1, 2].map(i => (
           <span
             key={i}
-            className="block w-[6px] h-[6px] rounded-full"
+            className="block w-2 h-2 rounded-full"
             style={{
-              backgroundColor: 'rgba(0,0,0,0.3)',
+              backgroundColor: 'rgba(0,0,0,0.35)',
               animation: `loadPulse 1.4s ease-in-out ${i * 0.18}s infinite`,
             }}
           />
@@ -67,6 +70,10 @@ function BrandedLoadingScreen({ isLoaded }) {
         @keyframes loadPulse {
           0%, 80%, 100% { opacity: .25; transform: scale(.8); }
           40%           { opacity:   1; transform: scale(1.3); }
+        }
+        @keyframes breathe {
+          0%, 100% { opacity: .55; }
+          50%      { opacity:  1; }
         }
       `}</style>
     </div>
