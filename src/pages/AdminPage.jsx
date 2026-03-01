@@ -421,19 +421,27 @@ function AdminPage() {
     setPublishError(null)
     setIsDashboardOpen(false)
 
-    // Restore scene_config if present — LITE & STABLE (no rotation)
+    // Restore scene_config if present — all lighting values for consistency
     const cfg = project.scene_config
     if (cfg) {
-      setHdriPreset(cfg.hdriPreset      ?? 'none')
-      setEnvIntensity(cfg.envIntensity          ?? 1)
-      setBgBlur(cfg.bgBlur                    ?? 0)
+      // HDRI & Environment
+      setHdriPreset(cfg.hdriPreset             ?? 'none')
+      setEnvIntensity(cfg.envIntensity         ?? 1)
+      setBgBlur(cfg.bgBlur                     ?? 0)
       setShowHdriBackground(cfg.showHdriBackground ?? false)
-      setBloomStrength(cfg.bloomStrength        ?? 0.3)
-      setBloomThreshold(cfg.bloomThreshold ?? 1.2)
-      setProtectLed(cfg.protectLed        ?? true)
+      
+      // Post-FX
+      setBloomStrength(cfg.bloomStrength       ?? 0.3)
+      setBloomThreshold(cfg.bloomThreshold     ?? 1.2)
+      setProtectLed(cfg.protectLed             ?? true)
       setHdriFile(null)
 
-      // LITE & STABLE: Trust saved URL directly (if broken, loader will auto-clear)
+      // ★ Sun lighting - MUST load these for consistency with Client/Collab
+      if (cfg.sunIntensity != null)  setSunIntensity(cfg.sunIntensity)
+      if (cfg.sunAzimuth != null)    setSunAzimuth(cfg.sunAzimuth)
+      if (cfg.sunElevation != null)  setSunElevation(cfg.sunElevation)
+
+      // HDRI URL
       if (cfg.customHdriUrl) {
         console.log('[AdminPage] Loading saved HDRI URL:', cfg.customHdriUrl)
         setCustomHdriUrl(cfg.customHdriUrl)

@@ -229,6 +229,7 @@ function ClientPage() {
         cameraControlsRef={cameraControlsRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
+        hdriFileExt={customHdriUrl?.split('.').pop()?.toLowerCase() || 'hdr'}
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
