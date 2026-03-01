@@ -63,7 +63,7 @@ function AdminPage() {
   const [hdriLoading,   setHdriLoading]   = useState(false)   // loading lock
   
   // HDRI presets from NAS with validation helpers
-  const { presets: hdriPresets, validateUrl: validateHdriUrl } = useHdriPresets()
+  const { presets: hdriPresets } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -433,20 +433,10 @@ function AdminPage() {
       setProtectLed(cfg.protectLed        ?? true)
       setHdriFile(null)
 
-      // PERSISTENCE FIX: Default to 'Off' for invalid/old HDRI URLs
+      // LITE & STABLE: Trust saved URL directly (if broken, loader will auto-clear)
       if (cfg.customHdriUrl) {
-        const validated = validateHdriUrl(cfg.customHdriUrl)
-        if (validated.valid && validated.url_low) {
-          // ★ SIMPLIFIED: Only load url_low to keep GPU cool
-          setCustomHdriUrl(validated.url_low)
-          console.log('[AdminPage] Loading low-res HDRI:', validated.url_low)
-        } else if (validated.valid) {
-          setCustomHdriUrl(validated.url)
-        } else {
-          console.warn('[AdminPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
-          setCustomHdriUrl(null)
-          setHdriPreset('none')
-        }
+        console.log('[AdminPage] Loading saved HDRI URL:', cfg.customHdriUrl)
+        setCustomHdriUrl(cfg.customHdriUrl)
       } else {
         setCustomHdriUrl(null)
       }

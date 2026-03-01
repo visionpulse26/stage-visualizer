@@ -6,7 +6,6 @@ import { RoleBadge } from './AdminPage'
 import { DbLoadingOverlay } from './CollabPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
-import useHdriPresets from '../hooks/useHdriPresets'
 
 function ClientPage() {
   const { projectId } = useParams()
@@ -27,9 +26,6 @@ function ClientPage() {
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
   const [hdriLoading,   setHdriLoading]   = useState(false)
-  
-  // HDRI presets from NAS with validation helpers
-  const { validateUrl: validateHdriUrl } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -129,18 +125,10 @@ function ClientPage() {
           setBloomThreshold(cfg.bloomThreshold ?? 1.2)
           setProtectLed(cfg.protectLed        ?? true)
 
-          // PERSISTENCE FIX: Default to 'Off' for invalid HDRI URLs
+          // LITE & STABLE: Trust saved URL directly (Admin validated it)
           if (cfg.customHdriUrl) {
-            const validated = validateHdriUrl(cfg.customHdriUrl)
-            if (validated.valid && validated.url_low) {
-              setCustomHdriUrl(validated.url_low)
-            } else if (validated.valid) {
-              setCustomHdriUrl(validated.url)
-            } else {
-              console.warn('[ClientPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
-              setCustomHdriUrl(null)
-              setHdriPreset('none')
-            }
+            console.log('[ClientPage] Loading saved HDRI URL:', cfg.customHdriUrl)
+            setCustomHdriUrl(cfg.customHdriUrl)
           } else {
             setCustomHdriUrl(null)
           }

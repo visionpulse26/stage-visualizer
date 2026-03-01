@@ -5,7 +5,6 @@ import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
-import useHdriPresets from '../hooks/useHdriPresets'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -24,15 +23,11 @@ function CollabPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Scene config (loaded from DB, local-only mutations — never written back) ─
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
   const [customHdriUrl,      setCustomHdriUrl]      = useState(null)
   const [hdriFileExt,        setHdriFileExt]        = useState('hdr')
   const [hdriLoading,        setHdriLoading]        = useState(false)
-  
-  // HDRI presets from NAS with validation helpers
-  const { validateUrl: validateHdriUrl } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -150,18 +145,10 @@ function CollabPage() {
           setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
           setProtectLed(cfg.protectLed              ?? true)
 
-          // PERSISTENCE FIX: Default to 'Off' for invalid HDRI URLs
+          // LITE & STABLE: Trust saved URL directly (Admin validated it)
           if (cfg.customHdriUrl) {
-            const validated = validateHdriUrl(cfg.customHdriUrl)
-            if (validated.valid && validated.url_low) {
-              setCustomHdriUrl(validated.url_low)
-            } else if (validated.valid) {
-              setCustomHdriUrl(validated.url)
-            } else {
-              console.warn('[CollabPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
-              setCustomHdriUrl(null)
-              setHdriPreset('none')
-            }
+            console.log('[CollabPage] Loading saved HDRI URL:', cfg.customHdriUrl)
+            setCustomHdriUrl(cfg.customHdriUrl)
           } else {
             setCustomHdriUrl(null)
           }
