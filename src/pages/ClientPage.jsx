@@ -119,6 +119,8 @@ function ClientPage() {
 
         // Restore scene_config — consistent with Admin settings
         const cfg = data.scene_config
+        console.log('[ClientPage] scene_config from DB:', JSON.stringify(cfg, null, 2))
+        
         if (cfg) {
           // HDRI & Environment
           setHdriPreset(cfg.hdriPreset             ?? 'none')
@@ -141,11 +143,14 @@ function ClientPage() {
 
           // HDRI URL
           if (cfg.customHdriUrl) {
-            console.log('[ClientPage] Loading saved HDRI URL:', cfg.customHdriUrl)
             setCustomHdriUrl(cfg.customHdriUrl)
           } else {
             setCustomHdriUrl(null)
           }
+          
+          console.log('[ClientPage] Loaded values - envIntensity:', cfg.envIntensity, 'sunIntensity:', cfg.sunIntensity)
+        } else {
+          console.warn('[ClientPage] No scene_config found in project data')
         }
       } catch (err) {
         console.error('Failed to load project:', err)
