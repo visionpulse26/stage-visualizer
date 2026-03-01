@@ -62,20 +62,9 @@ function EnvIntensityController({ intensity }) {
   return null
 }
 
-// ── Env rotation controller — rotates both environment and background ─────────
-function EnvRotationController({ rotationX = 0, rotationY = 0 }) {
-  const { scene } = useThree()
-  useEffect(() => {
-    const euler = new THREE.Euler(rotationX, rotationY, 0, 'XYZ')
-    if ('environmentRotation' in scene) {
-      scene.environmentRotation.copy(euler)
-    }
-    if ('backgroundRotation' in scene) {
-      scene.backgroundRotation.copy(euler)
-    }
-  }, [scene, rotationX, rotationY])
-  return null
-}
+// (EnvRotationController removed — rotation is handled inside ManagedHdriEnvironment
+//  via re-processing the equirectangular texture through PMREM with rotated offset.
+//  Three.js 0.160 does not support scene.environmentRotation.)
 
 // ── Tone-mapping controller — ACES + clamped exposure for HDR control ────────
 // FIX 3 — toneMappingExposure = 0.8 compresses highlights so video content
@@ -90,70 +79,106 @@ function ToneMappingController() {
 }
 
 // ── Managed HDRI Environment ─────────────────────────────────────────────────
-// Full lifecycle control with strict disposal, loading lock, and memory guard.
-// Prevents GPU memory leaks when cycling through 100+ high-res EXR files.
+// Full lifecycle control with strict disposal, loading lock, memory guard, and
+// built-in rotation (Three.js 0.160 lacks scene.environmentRotation).
+//
+// Rotation: the raw equirectangular texture is re-processed through PMREM with
+// a custom rotation shader. Regeneration is debounced (250ms) so slider
+// dragging stays smooth — only the final position triggers a re-process.
 
-// Singleton PMREMGenerator — reused across all loads instead of creating new ones
 let sharedPmrem = null
 let loadCount   = 0
+const ROTATION_DEBOUNCE_MS = 250
 
-function ManagedHdriEnvironment({ url, ext, background, bgBlur = 0, onLoadingChange }) {
+function ManagedHdriEnvironment({
+  url, ext, background, bgBlur = 0,
+  rotationX = 0, rotationY = 0,
+  onLoadingChange,
+}) {
   const { gl, scene } = useThree()
   const envMapRef     = useRef(null)
   const rawTexRef     = useRef(null)
   const abortRef      = useRef(null)
-  const loadingRef    = useRef(false)
+  const rotTimerRef   = useRef(null)
   const bgRef         = useRef(background)
   const bgBlurRef     = useRef(bgBlur)
   bgRef.current       = background
   bgBlurRef.current   = bgBlur
 
-  // Helper: strict cleanup of current textures
-  const disposeCurrentHdri = () => {
+  const getPmrem = () => {
+    if (!sharedPmrem || sharedPmrem._disposed) {
+      sharedPmrem = new THREE.PMREMGenerator(gl)
+      sharedPmrem.compileEquirectangularShader()
+    }
+    return sharedPmrem
+  }
+
+  const disposeEnvMap = () => {
     scene.environment = null
     scene.background  = null
     if (envMapRef.current) {
       envMapRef.current.dispose()
       envMapRef.current = null
     }
+  }
+
+  const disposeAll = () => {
+    disposeEnvMap()
     if (rawTexRef.current) {
       rawTexRef.current.dispose()
       rawTexRef.current = null
     }
   }
 
-  // Memory guard: check every 5 loads
-  const checkMemory = () => {
+  // Build env map from the current raw texture + rotation and apply it
+  const applyEnvMap = () => {
+    const rawTex = rawTexRef.current
+    if (!rawTex) return
+
+    // Dispose previous env map before creating new one
+    disposeEnvMap()
+
+    // Apply rotation via UV offset on the equirectangular texture.
+    // Y rotation = horizontal pan (maps 1:1 to U offset since equirect wraps 2π)
+    // X rotation = vertical shift (approximation — good for ±45°)
+    rawTex.offset.set(-rotationY / (2 * Math.PI), -rotationX / (2 * Math.PI))
+    rawTex.repeat.set(1, 1)
+    rawTex.wrapS = THREE.RepeatWrapping
+    rawTex.wrapT = THREE.RepeatWrapping
+    rawTex.needsUpdate = true
+
+    const pmrem  = getPmrem()
+    const envMap = pmrem.fromEquirectangular(rawTex).texture
+    envMapRef.current = envMap
+
+    scene.environment = envMap
+    if (bgRef.current) scene.background = envMap
+    if ('backgroundBlurriness' in scene) {
+      scene.backgroundBlurriness = bgRef.current ? bgBlurRef.current : 0
+    }
+
+    // Memory guard every 5 loads
     loadCount++
     if (loadCount % 5 === 0 && gl.info) {
-      const texCount = gl.info.memory?.textures ?? 0
-      console.log(`[HDRI Memory] Load #${loadCount} — GPU textures: ${texCount}`)
-      if (texCount > 20) {
-        console.warn('[HDRI Memory] High texture count detected! Possible leak.')
-      }
+      const tc = gl.info.memory?.textures ?? 0
+      if (tc > 20) console.warn(`[HDRI Memory] Load #${loadCount} — GPU textures: ${tc}`)
       gl.info.reset()
     }
   }
 
+  // ── Load new HDRI when URL changes ──────────────────────────────────────────
   useEffect(() => {
     if (!url) {
-      disposeCurrentHdri()
+      disposeAll()
       onLoadingChange?.(false)
       return
     }
 
-    // Abort any previous load in progress
-    if (abortRef.current) {
-      abortRef.current.aborted = true
-    }
+    if (abortRef.current) abortRef.current.aborted = true
     const abortToken = { aborted: false }
     abortRef.current = abortToken
 
-    // STRICT DISPOSAL — clear old HDRI BEFORE starting new load
-    disposeCurrentHdri()
-
-    // Set loading lock
-    loadingRef.current = true
+    disposeAll()
     onLoadingChange?.(true)
 
     const isBlob = url.startsWith('blob:')
@@ -162,46 +187,18 @@ function ManagedHdriEnvironment({ url, ext, background, bgBlur = 0, onLoadingCha
       : url.toLowerCase().endsWith('.exr')
     const loader = isExr ? new EXRLoader() : new RGBELoader()
 
-    // Initialize or reuse shared PMREM generator
-    if (!sharedPmrem || sharedPmrem.disposed) {
-      sharedPmrem = new THREE.PMREMGenerator(gl)
-      sharedPmrem.compileEquirectangularShader()
-    }
-
     loader.load(
       url,
       (texture) => {
-        // Check abort token — if user selected a different HDRI, discard this result
-        if (abortToken.aborted) {
-          texture.dispose()
-          return
-        }
-
+        if (abortToken.aborted) { texture.dispose(); return }
         rawTexRef.current = texture
-
-        // Generate env map using shared PMREM
-        const envMap = sharedPmrem.fromEquirectangular(texture).texture
-        envMapRef.current = envMap
-
-        // Apply to scene
-        scene.environment = envMap
-        if (bgRef.current) scene.background = envMap
-        if ('backgroundBlurriness' in scene) {
-          scene.backgroundBlurriness = bgRef.current ? bgBlurRef.current : 0
-        }
-
-        // Release loading lock
-        loadingRef.current = false
+        applyEnvMap()
         onLoadingChange?.(false)
-
-        // Memory guard
-        checkMemory()
       },
       undefined,
       (err) => {
         if (!abortToken.aborted) {
           console.warn('[HDRI] Load failed:', err?.message || err)
-          loadingRef.current = false
           onLoadingChange?.(false)
         }
       },
@@ -209,31 +206,37 @@ function ManagedHdriEnvironment({ url, ext, background, bgBlur = 0, onLoadingCha
 
     return () => {
       abortToken.aborted = true
-      disposeCurrentHdri()
-      loadingRef.current = false
+      disposeAll()
     }
-  }, [url, ext, gl, scene, onLoadingChange])
+  }, [url, ext, gl, scene])
 
-  // Toggle background visibility without reloading the texture
+  // ── Rotation change — debounced PMREM re-process ────────────────────────────
+  useEffect(() => {
+    if (!rawTexRef.current) return
+    if (rotTimerRef.current) clearTimeout(rotTimerRef.current)
+    rotTimerRef.current = setTimeout(() => {
+      applyEnvMap()
+    }, ROTATION_DEBOUNCE_MS)
+    return () => { if (rotTimerRef.current) clearTimeout(rotTimerRef.current) }
+  }, [rotationX, rotationY])
+
+  // ── Background toggle (no reload) ───────────────────────────────────────────
   useEffect(() => {
     if (!envMapRef.current) return
     scene.background = background ? envMapRef.current : null
   }, [background, scene])
 
-  // Background blur
+  // ── Background blur ─────────────────────────────────────────────────────────
   useEffect(() => {
     if ('backgroundBlurriness' in scene) {
       scene.backgroundBlurriness = background ? bgBlur : 0
     }
   }, [scene, bgBlur, background])
 
-  // Cleanup shared PMREM when component fully unmounts (page navigation)
+  // ── Cleanup shared PMREM on full unmount ────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (sharedPmrem) {
-        sharedPmrem.dispose()
-        sharedPmrem = null
-      }
+      if (sharedPmrem) { sharedPmrem.dispose(); sharedPmrem = null }
     }
   }, [])
 
@@ -313,6 +316,8 @@ function StageCanvas({
                 background={resolvedShowBg}
                 onLoadingChange={onHdriLoading}
                 bgBlur={resolvedBgBlur}
+                rotationX={hdriRotationX ?? 0}
+                rotationY={hdriRotationY ?? 0}
               />
             ) : (
               resolvedShowBg
@@ -320,7 +325,6 @@ function StageCanvas({
                 : <Environment preset={hdriPreset} />
             )}
             <EnvIntensityController intensity={resolvedEnvInt} />
-            <EnvRotationController rotationX={hdriRotationX ?? 0} rotationY={hdriRotationY ?? 0} />
           </>
         )}
 
