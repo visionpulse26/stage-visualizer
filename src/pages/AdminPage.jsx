@@ -346,8 +346,6 @@ function AdminPage() {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
       setCustomHdriUrl(json.url)
-      // Try to find low-res fallback if this URL is in presets
-      setHdriUrlLow(json.url_low || findLowResUrl(json.url))
       setHdriFile(null)
       setHdriPreset('none')
     } catch (err) {
@@ -356,7 +354,7 @@ function AdminPage() {
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, customHdriUrl, nasUploadFetch, findLowResUrl])
+  }, [projectName, customHdriUrl, nasUploadFetch])
 
   // ── External HDRI URL — paste a direct link to an .hdr / .exr file ─────
   const handleExternalHdriUrl = useCallback((url) => {
@@ -365,11 +363,9 @@ function AdminPage() {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
     setCustomHdriUrl(url)
-    // Try to find low-res fallback if this URL is in presets
-    setHdriUrlLow(findLowResUrl(url))
     setHdriFile(null)
     setHdriPreset('none')
-  }, [customHdriUrl, findLowResUrl])
+  }, [customHdriUrl])
 
   // ── Stage model upload ───────────────────────────────────────────────────
   const handleModelUpload = useCallback((file) => {

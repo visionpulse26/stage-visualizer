@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
