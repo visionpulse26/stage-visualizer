@@ -19,24 +19,30 @@ export default function useHdriPresets() {
       setError(null)
 
       try {
-        const res = await fetch(NAS_HDRI_LIST_URL)
+        const res = await fetch(NAS_HDRI_LIST_URL, { mode: 'cors' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
 
+        console.log('[useHdriPresets] Fetched HDRIs:', json)
+
         if (cancelled) return
 
-        if (json.success && Array.isArray(json.hdris)) {
-          const nasPresets = json.hdris.map(h => ({
-            id:    h.name || h.filename,
-            label: h.name || h.filename.replace(/\.[^/.]+$/, ''),
+        // API returns direct array: [{"name": "...", "url": "..."}, ...]
+        const hdriArray = Array.isArray(json) ? json : (json.hdris || [])
+
+        if (hdriArray.length > 0) {
+          const nasPresets = hdriArray.map((h, idx) => ({
+            id:    h.name || h.filename || `hdri-${idx}`,
+            label: (h.name || h.filename || `HDRI ${idx}`).replace(/\.[^/.]+$/, ''),
             url:   h.url,
           }))
+          console.log('[useHdriPresets] Mapped presets:', nasPresets.length, 'items')
           setPresets([...BUILTIN_PRESETS, ...nasPresets])
         } else {
-          throw new Error(json.error || 'Invalid response')
+          console.warn('[useHdriPresets] Empty HDRI array received')
         }
       } catch (err) {
-        console.warn('[useHdriPresets] Failed to fetch NAS HDRIs:', err.message)
+        console.error('[useHdriPresets] Failed to fetch NAS HDRIs:', err.message)
         if (!cancelled) setError(err.message)
       } finally {
         if (!cancelled) setLoading(false)
