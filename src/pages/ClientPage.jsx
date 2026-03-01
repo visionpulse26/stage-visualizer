@@ -25,6 +25,8 @@ function ClientPage() {
   // ── Scene config (loaded from scene_config column) ────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  const [hdriRotationX, setHdriRotationX] = useState(0)
+  const [hdriRotationY, setHdriRotationY] = useState(0)
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -118,6 +120,8 @@ function ClientPage() {
         if (cfg) {
           setHdriPreset(cfg.hdriPreset       ?? 'none')
           setCustomHdriUrl(cfg.customHdriUrl ?? null)
+          setHdriRotationX(cfg.hdriRotationX ?? 0)
+          setHdriRotationY(cfg.hdriRotationY ?? 0)
           setEnvIntensity(cfg.envIntensity          ?? 1)
           setBgBlur(cfg.bgBlur                    ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
@@ -191,6 +195,8 @@ function ClientPage() {
         cameraControlsRef={cameraControlsRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
+        hdriRotationX={hdriRotationX}
+        hdriRotationY={hdriRotationY}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}

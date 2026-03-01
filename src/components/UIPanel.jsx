@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import useHdriPresets from '../hooks/useHdriPresets'
 
 // ── Tiny icon components ──────────────────────────────────────────────────────
 const IconUpload    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
@@ -60,6 +61,9 @@ function UIPanel({
   projectName, onProjectNameChange, onOpenDashboard,
   // ── Scene config ─────────────────────────────────────────────────────────
   hdriPreset, onHdriPresetChange,
+  hdriRotationX, onHdriRotationXChange,
+  hdriRotationY, onHdriRotationYChange,
+  customHdriUrl,
   onCustomHdriUpload,
   // HDRI status flags
   hasLocalHdri, hasCloudHdri,
@@ -97,6 +101,10 @@ function UIPanel({
 
   // ── HDRI custom tab state ──────────────────────────────────────────────
   const [hdriInputMode,    setHdriInputMode]    = useState('cloud')   // 'cloud' | 'link' | 'nas'
+  const [hdriDropdownOpen, setHdriDropdownOpen] = useState(false)
+
+  // ── Fetch NAS HDRI presets ────────────────────────────────────────────────
+  const { presets: nasHdriPresets, loading: presetsLoading } = useHdriPresets()
   const [externalHdriUrl,  setExternalHdriUrl]  = useState('')
 
   const handleCopy = useCallback((text, key) => {
@@ -404,31 +412,82 @@ function UIPanel({
             {/* HDRI Environment */}
             <Section icon={<IconGlobe />} title="Environment (HDRI)">
               <div className="space-y-3">
-                {/* Preset picker */}
+                {/* HDRI Preset Dropdown */}
                 <div className="space-y-1">
-                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Preset</span>
-                  <div className="grid grid-cols-3 gap-1 mt-1">
-                    {[
-                      { id: 'none',       label: 'Off'       },
-                      { id: 'city',       label: 'City'      },
-                      { id: 'studio',     label: 'Studio'    },
-                      { id: 'warehouse',  label: 'Warehouse' },
-                      { id: 'night',      label: 'Night'     },
-                      { id: 'apartment',  label: 'Apartment' },
-                    ].map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => onHdriPresetChange(p.id)}
-                        className={`py-1.5 rounded-lg text-[10px] font-medium transition-all border ${
-                          hdriPreset === p.id
-                            ? 'bg-violet-500/20 border-violet-500/30 text-violet-300'
-                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/8'
-                        }`}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Environment</span>
+                  <div className="relative">
+                    <button
+                      onClick={() => setHdriDropdownOpen(v => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-[#ff5500]/40 text-left text-xs text-white/70 transition-all"
+                    >
+                      <span className="truncate">
+                        {customHdriUrl
+                          ? (customHdriUrl.startsWith('blob:') ? '🎨 Custom (Local)' : '🎨 Custom')
+                          : nasHdriPresets.find(p => p.id === hdriPreset)?.label || hdriPreset || 'Off'
+                        }
+                      </span>
+                      <svg className={`w-4 h-4 text-white/30 transition-transform ${hdriDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    {hdriDropdownOpen && (
+                      <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-xl bg-black/95 border border-[#ff5500]/30 shadow-xl backdrop-blur-xl scrollbar-thin">
+                        {presetsLoading ? (
+                          <div className="flex items-center justify-center gap-2 py-4 text-white/40 text-xs">
+                            <img src="https://visual.tooawake.online/logo_tooawake.png" alt="" className="h-4 animate-pulse" />
+                            Loading HDRIs…
+                          </div>
+                        ) : (
+                          <>
+                            {nasHdriPresets.map(p => (
+                              <button
+                                key={p.id}
+                                onClick={() => {
+                                  if (p.url) {
+                                    onExternalHdriUrl(p.url)
+                                  } else {
+                                    onHdriPresetChange(p.id)
+                                    onClearHdri?.()
+                                  }
+                                  setHdriDropdownOpen(false)
+                                }}
+                                className={`w-full text-left px-3 py-2 text-[11px] transition-all border-b border-white/5 last:border-0 ${
+                                  ((!customHdriUrl && hdriPreset === p.id) || (customHdriUrl && customHdriUrl === p.url))
+                                    ? 'bg-[#ff5500]/20 text-[#ff5500]'
+                                    : 'text-white/60 hover:bg-white/5 hover:text-white/90'
+                                }`}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                            {customHdriUrl && (
+                              <button
+                                onClick={() => setHdriDropdownOpen(false)}
+                                className="w-full text-left px-3 py-2 text-[11px] bg-[#ff5500]/15 text-[#ff5500] border-t border-white/10"
+                              >
+                                🎨 {customHdriUrl.startsWith('blob:') ? 'Custom (Local File)' : 'Custom (External)'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
+                </div>
+
+                {/* HDRI Rotation Controls */}
+                <div className="space-y-2 pt-1 border-t border-white/5">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Rotation</span>
+                  <Slider
+                    label="Rotation X"
+                    value={hdriRotationX ?? 0}
+                    min={0} max={6.28} step={0.01}
+                    onChange={onHdriRotationXChange}
+                  />
+                  <Slider
+                    label="Rotation Y"
+                    value={hdriRotationY ?? 0}
+                    min={0} max={6.28} step={0.01}
+                    onChange={onHdriRotationYChange}
+                  />
                 </div>
 
                 {/* Custom HDRI — 3 methods */}

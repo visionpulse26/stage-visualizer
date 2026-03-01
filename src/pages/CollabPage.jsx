@@ -27,6 +27,8 @@ function CollabPage() {
   const [hdriPreset,         setHdriPreset]         = useState('none')
   const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview only
   const [hdriFileExt,        setHdriFileExt]        = useState('hdr')  // 'hdr' | 'exr'
+  const [hdriRotationX,      setHdriRotationX]      = useState(0)      // 0 to 2π
+  const [hdriRotationY,      setHdriRotationY]      = useState(0)      // 0 to 2π
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -138,6 +140,8 @@ function CollabPage() {
         if (cfg) {
           setHdriPreset(cfg.hdriPreset             ?? 'none')
           setCustomHdriUrl(cfg.customHdriUrl       ?? null)
+          setHdriRotationX(cfg.hdriRotationX       ?? 0)
+          setHdriRotationY(cfg.hdriRotationY       ?? 0)
           setEnvIntensity(cfg.envIntensity          ?? 1)
           setBgBlur(cfg.bgBlur                     ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
@@ -275,6 +279,8 @@ function CollabPage() {
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
+        hdriRotationX={hdriRotationX}
+        hdriRotationY={hdriRotationY}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -302,6 +308,9 @@ function CollabPage() {
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}
           // ── HDRI ─────────────────────────────────────────────────────────
           hdriPreset={hdriPreset}              onHdriPresetChange={setHdriPreset}
+          hdriRotationX={hdriRotationX}        onHdriRotationXChange={setHdriRotationX}
+          hdriRotationY={hdriRotationY}        onHdriRotationYChange={setHdriRotationY}
+          customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
           envIntensity={envIntensity}          onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                      onBgBlurChange={setBgBlur}

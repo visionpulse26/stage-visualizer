@@ -59,6 +59,8 @@ function AdminPage() {
   const [hdriFile,      setHdriFile]      = useState(null)
   const [hdriFileExt,   setHdriFileExt]   = useState('hdr')   // 'hdr' | 'exr'
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  const [hdriRotationX, setHdriRotationX] = useState(0)       // 0 to 2π
+  const [hdriRotationY, setHdriRotationY] = useState(0)       // 0 to 2π
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -401,6 +403,8 @@ function AdminPage() {
     if (cfg) {
       setHdriPreset(cfg.hdriPreset      ?? 'none')
       setCustomHdriUrl(cfg.customHdriUrl   ?? null)
+      setHdriRotationX(cfg.hdriRotationX     ?? 0)
+      setHdriRotationY(cfg.hdriRotationY     ?? 0)
       setEnvIntensity(cfg.envIntensity          ?? 1)
       setBgBlur(cfg.bgBlur                    ?? 0)
       setShowHdriBackground(cfg.showHdriBackground ?? false)
@@ -513,6 +517,8 @@ function AdminPage() {
         floorReflection: true,
         hdriPreset:      hdriPreset,
         customHdriUrl:   finalHdriUrl,
+        hdriRotationX:   hdriRotationX,
+        hdriRotationY:   hdriRotationY,
         envIntensity:        envIntensity,
         bgBlur:              bgBlur,
         showHdriBackground:  showHdriBackground,
@@ -581,6 +587,8 @@ function AdminPage() {
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
+        hdriRotationX={hdriRotationX}
+        hdriRotationY={hdriRotationY}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -622,6 +630,9 @@ function AdminPage() {
           onProjectNameChange={setProjectName}
           onOpenDashboard={() => setIsDashboardOpen(true)}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
+          hdriRotationX={hdriRotationX}    onHdriRotationXChange={setHdriRotationX}
+          hdriRotationY={hdriRotationY}    onHdriRotationYChange={setHdriRotationY}
+          customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
           hasLocalHdri={hasLocalHdri}
           hasCloudHdri={hasCloudHdri}

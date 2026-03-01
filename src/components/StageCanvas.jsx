@@ -62,6 +62,21 @@ function EnvIntensityController({ intensity }) {
   return null
 }
 
+// ── Env rotation controller — rotates both environment and background ─────────
+function EnvRotationController({ rotationX = 0, rotationY = 0 }) {
+  const { scene } = useThree()
+  useEffect(() => {
+    const euler = new THREE.Euler(rotationX, rotationY, 0, 'XYZ')
+    if ('environmentRotation' in scene) {
+      scene.environmentRotation.copy(euler)
+    }
+    if ('backgroundRotation' in scene) {
+      scene.backgroundRotation.copy(euler)
+    }
+  }, [scene, rotationX, rotationY])
+  return null
+}
+
 // ── Tone-mapping controller — ACES + clamped exposure for HDR control ────────
 // FIX 3 — toneMappingExposure = 0.8 compresses highlights so video content
 //          never clips to pure white before Bloom can evaluate it.
@@ -154,6 +169,8 @@ function StageCanvas({
   hdriPreset,
   customHdriUrl,
   hdriFileExt,          // 'hdr' | 'exr' — required for blob: URLs (no extension in URL)
+  hdriRotationX,        // 0 to 2π — HDRI rotation around X axis
+  hdriRotationY,        // 0 to 2π — HDRI rotation around Y axis
   envIntensity,
   bgBlur,
   bloomStrength,
@@ -228,6 +245,7 @@ function StageCanvas({
                 : <Environment preset={hdriPreset} />
             )}
             <EnvIntensityController intensity={resolvedEnvInt} />
+            <EnvRotationController rotationX={hdriRotationX ?? 0} rotationY={hdriRotationY ?? 0} />
           </>
         )}
 
