@@ -541,18 +541,22 @@ function AdminPage() {
       const az = (sunAzimuth   * Math.PI) / 180
       const el = (sunElevation * Math.PI) / 180
       const d  = 15
-      // LITE & STABLE: No rotation values saved
+      // LITE & STABLE: Save all lighting values for consistency across pages
       const scene_config = {
-        floorReflection: true,
-        hdriPreset:      hdriPreset,
-        customHdriUrl:   finalHdriUrl,
+        floorReflection:     true,
+        hdriPreset:          hdriPreset,
+        customHdriUrl:       finalHdriUrl,
         envIntensity:        envIntensity,
         bgBlur:              bgBlur,
         showHdriBackground:  showHdriBackground,
         bloomStrength:       bloomStrength,
-        sunPosition:     [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
-        bloomThreshold:  bloomThreshold,
-        protectLed:      protectLed,
+        bloomThreshold:      bloomThreshold,
+        protectLed:          protectLed,
+        // ★ Sun lighting - save all values for Client/Collab consistency
+        sunPosition:         [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
+        sunIntensity:        sunIntensity,
+        sunAzimuth:          sunAzimuth,
+        sunElevation:        sunElevation,
       }
 
       // 5. Upsert project record

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import ClientPanel from '../components/ClientPanel'
@@ -22,16 +22,19 @@ function ClientPage() {
 
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
-  const [hdriPreset,    setHdriPreset]    = useState('none')
-  const [customHdriUrl, setCustomHdriUrl] = useState(null)
-  const [hdriLoading,   setHdriLoading]   = useState(false)
+  // ── Scene config (LITE & STABLE — consistent with Admin settings) ───────────
+  const [hdriPreset,         setHdriPreset]         = useState('none')
+  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)
+  const [hdriLoading,        setHdriLoading]        = useState(false)
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
   const [bloomStrength,      setBloomStrength]      = useState(0.3)
-  const [bloomThreshold, setBloomThreshold] = useState(1.2)
-  const [protectLed,     setProtectLed]     = useState(true)
+  const [bloomThreshold,     setBloomThreshold]     = useState(1.2)
+  const [protectLed,         setProtectLed]         = useState(true)
+  // ★ Sun lighting - loaded from scene_config for consistency
+  const [sunPosition,        setSunPosition]        = useState([10.6, 10.6, 7.5])
+  const [sunIntensity,       setSunIntensity]       = useState(1)
 
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
@@ -114,18 +117,29 @@ function ClientPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
 
-        // Restore scene_config — LITE & STABLE (no rotation)
+        // Restore scene_config — consistent with Admin settings
         const cfg = data.scene_config
         if (cfg) {
-          setHdriPreset(cfg.hdriPreset       ?? 'none')
-          setEnvIntensity(cfg.envIntensity          ?? 1)
-          setBgBlur(cfg.bgBlur                    ?? 0)
+          // HDRI & Environment
+          setHdriPreset(cfg.hdriPreset             ?? 'none')
+          setEnvIntensity(cfg.envIntensity         ?? 1)
+          setBgBlur(cfg.bgBlur                     ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
-          setBloomStrength(cfg.bloomStrength        ?? 0.3)
-          setBloomThreshold(cfg.bloomThreshold ?? 1.2)
-          setProtectLed(cfg.protectLed        ?? true)
+          
+          // Post-FX
+          setBloomStrength(cfg.bloomStrength       ?? 0.3)
+          setBloomThreshold(cfg.bloomThreshold     ?? 1.2)
+          setProtectLed(cfg.protectLed             ?? true)
 
-          // LITE & STABLE: Trust saved URL directly (Admin validated it)
+          // ★ Sun lighting - load from Admin's saved config
+          if (cfg.sunPosition && Array.isArray(cfg.sunPosition)) {
+            setSunPosition(cfg.sunPosition)
+          }
+          if (cfg.sunIntensity != null) {
+            setSunIntensity(cfg.sunIntensity)
+          }
+
+          // HDRI URL
           if (cfg.customHdriUrl) {
             console.log('[ClientPage] Loading saved HDRI URL:', cfg.customHdriUrl)
             setCustomHdriUrl(cfg.customHdriUrl)
@@ -186,8 +200,6 @@ function ClientPage() {
     setHdriLoading(false)
   }, [])
 
-  const sunPosition = useMemo(() => [10.6, 10.6, 7.5], [])
-
   if (projectNotFound) {
     return <ClientProjectNotFound projectId={projectId} />
   }
@@ -206,7 +218,7 @@ function ClientPage() {
         activeImageUrl={activeImageUrl}
         onLedMaterialStatus={() => {}}
         sunPosition={sunPosition}
-        sunIntensity={1}
+        sunIntensity={sunIntensity}
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}

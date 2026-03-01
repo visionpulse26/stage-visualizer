@@ -145,7 +145,7 @@ function CollabPage() {
           setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
           setProtectLed(cfg.protectLed              ?? true)
 
-          // LITE & STABLE: Trust saved URL directly (Admin validated it)
+          // HDRI URL
           if (cfg.customHdriUrl) {
             console.log('[CollabPage] Loading saved HDRI URL:', cfg.customHdriUrl)
             setCustomHdriUrl(cfg.customHdriUrl)
@@ -153,9 +153,10 @@ function CollabPage() {
             setCustomHdriUrl(null)
           }
 
-          // Restore sun from saved sunPosition vector if available
-          // (direct azimuth/elevation aren't stored, so leave defaults if absent)
+          // ★ Sun lighting - load from Admin's saved config for consistency
           if (cfg.sunIntensity != null) setSunIntensity(cfg.sunIntensity)
+          if (cfg.sunAzimuth != null)   setSunAzimuth(cfg.sunAzimuth)
+          if (cfg.sunElevation != null) setSunElevation(cfg.sunElevation)
         }
       } catch (err) {
         console.error('Failed to load project:', err)
