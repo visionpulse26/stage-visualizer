@@ -4,6 +4,7 @@ import StageCanvas from '../components/StageCanvas'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import { DbLoadingOverlay } from './CollabPage'
+import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
 
 function ClientPage() {
@@ -172,8 +173,12 @@ function ClientPage() {
 
   const activeClip = videoPlaylist.find(c => c.id === activeVideoId)
 
+  const sceneReady = !isDbLoading && !!modelUrl
+
   return (
     <div className="w-full h-full relative">
+      <BrandedLoadingScreen isLoaded={sceneReady} />
+
       <StageCanvas
         modelUrl={modelUrl}
         videoElement={videoElement}
@@ -208,8 +213,6 @@ function ClientPage() {
         />
 
         <RoleBadge role="Client View" color="blue" />
-
-        {isDbLoading && <DbLoadingOverlay projectId={projectId} />}
       </StageCanvas>
     </div>
   )

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
+import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
 
 function CollabPage() {
@@ -255,8 +256,12 @@ function CollabPage() {
     return <ProjectNotFound projectId={projectId} />
   }
 
+  const sceneReady = !isDbLoading && !!modelUrl
+
   return (
     <div className="w-full h-full relative">
+      <BrandedLoadingScreen isLoaded={sceneReady} />
+
       <StageCanvas
         modelUrl={modelUrl}
         videoElement={videoElement}
@@ -314,8 +319,6 @@ function CollabPage() {
         />
 
         <TopBar role="Collaborator" color="cyan" />
-
-        {isDbLoading && <DbLoadingOverlay projectId={projectId} />}
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
           Project: <span className="text-white/60 font-mono">{projectId}</span>
