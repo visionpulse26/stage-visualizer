@@ -16,6 +16,8 @@ const IconGrid      = () => <svg className="w-4 h-4" fill="none" stroke="current
 const IconGlobe     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
 const IconSparkle   = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36-6.36-.7.7M6.34 17.66l-.7.7M17.66 17.66l-.7-.7M6.34 6.34l-.7-.7M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
 const IconEye       = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+const IconCloud     = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+const IconServer    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg>
 
 function Section({ icon, title, badge, children }) {
   return (
@@ -63,6 +65,11 @@ function UIPanel({
   hasLocalHdri, hasCloudHdri,
   isUploadingHdri, onUploadHdriToCloud, onClearHdri,
   canUploadHdriToCloud,   // true only when hdriFile + publishedId both exist
+  // ── NAS / External HDRI ─────────────────────────────────────────────────
+  onNasUpload,            // (file) => upload video/image to NAS
+  onNasHdriUpload,        // (file) => upload HDRI to NAS
+  onExternalHdriUrl,      // (url)  => set external HDRI URL
+  isNasUploading,
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -71,19 +78,25 @@ function UIPanel({
   bloomThreshold, onBloomThresholdChange,
   protectLed, onProtectLedToggle,
 }) {
-  const modelInputRef   = useRef(null)
-  const videoInputRef   = useRef(null)
-  const hdriInputRef    = useRef(null)
-  const [presetName,    setPresetName]    = useState('')
-  const [copied,        setCopied]        = useState(null)
-  const [activeSection, setActiveSection] = useState('media')
-  const [editingClipId, setEditingClipId] = useState(null)
-  const [editingName,   setEditingName]   = useState('')
-  const renameInputRef  = useRef(null)
+  const modelInputRef      = useRef(null)
+  const videoInputRef      = useRef(null)
+  const hdriInputRef       = useRef(null)
+  const nasVideoInputRef   = useRef(null)
+  const nasHdriInputRef    = useRef(null)
+  const [presetName,       setPresetName]       = useState('')
+  const [copied,           setCopied]           = useState(null)
+  const [activeSection,    setActiveSection]    = useState('media')
+  const [editingClipId,    setEditingClipId]    = useState(null)
+  const [editingName,      setEditingName]      = useState('')
+  const renameInputRef     = useRef(null)
 
   // ── Video tab state ──────────────────────────────────────────────────────
-  const [videoInputMode, setVideoInputMode] = useState('upload')   // 'upload' | 'external'
-  const [externalUrlInput, setExternalUrlInput] = useState('')
+  const [videoInputMode,   setVideoInputMode]   = useState('cloud')   // 'cloud' | 'link' | 'nas'
+  const [externalUrlInput, setExternalUrlInput]  = useState('')
+
+  // ── HDRI custom tab state ──────────────────────────────────────────────
+  const [hdriInputMode,    setHdriInputMode]    = useState('cloud')   // 'cloud' | 'link' | 'nas'
+  const [externalHdriUrl,  setExternalHdriUrl]  = useState('')
 
   const handleCopy = useCallback((text, key) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -112,6 +125,29 @@ function UIPanel({
     onExternalVideoAdd(url, `External Clip ${videoPlaylist.length + 1}`)
     setExternalUrlInput('')
   }, [externalUrlInput, onExternalVideoAdd, videoPlaylist.length])
+
+  const handleAddExternalHdri = useCallback(() => {
+    const url = externalHdriUrl.trim()
+    if (!url) return
+    onExternalHdriUrl(url)
+    setExternalHdriUrl('')
+  }, [externalHdriUrl, onExternalHdriUrl])
+
+  const handleNasVideoClick = useCallback(() => {
+    if (!projectName?.trim()) {
+      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      return
+    }
+    nasVideoInputRef.current?.click()
+  }, [projectName])
+
+  const handleNasHdriClick = useCallback(() => {
+    if (!projectName?.trim()) {
+      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      return
+    }
+    nasHdriInputRef.current?.click()
+  }, [projectName])
 
   const sections = [
     { id: 'media',   label: 'Media',    icon: <IconVideo /> },
@@ -159,35 +195,43 @@ function UIPanel({
             </Section>
 
             <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
-              {/* Video input mode tabs */}
-              <div className="flex gap-1 mb-3 bg-white/5 border border-white/10 rounded-lg p-0.5">
-                <button
-                  onClick={() => setVideoInputMode('upload')}
-                  className={`flex-1 py-1.5 rounded-md text-[11px] font-medium transition-all ${videoInputMode === 'upload' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20' : 'text-white/35 hover:text-white/60'}`}
-                >
-                  Upload File
-                </button>
-                <button
-                  onClick={() => setVideoInputMode('external')}
-                  className={`flex-1 py-1.5 rounded-md text-[11px] font-medium transition-all flex items-center justify-center gap-1 ${videoInputMode === 'external' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20' : 'text-white/35 hover:text-white/60'}`}
-                >
-                  <IconLink />External URL
-                </button>
+              {/* Video input mode tabs — 3 methods */}
+              <div className="flex gap-0.5 mb-3 bg-white/5 border border-white/10 rounded-lg p-0.5">
+                {[
+                  { id: 'cloud', icon: <IconCloud />, label: 'Cloud' },
+                  { id: 'link',  icon: <IconLink />,  label: 'Link'  },
+                  { id: 'nas',   icon: <IconServer />, label: 'NAS'  },
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setVideoInputMode(t.id)}
+                    className={`flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
+                      videoInputMode === t.id
+                        ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20'
+                        : 'text-white/35 hover:text-white/60'
+                    }`}
+                  >
+                    {t.icon}{t.label}
+                  </button>
+                ))}
               </div>
 
-              {videoInputMode === 'upload' && (
+              {/* Cloud (Supabase) — existing local-file upload */}
+              {videoInputMode === 'cloud' && (
                 <>
                   <button
                     onClick={() => videoInputRef.current?.click()}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
                   >
-                    <IconVideo /><span>Add Video / Image</span>
+                    <IconCloud /><span>Add Video / Image</span>
                   </button>
-                  <input ref={videoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => onVideoUpload(e.target.files?.[0])} />
+                  <input ref={videoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }} />
+                  <p className="text-[9px] text-white/25 mt-1.5 leading-snug">Saved to Supabase when you Publish.</p>
                 </>
               )}
 
-              {videoInputMode === 'external' && (
+              {/* Link — paste external URL */}
+              {videoInputMode === 'link' && (
                 <div className="space-y-2">
                   <div className="flex gap-1">
                     <input
@@ -207,7 +251,31 @@ function UIPanel({
                     </button>
                   </div>
                   <p className="text-[10px] text-amber-400/60 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
-                    ⚠ External URLs must be CORS-enabled (e.g. Cloudinary, BunnyCDN) to work correctly on 3D objects.
+                    URL must be CORS-enabled (Cloudinary, BunnyCDN, etc.).
+                  </p>
+                </div>
+              )}
+
+              {/* NAS — Too:Awake private server */}
+              {videoInputMode === 'nas' && (
+                <div className="space-y-2">
+                  <button
+                    onClick={handleNasVideoClick}
+                    disabled={isNasUploading}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-emerald-500/25 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-white/40 hover:text-emerald-300 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    {isNasUploading ? (
+                      <>
+                        <span className="w-4 h-4 rounded-full border-2 border-emerald-300/30 border-t-emerald-300 animate-spin" />
+                        Uploading to NAS…
+                      </>
+                    ) : (
+                      <><IconServer /><span>Upload to Too:Awake NAS</span></>
+                    )}
+                  </button>
+                  <input ref={nasVideoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasUpload(f); e.target.value = '' }} />
+                  <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                    Files are sent to your private NAS. Requires a saved project name.
                   </p>
                 </div>
               )}
@@ -353,22 +421,100 @@ function UIPanel({
                   </div>
                 </div>
 
-                {/* Custom HDRI — local file picker */}
+                {/* Custom HDRI — 3 methods */}
                 <div className="space-y-2">
-                  <button
-                    onClick={() => hdriInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
-                  >
-                    <IconUpload />
-                    <span>{hasLocalHdri || hasCloudHdri ? 'Replace .hdr / .exr' : 'Upload Custom .hdr / .exr'}</span>
-                  </button>
-                  <input
-                    ref={hdriInputRef}
-                    type="file"
-                    accept=".hdr,.exr"
-                    className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) onCustomHdriUpload(f); e.target.value = '' }}
-                  />
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Custom HDRI</span>
+
+                  {/* Method tabs */}
+                  <div className="flex gap-0.5 bg-white/5 border border-white/10 rounded-lg p-0.5">
+                    {[
+                      { id: 'cloud', icon: <IconCloud />, label: 'Cloud' },
+                      { id: 'link',  icon: <IconLink />,  label: 'Link'  },
+                      { id: 'nas',   icon: <IconServer />, label: 'NAS'  },
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setHdriInputMode(t.id)}
+                        className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
+                          hdriInputMode === t.id
+                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20'
+                            : 'text-white/35 hover:text-white/60'
+                        }`}
+                      >
+                        {t.icon}{t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Cloud — local blob preview + optional Supabase push */}
+                  {hdriInputMode === 'cloud' && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => hdriInputRef.current?.click()}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
+                      >
+                        <IconCloud />
+                        <span>{hasLocalHdri || hasCloudHdri ? 'Replace .hdr / .exr' : 'Upload .hdr / .exr'}</span>
+                      </button>
+                      <input
+                        ref={hdriInputRef}
+                        type="file"
+                        accept=".hdr,.exr"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) onCustomHdriUpload(f); e.target.value = '' }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Link — paste external HDRI URL */}
+                  {hdriInputMode === 'link' && (
+                    <div className="space-y-2">
+                      <div className="flex gap-1">
+                        <input
+                          type="url"
+                          value={externalHdriUrl}
+                          onChange={e => setExternalHdriUrl(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleAddExternalHdri()}
+                          placeholder="https://example.com/env.hdr"
+                          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white/80 placeholder-white/20 focus:outline-none focus:border-violet-500/50"
+                        />
+                        <button
+                          onClick={handleAddExternalHdri}
+                          disabled={!externalHdriUrl.trim()}
+                          className="px-3 py-2 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-medium disabled:opacity-40 transition-all"
+                        >
+                          Set
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-white/25 leading-snug">
+                        Direct URL to a .hdr or .exr file. Must be CORS-enabled.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* NAS — upload to Too:Awake server */}
+                  {hdriInputMode === 'nas' && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={handleNasHdriClick}
+                        disabled={isNasUploading}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-emerald-500/25 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-white/40 hover:text-emerald-300 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
+                      >
+                        {isNasUploading ? (
+                          <>
+                            <span className="w-4 h-4 rounded-full border-2 border-emerald-300/30 border-t-emerald-300 animate-spin" />
+                            Uploading to NAS…
+                          </>
+                        ) : (
+                          <><IconServer /><span>Upload .hdr / .exr to NAS</span></>
+                        )}
+                      </button>
+                      <input ref={nasHdriInputRef} type="file" accept=".hdr,.exr" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasHdriUpload(f); e.target.value = '' }} />
+                      <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                        HDRI sent to your private NAS. Requires a saved project name.
+                      </p>
+                    </div>
+                  )}
 
                   {/* ── Local HDRI active — warning + Cloud upload ── */}
                   {hasLocalHdri && (
@@ -377,7 +523,7 @@ function UIPanel({
                         <span>⚡</span> Local HDRI Active
                       </p>
                       <p className="text-[9px] text-amber-400/60 leading-snug">
-                        Loaded from your RAM only. Not visible to others and will disappear after refresh.
+                        Loaded from your RAM only. Not visible to others — disappears on refresh.
                       </p>
                       <div className="flex gap-1.5 pt-0.5">
                         <button
@@ -391,7 +537,7 @@ function UIPanel({
                               <span className="w-3 h-3 rounded-full border-2 border-violet-300/30 border-t-violet-300 animate-spin" />
                               Uploading…
                             </>
-                          ) : '☁ Upload to Cloud'}
+                          ) : '☁ Push to Supabase'}
                         </button>
                         <button
                           onClick={onClearHdri}
@@ -408,11 +554,11 @@ function UIPanel({
                     </div>
                   )}
 
-                  {/* ── Cloud HDRI active ── */}
+                  {/* ── Cloud / NAS HDRI active ── */}
                   {hasCloudHdri && (
                     <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 py-2.5">
                       <div>
-                        <p className="text-[10px] font-semibold text-emerald-300">☁ Cloud HDRI Active</p>
+                        <p className="text-[10px] font-semibold text-emerald-300">☁ Remote HDRI Active</p>
                         <p className="text-[9px] text-emerald-400/50 mt-0.5">Saved — visible to all clients.</p>
                       </div>
                       <button

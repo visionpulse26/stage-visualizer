@@ -71,6 +71,9 @@ function AdminPage() {
   // ── HDRI cloud upload ─────────────────────────────────────────────────────
   const [isUploadingHdri, setIsUploadingHdri] = useState(false)
 
+  // ── NAS upload ──────────────────────────────────────────────────────────
+  const [isNasUploading, setIsNasUploading] = useState(false)
+
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
 
@@ -228,6 +231,85 @@ function AdminPage() {
     setCustomHdriUrl(null)
     setHdriFile(null)
     setHdriFileExt('hdr')
+  }, [customHdriUrl])
+
+  // ── NAS upload — video / image → Too:Awake NAS server ───────────────────
+  const handleNasUpload = useCallback(async (file) => {
+    if (!file) return
+    if (!projectName.trim()) {
+      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      return
+    }
+    setIsNasUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('project_name', projectName.trim())
+      const res  = await fetch('https://visual.tooawake.online/upload.php', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'NAS upload failed')
+
+      clipCountRef.current += 1
+      const id    = Date.now()
+      const isImg = file.type.startsWith('image/')
+      const name  = file.name.replace(/\.[^/.]+$/, '') || (isImg ? `NAS Image ${clipCountRef.current}` : `NAS Clip ${clipCountRef.current}`)
+      const clip  = { id, name, url: json.url, type: isImg ? 'image' : 'video', external: true }
+      setVideoPlaylist(prev => [...prev, clip])
+
+      if (isImg) {
+        if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+        setVideoElement(null); setActiveImageUrl(json.url)
+        setActiveVideoId(id); setVideoLoaded(true); setIsPlaying(false)
+      } else {
+        setActiveImageUrl(null); activateVideo(id, json.url)
+      }
+    } catch (err) {
+      console.error('NAS upload error:', err)
+      alert(`NAS upload failed: ${err.message}`)
+    } finally {
+      setIsNasUploading(false)
+    }
+  }, [projectName, activateVideo])
+
+  // ── NAS upload — HDRI → Too:Awake NAS server ──────────────────────────
+  const handleNasHdriUpload = useCallback(async (file) => {
+    if (!file) return
+    if (!projectName.trim()) {
+      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      return
+    }
+    setIsNasUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('project_name', projectName.trim())
+      const res  = await fetch('https://visual.tooawake.online/upload.php', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'NAS HDRI upload failed')
+
+      if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+      }
+      setCustomHdriUrl(json.url)
+      setHdriFile(null)
+      setHdriPreset('none')
+    } catch (err) {
+      console.error('NAS HDRI upload error:', err)
+      alert(`NAS HDRI upload failed: ${err.message}`)
+    } finally {
+      setIsNasUploading(false)
+    }
+  }, [projectName, customHdriUrl])
+
+  // ── External HDRI URL — paste a direct link to an .hdr / .exr file ─────
+  const handleExternalHdriUrl = useCallback((url) => {
+    if (!url) return
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(url)
+    setHdriFile(null)
+    setHdriPreset('none')
   }, [customHdriUrl])
 
   // ── Stage model upload ───────────────────────────────────────────────────
@@ -517,6 +599,10 @@ function AdminPage() {
           onUploadHdriToCloud={handleUploadHdriToCloud}
           onClearHdri={handleClearHdri}
           canUploadHdriToCloud={!!(hdriFile && publishedId)}
+          onNasUpload={handleNasUpload}
+          onNasHdriUpload={handleNasHdriUpload}
+          onExternalHdriUrl={handleExternalHdriUrl}
+          isNasUploading={isNasUploading}
           envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}   onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}
