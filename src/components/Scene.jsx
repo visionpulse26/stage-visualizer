@@ -26,7 +26,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity }) {
+function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
 
@@ -187,7 +187,8 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
             mat.roughness       = Math.min(mat.roughness ?? 1, 0.25)
             mat.metalness       = Math.max(mat.metalness ?? 0, 0.45)
-            mat.envMapIntensity = 2.5
+            // ★ Use user's envIntensity instead of hardcoded value
+            mat.envMapIntensity = envIntensity ?? 1
             mat.needsUpdate     = true
           }
         }
@@ -203,7 +204,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     clonedScene.position.sub(center)
     clonedScene.position.y += size.y / 2
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed])
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
@@ -230,7 +231,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   )
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   return (
     <group>
       {modelUrl && (
@@ -241,6 +242,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
           onLedMaterialStatus={onLedMaterialStatus}
           protectLed={protectLed}
           sunIntensity={sunIntensity}
+          envIntensity={envIntensity}
         />
       )}
     </group>

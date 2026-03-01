@@ -422,6 +422,7 @@ function StageCanvas({
               onLedMaterialStatus={onLedMaterialStatus}
               protectLed={protectLed ?? true}
               sunIntensity={sunIntensity ?? 1}
+              envIntensity={envIntensity ?? 1}
             />
           )}
         </Suspense>
