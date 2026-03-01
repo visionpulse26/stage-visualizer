@@ -5,6 +5,7 @@ import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
+import useHdriPresets from '../hooks/useHdriPresets'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -24,12 +25,14 @@ function CollabPage() {
   const [gridCellSize, setGridCellSize] = useState(1)
 
   // ── Scene config (loaded from DB, local-only mutations — never written back) ─
+  // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
-  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)   // blob: for local preview only
-  const [hdriFileExt,        setHdriFileExt]        = useState('hdr')  // 'hdr' | 'exr'
-  const [hdriRotationX,      setHdriRotationX]      = useState(0)      // 0 to 2π
-  const [hdriRotationY,      setHdriRotationY]      = useState(0)      // 0 to 2π
-  const [hdriLoading,        setHdriLoading]        = useState(false)  // loading lock
+  const [customHdriUrl,      setCustomHdriUrl]      = useState(null)
+  const [hdriFileExt,        setHdriFileExt]        = useState('hdr')
+  const [hdriLoading,        setHdriLoading]        = useState(false)
+  
+  // HDRI presets from NAS with validation helpers
+  const { validateUrl: validateHdriUrl } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -136,19 +139,32 @@ function CollabPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
 
-        // Restore full scene_config so Collab starts with Admin's exact environment
+        // Restore full scene_config — LITE & STABLE (no rotation)
         const cfg = data.scene_config
         if (cfg) {
           setHdriPreset(cfg.hdriPreset             ?? 'none')
-          setCustomHdriUrl(cfg.customHdriUrl       ?? null)
-          setHdriRotationX(cfg.hdriRotationX       ?? 0)
-          setHdriRotationY(cfg.hdriRotationY       ?? 0)
           setEnvIntensity(cfg.envIntensity          ?? 1)
           setBgBlur(cfg.bgBlur                     ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
           setBloomStrength(cfg.bloomStrength        ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
           setProtectLed(cfg.protectLed              ?? true)
+
+          // PERSISTENCE FIX: Default to 'Off' for invalid HDRI URLs
+          if (cfg.customHdriUrl) {
+            const validated = validateHdriUrl(cfg.customHdriUrl)
+            if (validated.valid && validated.url_low) {
+              setCustomHdriUrl(validated.url_low)
+            } else if (validated.valid) {
+              setCustomHdriUrl(validated.url)
+            } else {
+              console.warn('[CollabPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
+              setCustomHdriUrl(null)
+              setHdriPreset('none')
+            }
+          } else {
+            setCustomHdriUrl(null)
+          }
 
           // Restore sun from saved sunPosition vector if available
           // (direct azimuth/elevation aren't stored, so leave defaults if absent)
@@ -217,7 +233,7 @@ function CollabPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
-  // ── Custom HDRI — local preview only, blob URL, never written to Supabase ──
+  // ── Custom HDRI — local preview only, blob URL ──
   const handleCustomHdriUpload = useCallback((file) => {
     if (!file) return
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
@@ -231,7 +247,7 @@ function CollabPage() {
     setHdriPreset('none')
   }, [customHdriUrl])
 
-  // ── Set HDRI from NAS URL directly (avoids downloading the whole file) ──
+  // ── Set HDRI from NAS URL directly ──
   const handleSetHdriUrl = useCallback((url) => {
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
@@ -239,6 +255,23 @@ function CollabPage() {
     setCustomHdriUrl(url)
     setHdriPreset('none')
   }, [customHdriUrl])
+
+  // ★ CLEAR ALL HDRI — aggressive cleanup
+  const handleClearAllHdri = useCallback(() => {
+    console.log('[CollabPage] Clear All HDRI triggered')
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(null)
+    setHdriPreset('none')
+    setHdriLoading(false)
+  }, [customHdriUrl])
+
+  // Handle HDRI load errors — auto-clear
+  const handleHdriLoadError = useCallback((errorMsg) => {
+    console.warn('[CollabPage] HDRI load failed:', errorMsg)
+    setHdriLoading(false)
+  }, [])
 
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
@@ -289,9 +322,9 @@ function CollabPage() {
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
-        hdriRotationX={hdriRotationX}
-        hdriRotationY={hdriRotationY}
         onHdriLoading={setHdriLoading}
+        onHdriLoadError={handleHdriLoadError}
+        onHdriClearRequest={handleClearAllHdri}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -319,12 +352,11 @@ function CollabPage() {
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}
           // ── HDRI ─────────────────────────────────────────────────────────
           hdriPreset={hdriPreset}              onHdriPresetChange={setHdriPreset}
-          hdriRotationX={hdriRotationX}        onHdriRotationXChange={setHdriRotationX}
-          hdriRotationY={hdriRotationY}        onHdriRotationYChange={setHdriRotationY}
           hdriLoading={hdriLoading}
           customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
           onSetHdriUrl={handleSetHdriUrl}
+          onClearAllHdri={handleClearAllHdri}
           envIntensity={envIntensity}          onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                      onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}

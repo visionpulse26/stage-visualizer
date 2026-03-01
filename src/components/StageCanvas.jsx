@@ -62,9 +62,8 @@ function EnvIntensityController({ intensity }) {
   return null
 }
 
-// (EnvRotationController removed — rotation is handled inside ManagedHdriEnvironment
-//  via re-processing the equirectangular texture through PMREM with rotated offset.
-//  Three.js 0.160 does not support scene.environmentRotation.)
+// LITE & STABLE: All rotation logic removed to prevent GPU crashes.
+// Using simple LiteHdriEnvironment with aggressive cleanup.
 
 // ── Tone-mapping controller — ACES + clamped exposure for HDR control ────────
 // FIX 3 — toneMappingExposure = 0.8 compresses highlights so video content
@@ -78,261 +77,212 @@ function ToneMappingController() {
   return null
 }
 
-// ── Managed HDRI Environment ─────────────────────────────────────────────────
-// Full lifecycle control with strict disposal, loading lock, memory guard, and
-// built-in rotation (Three.js 0.160 lacks scene.environmentRotation).
-//
-// Rotation: PMREM ignores texture.offset/rotation, so we pre-rotate the
-// equirectangular image data using Canvas2D before PMREM processing.
-// This is expensive (~50ms) so rotation changes are debounced (300ms).
+// ── LITE & STABLE HDRI Environment ──────────────────────────────────────────
+// Simplified system: NO rotation, AGGRESSIVE cleanup, BULLETPROOF loading.
+// Only loads url_low versions to keep GPU cool on RTX 4080.
 
-let sharedPmrem = null
-let loadCount   = 0
-const ROTATION_DEBOUNCE_MS = 300
+const LOAD_TIMEOUT_MS = 10000 // 10 second timeout
 
-function ManagedHdriEnvironment({
-  url, ext, background, bgBlur = 0,
-  rotationX = 0, rotationY = 0,
+function LiteHdriEnvironment({
+  url,
+  ext,
+  background = false,
+  bgBlur = 0,
   onLoadingChange,
+  onLoadError,
+  onClearRequest,  // callback to notify parent when we need to clear (on fatal error)
 }) {
   const { gl, scene } = useThree()
-  const envMapRef     = useRef(null)
-  const rawTexRef     = useRef(null)       // original unrotated texture
-  const rotatedTexRef = useRef(null)       // canvas-rotated texture for PMREM
-  const abortRef      = useRef(null)
-  const rotTimerRef   = useRef(null)
-  const prevRotRef    = useRef({ x: 0, y: 0 })
-  const bgRef         = useRef(background)
-  const bgBlurRef     = useRef(bgBlur)
-  bgRef.current       = background
-  bgBlurRef.current   = bgBlur
+  const envMapRef   = useRef(null)
+  const rawTexRef   = useRef(null)
+  const pmremRef    = useRef(null)
+  const abortRef    = useRef(null)
+  const timeoutRef  = useRef(null)
 
-  const getPmrem = () => {
-    if (!sharedPmrem || sharedPmrem._disposed) {
-      sharedPmrem = new THREE.PMREMGenerator(gl)
-      sharedPmrem.compileEquirectangularShader()
-    }
-    return sharedPmrem
-  }
-
-  const disposeEnvMap = () => {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGGRESSIVE MEMORY CLEANUP — mandatory for RTX 4080 VRAM stability
+  // ═══════════════════════════════════════════════════════════════════════════
+  const deepCleanup = useCallback(() => {
+    console.log('[HDRI Lite] Deep cleanup triggered')
+    
+    // 1. Clear scene references FIRST
+    scene.background = null
     scene.environment = null
-    scene.background  = null
+    
+    // 2. Dispose env map
     if (envMapRef.current) {
       envMapRef.current.dispose()
+      try { gl.initTexture?.(envMapRef.current) } catch (_) {}
       envMapRef.current = null
     }
-  }
-
-  const disposeRotatedTex = () => {
-    if (rotatedTexRef.current) {
-      rotatedTexRef.current.dispose()
-      rotatedTexRef.current = null
-    }
-  }
-
-  const disposeAll = () => {
-    disposeEnvMap()
-    disposeRotatedTex()
+    
+    // 3. Dispose raw texture
     if (rawTexRef.current) {
       rawTexRef.current.dispose()
+      try { gl.initTexture?.(rawTexRef.current) } catch (_) {}
       rawTexRef.current = null
     }
-  }
-
-  // Create a rotated copy of the equirectangular texture using Canvas2D
-  // rotY = horizontal pan (shift pixels left/right, wrapping)
-  // rotX = vertical shift (shift pixels up/down, clamping at poles)
-  const createRotatedTexture = (srcTex, rotY, rotX) => {
-    const img = srcTex.image
-    if (!img) return srcTex
-
-    // For HDR data textures (Float/Half arrays), we can't easily use canvas
-    // In that case, fall back to the original texture with offset (partial support)
-    if (!img.width || !img.height || img instanceof Float32Array || img instanceof Uint16Array) {
-      srcTex.offset.set(-rotY / (2 * Math.PI), -rotX / (2 * Math.PI))
-      srcTex.wrapS = THREE.RepeatWrapping
-      srcTex.wrapT = THREE.ClampToEdgeWrapping
-      srcTex.needsUpdate = true
-      return srcTex
+    
+    // 4. Dispose PMREM generator
+    if (pmremRef.current) {
+      pmremRef.current.dispose()
+      pmremRef.current = null
     }
-
-    const w = img.width
-    const h = img.height
-
-    // Calculate pixel shifts
-    const shiftX = Math.round((rotY / (2 * Math.PI)) * w) % w
-    const shiftY = Math.round((rotX / Math.PI) * h)
-
-    // Create offscreen canvas
-    const canvas = document.createElement('canvas')
-    canvas.width  = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-
-    // Horizontal wrap (rotY) — draw image shifted and wrap around
-    if (shiftX !== 0) {
-      const absShift = Math.abs(shiftX)
-      if (shiftX > 0) {
-        ctx.drawImage(img, absShift, 0, w - absShift, h, 0, 0, w - absShift, h)
-        ctx.drawImage(img, 0, 0, absShift, h, w - absShift, 0, absShift, h)
-      } else {
-        ctx.drawImage(img, 0, 0, w - absShift, h, absShift, 0, w - absShift, h)
-        ctx.drawImage(img, w - absShift, 0, absShift, h, 0, 0, absShift, h)
-      }
-    } else {
-      ctx.drawImage(img, 0, 0)
-    }
-
-    // Vertical shift (rotX) — shift image data up/down with clamping
-    if (shiftY !== 0) {
-      const imgData = ctx.getImageData(0, 0, w, h)
-      const data = imgData.data
-      const newData = new Uint8ClampedArray(data.length)
-
-      for (let y = 0; y < h; y++) {
-        const srcY = Math.max(0, Math.min(h - 1, y + shiftY))
-        for (let x = 0; x < w; x++) {
-          const dstIdx = (y * w + x) * 4
-          const srcIdx = (srcY * w + x) * 4
-          newData[dstIdx]     = data[srcIdx]
-          newData[dstIdx + 1] = data[srcIdx + 1]
-          newData[dstIdx + 2] = data[srcIdx + 2]
-          newData[dstIdx + 3] = data[srcIdx + 3]
-        }
-      }
-      imgData.data.set(newData)
-      ctx.putImageData(imgData, 0, 0)
-    }
-
-    // Create new texture from rotated canvas
-    const rotTex = new THREE.CanvasTexture(canvas)
-    rotTex.mapping = THREE.EquirectangularReflectionMapping
-    rotTex.colorSpace = srcTex.colorSpace || THREE.SRGBColorSpace
-    rotTex.needsUpdate = true
-    return rotTex
-  }
-
-  // Build env map from the current raw texture + rotation and apply it
-  const applyEnvMap = (forceRegen = false) => {
-    const rawTex = rawTexRef.current
-    if (!rawTex) return
-
-    // Check if rotation actually changed
-    const rotChanged = prevRotRef.current.x !== rotationX || prevRotRef.current.y !== rotationY
-    if (!forceRegen && !rotChanged && envMapRef.current) return
-    prevRotRef.current = { x: rotationX, y: rotationY }
-
-    // Dispose previous env map and rotated texture
-    disposeEnvMap()
-    disposeRotatedTex()
-
-    // Create rotated texture (or use original if rotation is 0)
-    let texForPmrem = rawTex
-    if (Math.abs(rotationX) > 0.01 || Math.abs(rotationY) > 0.01) {
-      texForPmrem = createRotatedTexture(rawTex, rotationY, rotationX)
-      if (texForPmrem !== rawTex) {
-        rotatedTexRef.current = texForPmrem
-      }
-    }
-
-    // Ensure equirectangular mapping
-    texForPmrem.mapping = THREE.EquirectangularReflectionMapping
-
-    const pmrem  = getPmrem()
-    const envMap = pmrem.fromEquirectangular(texForPmrem).texture
-    envMapRef.current = envMap
-
-    scene.environment = envMap
-    if (bgRef.current) scene.background = envMap
-    if ('backgroundBlurriness' in scene) {
-      scene.backgroundBlurriness = bgRef.current ? bgBlurRef.current : 0
-    }
-
-    // Memory guard every 5 loads
-    loadCount++
-    if (loadCount % 5 === 0 && gl.info) {
-      const tc = gl.info.memory?.textures ?? 0
-      if (tc > 20) console.warn(`[HDRI Memory] Load #${loadCount} — GPU textures: ${tc}`)
+    
+    // 5. Force GPU memory reset
+    if (gl.info) {
       gl.info.reset()
+      console.log('[HDRI Lite] GPU textures after cleanup:', gl.info.memory?.textures ?? 0)
     }
-  }
+    
+    // 6. Clear any pending timeouts
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+  }, [gl, scene])
 
-  // ── Load new HDRI when URL changes ──────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BULLETPROOF LOADER — try/catch/finally guarantees spinner stops
+  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
+    // No URL = clear everything
     if (!url) {
-      disposeAll()
+      deepCleanup()
       onLoadingChange?.(false)
       return
     }
 
+    // Abort previous load
     if (abortRef.current) abortRef.current.aborted = true
     const abortToken = { aborted: false }
     abortRef.current = abortToken
 
-    disposeAll()
+    // AGGRESSIVE CLEANUP before loading
+    deepCleanup()
     onLoadingChange?.(true)
 
+    // Validate URL
+    const isValidUrl = url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')
+    if (!isValidUrl) {
+      console.warn('[HDRI Lite] Invalid URL:', url)
+      onLoadingChange?.(false)
+      onLoadError?.('Invalid URL format')
+      onClearRequest?.()
+      return
+    }
+
+    // Determine loader type
     const isBlob = url.startsWith('blob:')
-    const isExr  = isBlob
+    const isExr = isBlob
       ? (ext || '').toLowerCase() === 'exr'
       : url.toLowerCase().endsWith('.exr')
     const loader = isExr ? new EXRLoader() : new RGBELoader()
 
-    loader.load(
-      url,
-      (texture) => {
-        if (abortToken.aborted) { texture.dispose(); return }
-        texture.mapping = THREE.EquirectangularReflectionMapping
-        rawTexRef.current = texture
-        prevRotRef.current = { x: -999, y: -999 } // force regen
-        applyEnvMap(true)
+    // Set timeout for stuck loads
+    timeoutRef.current = setTimeout(() => {
+      if (!abortToken.aborted) {
+        console.error('[HDRI Lite] Load timeout (10s):', url)
+        abortToken.aborted = true
         onLoadingChange?.(false)
-      },
-      undefined,
-      (err) => {
-        if (!abortToken.aborted) {
-          console.warn('[HDRI] Load failed:', err?.message || err)
-          onLoadingChange?.(false)
+        onLoadError?.('Load timed out')
+        alert('HDRI failed to load (timeout)')
+        onClearRequest?.()
+      }
+    }, LOAD_TIMEOUT_MS)
+
+    // ── BULLETPROOF LOAD with try/catch/finally ──
+    try {
+      loader.load(
+        url,
+        // Success
+        (texture) => {
+          // Clear timeout
+          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+          
+          if (abortToken.aborted) {
+            texture.dispose()
+            return
+          }
+
+          try {
+            // Create PMREM
+            pmremRef.current = new THREE.PMREMGenerator(gl)
+            pmremRef.current.compileEquirectangularShader()
+            
+            texture.mapping = THREE.EquirectangularReflectionMapping
+            rawTexRef.current = texture
+            
+            const envMap = pmremRef.current.fromEquirectangular(texture).texture
+            envMapRef.current = envMap
+            
+            // Apply to scene
+            scene.environment = envMap
+            if (background) scene.background = envMap
+            if ('backgroundBlurriness' in scene) {
+              scene.backgroundBlurriness = background ? bgBlur : 0
+            }
+            
+            console.log('[HDRI Lite] Loaded successfully')
+          } catch (applyErr) {
+            console.error('[HDRI Lite] Apply error:', applyErr)
+            texture.dispose()
+            alert('HDRI failed to load')
+            onClearRequest?.()
+          } finally {
+            // ★ MANDATORY: Always clear loading state
+            onLoadingChange?.(false)
+          }
+        },
+        // Progress (unused)
+        undefined,
+        // Error
+        (err) => {
+          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+          
+          if (!abortToken.aborted) {
+            console.error('[HDRI Lite] Load error:', err)
+            onLoadingChange?.(false)
+            onLoadError?.(err?.message || 'Load failed')
+            alert('HDRI failed to load')
+            onClearRequest?.()
+          }
         }
-      },
-    )
+      )
+    } catch (syncErr) {
+      // Catch synchronous errors
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+      console.error('[HDRI Lite] Sync error:', syncErr)
+      onLoadingChange?.(false)
+      onLoadError?.(syncErr?.message || 'Load failed')
+      alert('HDRI failed to load')
+      onClearRequest?.()
+    }
 
     return () => {
       abortToken.aborted = true
-      disposeAll()
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+      deepCleanup()
     }
-  }, [url, ext, gl, scene])
+  }, [url, ext, background, bgBlur, gl, scene, deepCleanup, onLoadingChange, onLoadError, onClearRequest])
 
-  // ── Rotation change — debounced PMREM re-process ────────────────────────────
-  useEffect(() => {
-    if (!rawTexRef.current) return
-    if (rotTimerRef.current) clearTimeout(rotTimerRef.current)
-    rotTimerRef.current = setTimeout(() => {
-      applyEnvMap()
-    }, ROTATION_DEBOUNCE_MS)
-    return () => { if (rotTimerRef.current) clearTimeout(rotTimerRef.current) }
-  }, [rotationX, rotationY])
-
-  // ── Background toggle (no reload) ───────────────────────────────────────────
+  // Background toggle (no reload needed)
   useEffect(() => {
     if (!envMapRef.current) return
     scene.background = background ? envMapRef.current : null
   }, [background, scene])
 
-  // ── Background blur ─────────────────────────────────────────────────────────
+  // Background blur
   useEffect(() => {
     if ('backgroundBlurriness' in scene) {
       scene.backgroundBlurriness = background ? bgBlur : 0
     }
   }, [scene, bgBlur, background])
 
-  // ── Cleanup shared PMREM on full unmount ────────────────────────────────────
+  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      if (sharedPmrem) { sharedPmrem.dispose(); sharedPmrem = null }
-    }
-  }, [])
+    return () => deepCleanup()
+  }, [deepCleanup])
 
   return null
 }
@@ -355,9 +305,9 @@ function StageCanvas({
   hdriPreset,
   customHdriUrl,
   hdriFileExt,          // 'hdr' | 'exr' — required for blob: URLs (no extension in URL)
-  hdriRotationX,        // 0 to 2π — HDRI rotation around X axis
-  hdriRotationY,        // 0 to 2π — HDRI rotation around Y axis
   onHdriLoading,        // callback(boolean) — loading lock for UI
+  onHdriLoadError,      // callback(errorMsg) — when HDRI fails
+  onHdriClearRequest,   // callback() — request to clear HDRI (on fatal error)
   envIntensity,
   bgBlur,
   bloomStrength,
@@ -398,20 +348,20 @@ function StageCanvas({
         <color attach="background" args={['#000000']} />
         <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
 
-        {/* HDRI Environment — managed loader with proper .dispose() lifecycle.
-            customHdriUrl  → ManagedHdriEnvironment (blob or NAS URL, manual load)
+        {/* HDRI Environment — LITE & STABLE version
+            customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
             hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
         {hasEnv && (
           <>
             {customHdriUrl ? (
-              <ManagedHdriEnvironment
+              <LiteHdriEnvironment
                 url={customHdriUrl}
                 ext={hdriFileExt}
                 background={resolvedShowBg}
-                onLoadingChange={onHdriLoading}
                 bgBlur={resolvedBgBlur}
-                rotationX={hdriRotationX ?? 0}
-                rotationY={hdriRotationY ?? 0}
+                onLoadingChange={onHdriLoading}
+                onLoadError={onHdriLoadError}
+                onClearRequest={onHdriClearRequest}
               />
             ) : (
               resolvedShowBg

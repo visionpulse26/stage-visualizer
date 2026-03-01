@@ -4,6 +4,7 @@ import UIPanel     from '../components/UIPanel'
 import TopBar      from '../components/TopBar'
 import ProjectsDashboard from '../components/ProjectsDashboard'
 import { supabase } from '../lib/supabaseClient'
+import useHdriPresets from '../hooks/useHdriPresets'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -59,9 +60,10 @@ function AdminPage() {
   const [hdriFile,      setHdriFile]      = useState(null)
   const [hdriFileExt,   setHdriFileExt]   = useState('hdr')   // 'hdr' | 'exr'
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
-  const [hdriRotationX, setHdriRotationX] = useState(0)       // 0 to 2π
-  const [hdriRotationY, setHdriRotationY] = useState(0)       // 0 to 2π
   const [hdriLoading,   setHdriLoading]   = useState(false)   // loading lock
+  
+  // HDRI presets from NAS with validation helpers
+  const { presets: hdriPresets, validateUrl: validateHdriUrl } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -237,6 +239,26 @@ function AdminPage() {
     setHdriFileExt('hdr')
   }, [customHdriUrl])
 
+  // ★ CLEAR ALL HDRI — aggressive cleanup for GPU stability
+  const handleClearAllHdri = useCallback(() => {
+    console.log('[AdminPage] Clear All HDRI triggered')
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(null)
+    setHdriFile(null)
+    setHdriFileExt('hdr')
+    setHdriPreset('none')
+    setHdriLoading(false)
+  }, [customHdriUrl])
+
+  // Handle HDRI load errors — auto-clear to prevent stuck UI
+  const handleHdriLoadError = useCallback((errorMsg) => {
+    console.warn('[AdminPage] HDRI load failed:', errorMsg)
+    setHdriLoading(false)
+    alert(`HDRI load failed: ${errorMsg}\nSwitching to environment OFF.`)
+  }, [])
+
   // ── Shared NAS fetch with timeout + robust error handling ───────────────
   const nasUploadFetch = useCallback(async (file, label) => {
     const NAS_URL = 'https://visual.tooawake.online/upload.php'
@@ -324,6 +346,8 @@ function AdminPage() {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
       setCustomHdriUrl(json.url)
+      // Try to find low-res fallback if this URL is in presets
+      setHdriUrlLow(json.url_low || findLowResUrl(json.url))
       setHdriFile(null)
       setHdriPreset('none')
     } catch (err) {
@@ -332,7 +356,7 @@ function AdminPage() {
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, customHdriUrl, nasUploadFetch])
+  }, [projectName, customHdriUrl, nasUploadFetch, findLowResUrl])
 
   // ── External HDRI URL — paste a direct link to an .hdr / .exr file ─────
   const handleExternalHdriUrl = useCallback((url) => {
@@ -341,9 +365,11 @@ function AdminPage() {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
     setCustomHdriUrl(url)
+    // Try to find low-res fallback if this URL is in presets
+    setHdriUrlLow(findLowResUrl(url))
     setHdriFile(null)
     setHdriPreset('none')
-  }, [customHdriUrl])
+  }, [customHdriUrl, findLowResUrl])
 
   // ── Stage model upload ───────────────────────────────────────────────────
   const handleModelUpload = useCallback((file) => {
@@ -399,13 +425,10 @@ function AdminPage() {
     setPublishError(null)
     setIsDashboardOpen(false)
 
-    // Restore scene_config if present
+    // Restore scene_config if present — LITE & STABLE (no rotation)
     const cfg = project.scene_config
     if (cfg) {
       setHdriPreset(cfg.hdriPreset      ?? 'none')
-      setCustomHdriUrl(cfg.customHdriUrl   ?? null)
-      setHdriRotationX(cfg.hdriRotationX     ?? 0)
-      setHdriRotationY(cfg.hdriRotationY     ?? 0)
       setEnvIntensity(cfg.envIntensity          ?? 1)
       setBgBlur(cfg.bgBlur                    ?? 0)
       setShowHdriBackground(cfg.showHdriBackground ?? false)
@@ -413,6 +436,24 @@ function AdminPage() {
       setBloomThreshold(cfg.bloomThreshold ?? 1.2)
       setProtectLed(cfg.protectLed        ?? true)
       setHdriFile(null)
+
+      // PERSISTENCE FIX: Default to 'Off' for invalid/old HDRI URLs
+      if (cfg.customHdriUrl) {
+        const validated = validateHdriUrl(cfg.customHdriUrl)
+        if (validated.valid && validated.url_low) {
+          // ★ SIMPLIFIED: Only load url_low to keep GPU cool
+          setCustomHdriUrl(validated.url_low)
+          console.log('[AdminPage] Loading low-res HDRI:', validated.url_low)
+        } else if (validated.valid) {
+          setCustomHdriUrl(validated.url)
+        } else {
+          console.warn('[AdminPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
+          setCustomHdriUrl(null)
+          setHdriPreset('none')
+        }
+      } else {
+        setCustomHdriUrl(null)
+      }
     }
 
     // Restore full media playlist, or fall back to legacy single video_url
@@ -514,12 +555,11 @@ function AdminPage() {
       const az = (sunAzimuth   * Math.PI) / 180
       const el = (sunElevation * Math.PI) / 180
       const d  = 15
+      // LITE & STABLE: No rotation values saved
       const scene_config = {
         floorReflection: true,
         hdriPreset:      hdriPreset,
         customHdriUrl:   finalHdriUrl,
-        hdriRotationX:   hdriRotationX,
-        hdriRotationY:   hdriRotationY,
         envIntensity:        envIntensity,
         bgBlur:              bgBlur,
         showHdriBackground:  showHdriBackground,
@@ -588,9 +628,9 @@ function AdminPage() {
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
-        hdriRotationX={hdriRotationX}
-        hdriRotationY={hdriRotationY}
         onHdriLoading={setHdriLoading}
+        onHdriLoadError={handleHdriLoadError}
+        onHdriClearRequest={handleClearAllHdri}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
@@ -632,8 +672,6 @@ function AdminPage() {
           onProjectNameChange={setProjectName}
           onOpenDashboard={() => setIsDashboardOpen(true)}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
-          hdriRotationX={hdriRotationX}    onHdriRotationXChange={setHdriRotationX}
-          hdriRotationY={hdriRotationY}    onHdriRotationYChange={setHdriRotationY}
           hdriLoading={hdriLoading}
           customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
@@ -642,6 +680,7 @@ function AdminPage() {
           isUploadingHdri={isUploadingHdri}
           onUploadHdriToCloud={handleUploadHdriToCloud}
           onClearHdri={handleClearHdri}
+          onClearAllHdri={handleClearAllHdri}
           canUploadHdriToCloud={!!(hdriFile && publishedId)}
           onNasUpload={handleNasUpload}
           onNasHdriUpload={handleNasHdriUpload}

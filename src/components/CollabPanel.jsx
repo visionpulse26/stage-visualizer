@@ -28,7 +28,7 @@ function Section({ icon, title, badge, children }) {
   )
 }
 
-function Slider({ label, value, min, max, step = 1, onChange }) {
+function Slider({ label, value, min, max, step = 1, onChange, onChangeEnd }) {
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-[10px] text-white/40">
@@ -38,6 +38,8 @@ function Slider({ label, value, min, max, step = 1, onChange }) {
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
+        onMouseUp={e => onChangeEnd?.(Number(e.target.value))}
+        onTouchEnd={e => onChangeEnd?.(Number(e.target.value))}
         className="w-full h-1 appearance-none rounded-full bg-white/10 accent-cyan-400 cursor-pointer"
       />
     </div>
@@ -77,13 +79,12 @@ function CollabPanel({
   sunAzimuth,   onSunAzimuthChange,
   sunElevation, onSunElevationChange,
   sunIntensity, onSunIntensityChange,
-  // ── HDRI Environment ───────────────────────────────────────────────────────
+  // ── HDRI Environment (LITE & STABLE — no rotation) ─────────────────────────
   hdriPreset,        onHdriPresetChange,
-  hdriRotationX,     onHdriRotationXChange,
-  hdriRotationY,     onHdriRotationYChange,
   hdriLoading,
   customHdriUrl,
   onCustomHdriUpload,
+  onClearAllHdri,    // ★ Clear All HDRI for GPU stability
   onSetHdriUrl,
   envIntensity,      onEnvIntensityChange,
   bgBlur,            onBgBlurChange,
@@ -337,21 +338,18 @@ function CollabPanel({
                   </div>
                 </div>
 
-                {/* HDRI Rotation Controls */}
-                <div className="space-y-2 pt-1 border-t border-white/5">
-                  <span className="text-[10px] text-white/40 uppercase tracking-widest">Rotation</span>
-                  <Slider
-                    label="Rotation X"
-                    value={hdriRotationX ?? 0}
-                    min={0} max={6.28} step={0.01}
-                    onChange={onHdriRotationXChange}
-                  />
-                  <Slider
-                    label="Rotation Y"
-                    value={hdriRotationY ?? 0}
-                    min={0} max={6.28} step={0.01}
-                    onChange={onHdriRotationYChange}
-                  />
+                {/* Clear All HDRI — aggressive cleanup */}
+                <div className="pt-2 border-t border-white/5">
+                  <button
+                    onClick={onClearAllHdri}
+                    disabled={hdriLoading || (!customHdriUrl && hdriPreset === 'none')}
+                    className="w-full py-2 px-3 rounded text-xs font-semibold uppercase tracking-wider
+                             bg-[#ff5500] hover:bg-[#ff6622] text-white
+                             disabled:opacity-30 disabled:cursor-not-allowed
+                             transition-all duration-200"
+                  >
+                    ⚡ Clear All HDRI
+                  </button>
                 </div>
 
                 {/* Custom HDRI Upload — local preview only, sandbox session */}

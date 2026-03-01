@@ -6,6 +6,7 @@ import { RoleBadge } from './AdminPage'
 import { DbLoadingOverlay } from './CollabPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { supabase } from '../lib/supabaseClient'
+import useHdriPresets from '../hooks/useHdriPresets'
 
 function ClientPage() {
   const { projectId } = useParams()
@@ -22,11 +23,13 @@ function ClientPage() {
 
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Scene config (loaded from scene_config column) ────────────────────────
+  // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
-  const [hdriRotationX, setHdriRotationX] = useState(0)
-  const [hdriRotationY, setHdriRotationY] = useState(0)
+  const [hdriLoading,   setHdriLoading]   = useState(false)
+  
+  // HDRI presets from NAS with validation helpers
+  const { validateUrl: validateHdriUrl } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
   const [showHdriBackground, setShowHdriBackground] = useState(false)
@@ -115,19 +118,32 @@ function ClientPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
 
-        // Restore scene_config so client sees the exact environment Admin set
+        // Restore scene_config — LITE & STABLE (no rotation)
         const cfg = data.scene_config
         if (cfg) {
           setHdriPreset(cfg.hdriPreset       ?? 'none')
-          setCustomHdriUrl(cfg.customHdriUrl ?? null)
-          setHdriRotationX(cfg.hdriRotationX ?? 0)
-          setHdriRotationY(cfg.hdriRotationY ?? 0)
           setEnvIntensity(cfg.envIntensity          ?? 1)
           setBgBlur(cfg.bgBlur                    ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
           setBloomStrength(cfg.bloomStrength        ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold ?? 1.2)
           setProtectLed(cfg.protectLed        ?? true)
+
+          // PERSISTENCE FIX: Default to 'Off' for invalid HDRI URLs
+          if (cfg.customHdriUrl) {
+            const validated = validateHdriUrl(cfg.customHdriUrl)
+            if (validated.valid && validated.url_low) {
+              setCustomHdriUrl(validated.url_low)
+            } else if (validated.valid) {
+              setCustomHdriUrl(validated.url)
+            } else {
+              console.warn('[ClientPage] Invalid HDRI URL, defaulting to Off:', cfg.customHdriUrl)
+              setCustomHdriUrl(null)
+              setHdriPreset('none')
+            }
+          } else {
+            setCustomHdriUrl(null)
+          }
         }
       } catch (err) {
         console.error('Failed to load project:', err)
@@ -169,6 +185,19 @@ function ClientPage() {
     )
   }, [])
 
+  // Handle HDRI load errors — auto-clear silently for client
+  const handleHdriLoadError = useCallback((errorMsg) => {
+    console.warn('[ClientPage] HDRI load failed:', errorMsg)
+    setHdriLoading(false)
+  }, [])
+  
+  // ★ CLEAR ALL HDRI (called automatically on fatal error)
+  const handleClearAllHdri = useCallback(() => {
+    setCustomHdriUrl(null)
+    setHdriPreset('none')
+    setHdriLoading(false)
+  }, [])
+
   const sunPosition = useMemo(() => [10.6, 10.6, 7.5], [])
 
   if (projectNotFound) {
@@ -195,8 +224,9 @@ function ClientPage() {
         cameraControlsRef={cameraControlsRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
-        hdriRotationX={hdriRotationX}
-        hdriRotationY={hdriRotationY}
+        onHdriLoading={setHdriLoading}
+        onHdriLoadError={handleHdriLoadError}
+        onHdriClearRequest={handleClearAllHdri}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
