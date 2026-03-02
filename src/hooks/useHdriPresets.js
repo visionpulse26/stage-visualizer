@@ -6,6 +6,13 @@ const BUILTIN_PRESETS = [
   { id: 'none', label: 'Off', url: null, url_low: null },
 ]
 
+// Cache buster: append timestamp to URLs to force fresh load
+const addCacheBuster = (url) => {
+  if (!url) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}v=${Date.now()}`
+}
+
 export default function useHdriPresets() {
   const [presets, setPresets]   = useState(BUILTIN_PRESETS)
   const [loading, setLoading]   = useState(true)
@@ -19,17 +26,25 @@ export default function useHdriPresets() {
       setError(null)
 
       try {
-        const res = await fetch(NAS_HDRI_LIST_URL, { mode: 'cors' })
+        // CACHE BUSTING: Add timestamp to prevent stale list
+        const fetchUrl = addCacheBuster(NAS_HDRI_LIST_URL)
+        console.log('[useHdriPresets] Fetching fresh list:', fetchUrl)
+        
+        const res = await fetch(fetchUrl, { 
+          mode: 'cors',
+          cache: 'no-store'  // Force bypass browser cache
+        })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
 
-        console.log('[useHdriPresets] Fetched HDRIs:', json)
+        console.log('[useHdriPresets] Fetched HDRIs:', json?.length || 0, 'items')
 
         if (cancelled) return
 
         // API returns direct array: [{"name": "...", "url": "...", "url_low": "..."}, ...]
         const hdriArray = Array.isArray(json) ? json : (json.hdris || [])
 
+        // COMPLETE OVERWRITE: Reset to builtin + fresh NAS presets
         if (hdriArray.length > 0) {
           const nasPresets = hdriArray.map((h, idx) => ({
             id:      h.name || h.filename || `hdri-${idx}`,
@@ -38,9 +53,12 @@ export default function useHdriPresets() {
             url_low: h.url_low || null,
           }))
           console.log('[useHdriPresets] Mapped presets:', nasPresets.length, 'items')
+          // OVERWRITE entire state (not append)
           setPresets([...BUILTIN_PRESETS, ...nasPresets])
         } else {
           console.warn('[useHdriPresets] Empty HDRI array received')
+          // Reset to builtin only if empty
+          setPresets([...BUILTIN_PRESETS])
         }
       } catch (err) {
         console.error('[useHdriPresets] Failed to fetch NAS HDRIs:', err.message)

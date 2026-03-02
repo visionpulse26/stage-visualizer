@@ -179,6 +179,10 @@ function LiteHdriEnvironment({
       : url.toLowerCase().endsWith('.exr')
     const loader = isExr ? new EXRLoader() : new RGBELoader()
 
+    // CACHE BUSTING: Add timestamp to remote URLs to force fresh load
+    const loadUrl = isBlob ? url : `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
+    console.log('[HDRI Lite] Loading with cache bust:', isBlob ? 'blob' : loadUrl.slice(-20))
+
     // Set timeout for stuck loads
     timeoutRef.current = setTimeout(() => {
       if (!abortToken.aborted) {
@@ -194,7 +198,7 @@ function LiteHdriEnvironment({
     // ── BULLETPROOF LOAD with try/catch/finally ──
     try {
       loader.load(
-        url,
+        loadUrl,  // Use cache-busted URL
         // Success
         (texture) => {
           // Clear timeout
