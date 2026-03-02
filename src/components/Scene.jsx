@@ -26,7 +26,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, screenCrop }) {
+function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
 
@@ -51,29 +51,9 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     t.flipY       = false
     t.wrapS       = THREE.ClampToEdgeWrapping
     t.wrapT       = THREE.ClampToEdgeWrapping
-    // Disable auto-update so we can drive the matrix manually for crop
-    t.matrixAutoUpdate = false
     videoTextureRef.current = t
     return t
   }, [videoElement])
-
-  // ── Texture crop via UV matrix transform ─────────────────────────────────
-  // Runs whenever crop values change OR a new videoTexture is created.
-  // Uses setUvTransform(tx, ty, sx, sy, rotation, cx, cy) to define the
-  // visible window inside the captured frame (e.g. stripping AE timelines).
-  useEffect(() => {
-    if (!videoTextureRef.current) return
-    const { top = 0, bottom = 0, left = 0, right = 0 } = screenCrop ?? {}
-    const tl = left   / 100
-    const tr = right  / 100
-    const tt = top    / 100
-    const tb = bottom / 100
-    // Clamp to prevent zero-scale which would cause visual glitches
-    const scaleX = Math.max(0.01, 1.0 - tl - tr)
-    const scaleY = Math.max(0.01, 1.0 - tt - tb)
-    videoTextureRef.current.matrix.setUvTransform(tl, tb, scaleX, scaleY, 0, 0, 0)
-    videoTextureRef.current.needsUpdate = true
-  }, [screenCrop, videoTexture])
 
   // ── Image texture ─────────────────────────────────────────────────────────
   const imageTexture = useMemo(() => {
@@ -251,7 +231,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   )
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, screenCrop }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   return (
     <group>
       {modelUrl && (
@@ -263,7 +243,6 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
           protectLed={protectLed}
           sunIntensity={sunIntensity}
           envIntensity={envIntensity}
-          screenCrop={screenCrop}
         />
       )}
     </group>

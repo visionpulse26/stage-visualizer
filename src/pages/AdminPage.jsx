@@ -24,19 +24,12 @@ function AdminPage() {
   const videoRef     = useRef(null)
   const clipCountRef = useRef(0)
 
-  // ── Live Screen Share ───────────────────────────────────────────────────
-  const [screenStream,     setScreenStream]     = useState(null)
-  const [isScreenSharing,  setIsScreenSharing]  = useState(false)
-  const screenVideoRef = useRef(null)
-
-  // ── Texture Crop (0-100 = percentage) ──────────────────────────────────
-  const [cropTop,    setCropTop]    = useState(0)
-  const [cropBottom, setCropBottom] = useState(0)
-  const [cropLeft,   setCropLeft]   = useState(0)
-  const [cropRight,  setCropRight]  = useState(0)
-
-  // Supabase Realtime channel for broadcasting crop to Collab in real-time
-  const cropChannelRef = useRef(null)
+  // ── Virtual Camera (OBS Virtual Cam / NDI) ───────────────────────────────
+  const [availableCameras, setAvailableCameras] = useState([])
+  const [selectedCameraId, setSelectedCameraId] = useState('')
+  const [cameraStream,     setCameraStream]     = useState(null)
+  const [isCameraStreaming, setIsCameraStreaming] = useState(false)
+  const cameraVideoRef = useRef(null)
 
   // Local blob URLs created for admin preview — revoke on unmount
   const localBlobUrlsRef = useRef([])
@@ -103,42 +96,34 @@ function AdminPage() {
       localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
       if (stageUrl && stageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(stageUrl) } catch (_) {} }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
-      // Screen share cleanup
-      if (screenVideoRef.current) {
-        screenVideoRef.current.pause()
-        screenVideoRef.current.srcObject = null
-      }
-      // Unsubscribe realtime crop channel
-      if (cropChannelRef.current) {
-        supabase.removeChannel(cropChannelRef.current)
-        cropChannelRef.current = null
+      // Camera stream cleanup
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.pause()
+        cameraVideoRef.current.srcObject = null
       }
     }
   }, [])
 
-  // ── Supabase Realtime: broadcast crop changes to Collab page ─────────────
-  // Subscribe once; broadcast whenever any crop value changes.
+  // ── Enumerate available cameras on mount ─────────────────────────────────
   useEffect(() => {
-    const channel = supabase.channel('screen-crop-sync', {
-      config: { broadcast: { self: false } }
-    })
-    channel.subscribe()
-    cropChannelRef.current = channel
-    return () => {
-      supabase.removeChannel(channel)
-      cropChannelRef.current = null
+    const enumerateCameras = async () => {
+      try {
+        // Request permission first (needed to see device labels)
+        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()))
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const cameras = devices.filter(d => d.kind === 'videoinput')
+        setAvailableCameras(cameras)
+        console.log('[Camera] Found devices:', cameras.map(c => c.label || c.deviceId))
+      } catch (err) {
+        console.warn('[Camera] Could not enumerate devices:', err)
+      }
     }
-  }, [])
+    enumerateCameras()
 
-  // Broadcast crop values whenever they change (debounce via realtime's built-in batching)
-  useEffect(() => {
-    if (!cropChannelRef.current) return
-    cropChannelRef.current.send({
-      type:    'broadcast',
-      event:   'crop_update',
-      payload: { cropTop, cropBottom, cropLeft, cropRight },
-    }).catch(() => {}) // silent — best-effort
-  }, [cropTop, cropBottom, cropLeft, cropRight])
+    // Re-enumerate when devices change (e.g., OBS Virtual Camera starts)
+    navigator.mediaDevices.addEventListener('devicechange', enumerateCameras)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', enumerateCameras)
+  }, [])
 
   // Revoke HDRI blob URL whenever it changes (new file selected) or on unmount.
   // handleCustomHdriUpload already revokes synchronously; this covers edge cases
@@ -231,21 +216,26 @@ function AdminPage() {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
-  // ── Live Screen Share Handlers ──────────────────────────────────────────
-  const handleStartScreenShare = useCallback(async () => {
+  // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
+  const handleStartCameraStream = useCallback(async () => {
+    if (!selectedCameraId) {
+      alert('Please select a camera first')
+      return
+    }
+
     try {
       // Stop any existing stream first
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop())
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop())
       }
-      if (screenVideoRef.current) {
-        screenVideoRef.current.pause()
-        screenVideoRef.current.srcObject = null
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.pause()
+        cameraVideoRef.current.srcObject = null
       }
 
-      // Request screen capture with high framerate
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'never', frameRate: 60 },
+      // Request camera stream with specific device
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: selectedCameraId }, frameRate: { ideal: 60 } },
         audio: false
       })
 
@@ -256,16 +246,16 @@ function AdminPage() {
       video.playsInline = true
       video.autoplay = true
 
-      // Handle stream ended (user clicked browser's "Stop sharing" button)
+      // Handle stream ended (device disconnected)
       stream.getVideoTracks()[0].onended = () => {
-        console.log('[ScreenShare] User stopped sharing via browser UI')
-        handleStopScreenShare()
+        console.log('[Camera] Device disconnected')
+        handleStopCameraStream()
       }
 
       await video.play()
-      screenVideoRef.current = video
+      cameraVideoRef.current = video
 
-      // Clear any active video/image and set screen share as source
+      // Clear any active video/image and set camera as source
       if (videoRef.current) {
         videoRef.current.pause()
         videoRef.current.src = ''
@@ -276,43 +266,41 @@ function AdminPage() {
       setIsPlaying(false)
       setVideoLoaded(true)
 
-      setScreenStream(stream)
-      setIsScreenSharing(true)
-      console.log('[ScreenShare] Started streaming')
+      setCameraStream(stream)
+      setIsCameraStreaming(true)
+      console.log('[Camera] Started streaming from:', selectedCameraId)
     } catch (err) {
-      console.error('[ScreenShare] Failed to start:', err)
-      if (err.name !== 'AbortError') {
-        alert('Failed to start screen sharing: ' + err.message)
-      }
+      console.error('[Camera] Failed to start:', err)
+      alert('Failed to start camera: ' + err.message)
     }
-  }, [screenStream])
+  }, [selectedCameraId, cameraStream])
 
-  const handleStopScreenShare = useCallback(() => {
-    console.log('[ScreenShare] Stopping stream')
+  const handleStopCameraStream = useCallback(() => {
+    console.log('[Camera] Stopping stream')
 
     // Stop all tracks
-    if (screenStream) {
-      screenStream.getTracks().forEach(track => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => {
         track.stop()
-        console.log('[ScreenShare] Track stopped:', track.kind)
+        console.log('[Camera] Track stopped:', track.kind)
       })
     }
 
     // Cleanup video element
-    if (screenVideoRef.current) {
-      screenVideoRef.current.pause()
-      screenVideoRef.current.srcObject = null
-      screenVideoRef.current = null
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.pause()
+      cameraVideoRef.current.srcObject = null
+      cameraVideoRef.current = null
     }
 
     // Reset state
-    setScreenStream(null)
-    setIsScreenSharing(false)
+    setCameraStream(null)
+    setIsCameraStreaming(false)
     setVideoElement(null)
     setVideoLoaded(false)
 
-    console.log('[ScreenShare] Cleanup complete')
-  }, [screenStream])
+    console.log('[Camera] Cleanup complete')
+  }, [cameraStream])
 
   // ── Custom HDRI — always loaded from local RAM (blob URL), never auto-uploaded ──
   // The blob URL is passed directly to <Environment files={blobUrl} />, which
@@ -766,7 +754,6 @@ function AdminPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
-        screenCrop={{ top: cropTop, bottom: cropBottom, left: cropLeft, right: cropRight }}
       >
         <UIPanel
           onModelUpload={handleModelUpload}
@@ -784,14 +771,13 @@ function AdminPage() {
           onPlay={handlePlay}
           onPause={handlePause}
           onToggleLoop={handleToggleLoop}
-          // ── Live Screen Share ─────────────────────────────────────────
-          isScreenSharing={isScreenSharing}
-          onStartScreenShare={handleStartScreenShare}
-          onStopScreenShare={handleStopScreenShare}
-          cropTop={cropTop}       onCropTopChange={setCropTop}
-          cropBottom={cropBottom} onCropBottomChange={setCropBottom}
-          cropLeft={cropLeft}     onCropLeftChange={setCropLeft}
-          cropRight={cropRight}   onCropRightChange={setCropRight}
+          // ── Virtual Camera ────────────────────────────────────────────
+          availableCameras={availableCameras}
+          selectedCameraId={selectedCameraId}
+          onCameraSelect={setSelectedCameraId}
+          isCameraStreaming={isCameraStreaming}
+          onStartCameraStream={handleStartCameraStream}
+          onStopCameraStream={handleStopCameraStream}
           sunAzimuth={sunAzimuth}       onSunAzimuthChange={setSunAzimuth}
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}

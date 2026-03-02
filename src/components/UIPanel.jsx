@@ -56,10 +56,9 @@ function UIPanel({
   videoLoaded, ledMaterialFound,
   videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
-  // ── Live Screen Share ───────────────────────────────────────────────────
-  isScreenSharing, onStartScreenShare, onStopScreenShare,
-  cropTop, onCropTopChange, cropBottom, onCropBottomChange,
-  cropLeft, onCropLeftChange, cropRight, onCropRightChange,
+  // ── Virtual Camera (OBS / NDI) ──────────────────────────────────────────
+  availableCameras, selectedCameraId, onCameraSelect,
+  isCameraStreaming, onStartCameraStream, onStopCameraStream,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
@@ -304,102 +303,69 @@ function UIPanel({
                 </div>
               )}
 
-              {/* ── Live Screen Share ──────────────────────────────────────── */}
-              <div className="pt-2 border-t border-white/5">
-                {isScreenSharing ? (
-                  <div className="space-y-2.5">
+              {/* ── Virtual Camera (OBS / NDI) ─────────────────────────────── */}
+              <div className="pt-2 border-t border-white/5 space-y-2">
+                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Virtual Camera</p>
+
+                {/* Camera selector dropdown */}
+                <select
+                  value={selectedCameraId}
+                  onChange={e => onCameraSelect(e.target.value)}
+                  disabled={isCameraStreaming}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white/80 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="" className="bg-zinc-900">Select Camera...</option>
+                  {availableCameras.map(cam => (
+                    <option key={cam.deviceId} value={cam.deviceId} className="bg-zinc-900">
+                      {cam.label || `Camera ${cam.deviceId.slice(0, 8)}...`}
+                    </option>
+                  ))}
+                </select>
+
+                {availableCameras.length === 0 && (
+                  <p className="text-[9px] text-amber-400/60 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                    No cameras detected. Start OBS Virtual Camera or NDI Webcam Input.
+                  </p>
+                )}
+
+                {isCameraStreaming ? (
+                  <div className="space-y-2">
                     {/* Live indicator */}
                     <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-red-500/15 border border-red-500/30">
                       <span className="relative flex h-3 w-3">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                       </span>
-                      <span className="text-red-400 text-xs font-semibold">Live Stream Active</span>
+                      <span className="text-red-400 text-xs font-semibold">Camera Live</span>
                     </div>
-
-                    {/* ── Texture Crop Controls ─────────────────────────── */}
-                    <div className="bg-white/[0.03] border border-white/8 rounded-xl p-2.5 space-y-2">
-                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1">Texture Crop</p>
-
-                      {/* Row 1: Top & Bottom */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { label: 'Crop T', value: cropTop,    onChange: onCropTopChange    },
-                          { label: 'Crop B', value: cropBottom, onChange: onCropBottomChange },
-                        ].map(({ label, value, onChange }) => (
-                          <div key={label}>
-                            <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[9px] text-white/35">{label}</span>
-                              <span className="text-[9px] font-mono text-cyan-400/70">{value}%</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="100" step="1"
-                              value={value}
-                              onChange={e => onChange(Number(e.target.value))}
-                              className="w-full h-1 rounded-full appearance-none cursor-pointer bg-white/10 accent-cyan-400"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Row 2: Left & Right */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { label: 'Crop L', value: cropLeft,  onChange: onCropLeftChange  },
-                          { label: 'Crop R', value: cropRight, onChange: onCropRightChange },
-                        ].map(({ label, value, onChange }) => (
-                          <div key={label}>
-                            <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[9px] text-white/35">{label}</span>
-                              <span className="text-[9px] font-mono text-cyan-400/70">{value}%</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="100" step="1"
-                              value={value}
-                              onChange={e => onChange(Number(e.target.value))}
-                              className="w-full h-1 rounded-full appearance-none cursor-pointer bg-white/10 accent-cyan-400"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Reset crop button */}
-                      {(cropTop > 0 || cropBottom > 0 || cropLeft > 0 || cropRight > 0) && (
-                        <button
-                          onClick={() => { onCropTopChange(0); onCropBottomChange(0); onCropLeftChange(0); onCropRightChange(0) }}
-                          className="w-full py-1 rounded-lg text-[9px] text-white/30 hover:text-cyan-400/70 hover:bg-cyan-500/5 border border-white/5 transition-all"
-                        >
-                          Reset Crop
-                        </button>
-                      )}
-                    </div>
-
                     {/* Stop button */}
                     <button
-                      onClick={onStopScreenShare}
+                      onClick={onStopCameraStream}
                       className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 text-xs font-medium transition-all"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
                       </svg>
-                      Stop Screen Share
+                      Stop Camera
                     </button>
-                    <p className="text-[9px] text-red-400/50 leading-snug text-center">
-                      Your screen is being mirrored to the LED screens.
-                    </p>
                   </div>
                 ) : (
                   <button
-                    onClick={onStartScreenShare}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-cyan-500/25 hover:border-cyan-500/50 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+                    onClick={onStartCameraStream}
+                    disabled={!selectedCameraId}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-cyan-500/25 hover:border-cyan-500/50 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-cyan-500/25 disabled:hover:bg-transparent disabled:hover:text-white/40"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
-                    Stream Local Window
+                    Stream from Camera
                   </button>
                 )}
+
+                <p className="text-[9px] text-white/25 leading-snug">
+                  Use OBS Virtual Camera or NDI to stream pure compositions.
+                </p>
               </div>
 
               {/* Playlist — double-click name to rename */}
