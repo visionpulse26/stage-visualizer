@@ -42,32 +42,13 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   // ── Video texture ─────────────────────────────────────────────────────────
   const videoTexture = useMemo(() => {
     if (!videoElement) return null
-    
-    // CAMERA FIX: Log video element status for debugging
-    const isCamera = !!videoElement.srcObject
-    console.log('[Scene] Creating VideoTexture:', {
-      isCamera,
-      videoWidth: videoElement.videoWidth,
-      videoHeight: videoElement.videoHeight,
-      readyState: videoElement.readyState,
-      paused: videoElement.paused
-    })
-    
     const t = new THREE.VideoTexture(videoElement)
     t.minFilter   = THREE.LinearFilter
     t.magFilter   = THREE.LinearFilter
-    // FIX 2 — explicit sRGB color space prevents washed-out / over-saturated colors
-    // format is intentionally omitted — Three.js r138+ auto-detects video format
     t.colorSpace  = THREE.SRGBColorSpace
     t.flipY       = false
     t.wrapS       = THREE.ClampToEdgeWrapping
     t.wrapT       = THREE.ClampToEdgeWrapping
-    
-    // CAMERA FIX: Force initial update for camera streams
-    if (isCamera) {
-      t.needsUpdate = true
-    }
-    
     videoTextureRef.current = t
     return t
   }, [videoElement])
@@ -104,17 +85,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
     const sample = () => {
-      if (!videoElement) return
-      
-      // CAMERA FIX: Camera streams don't use paused state the same way
-      const isCamera = !!videoElement.srcObject
-      const hasFrames = videoElement.videoWidth > 0 && videoElement.videoHeight > 0
-      
-      // Skip if: not a camera AND (paused OR not ready)
-      if (!isCamera && (videoElement.paused || videoElement.readyState < 2)) return
-      // Skip if: camera but no frames yet
-      if (isCamera && !hasFrames) return
-      
+      if (!videoElement || videoElement.paused || videoElement.readyState < 2) return
       try {
         ctx.drawImage(videoElement, 0, 0, 16, 16)
         const data = ctx.getImageData(0, 0, 16, 16).data
@@ -235,17 +206,9 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
-    // Keep video texture current
-    // CAMERA FIX: Check for srcObject (camera streams) OR regular video playing
-    if (videoTextureRef.current && videoElement) {
-      const isCamera = !!videoElement.srcObject
-      const isPlaying = !videoElement.paused && videoElement.readyState >= 2
-      const hasFrames = videoElement.videoWidth > 0 && videoElement.videoHeight > 0
-      
-      // Update texture if: camera stream with frames, OR regular video playing
-      if ((isCamera && hasFrames) || isPlaying) {
-        videoTextureRef.current.needsUpdate = true
-      }
+    // Keep video texture current (VideoTexture handles its own loop, but we ensure needsUpdate)
+    if (videoTextureRef.current && videoElement && !videoElement.paused) {
+      videoTextureRef.current.needsUpdate = true
     }
 
     // FIX 4 — lerp emissiveIntensity 0 → EMISSIVE_TARGET over EMISSIVE_FADE_SECS

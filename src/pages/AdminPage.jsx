@@ -217,19 +217,17 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // NDI-SAFE: Multiple fallback strategies for virtual camera compatibility
+  // Standard WebRTC-to-Three.js pipeline: wait for 'playing' event to fix race condition
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
       return
     }
 
-    // Show loading state
-    setIsCameraStreaming(true)
     console.log('[Camera] Starting stream for device:', selectedCameraId)
 
     try {
-      // Stop any existing stream first
+      // Cleanup any existing stream
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop())
       }
@@ -239,27 +237,24 @@ function AdminPage() {
         cameraVideoRef.current.remove?.()
       }
 
-      // NDI FIX: Use minimal constraints - virtual cameras hate strict requirements
+      // Get camera stream with relaxed constraints for virtual cameras
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { deviceId: selectedCameraId }  // No 'exact', no resolution constraints
+        video: { deviceId: selectedCameraId }
       })
 
-      console.log('[Camera] Stream obtained, video tracks:', stream.getVideoTracks().length)
+      console.log('[Camera] Stream obtained')
 
-      // NDI FIX: Create video element and ADD TO DOM (required for some browsers)
+      // Create video element with required attributes for browser policies
       const video = document.createElement('video')
       video.id = 'virtual-camera-feed'
-      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;pointer-events:none;'
+      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;'
       video.muted = true
       video.playsInline = true
       video.autoplay = true
-      video.setAttribute('muted', '')
-      video.setAttribute('playsinline', '')
-      video.setAttribute('autoplay', '')
       document.body.appendChild(video)
 
-      // Set srcObject AFTER adding to DOM
+      // Set stream source
       video.srcObject = stream
 
       // Handle device disconnect
@@ -271,15 +266,19 @@ function AdminPage() {
         }
       }
 
-      // NDI FIX: Helper to finalize the stream
-      const finalizeStream = () => {
-        console.log('[Camera] Finalizing stream...')
+      // CRITICAL: Wait for 'playing' event before passing to Three.js
+      // This ensures the first frame is decoded and prevents black screen
+      video.addEventListener('playing', () => {
+        console.log('[Camera] ✓ Playing event fired - video ready for Three.js')
         cameraVideoRef.current = video
 
+        // Clear any active playlist video
         if (videoRef.current) {
           videoRef.current.pause()
           videoRef.current.src = ''
         }
+
+        // NOW pass video to Scene (Three.js will create VideoTexture)
         setVideoElement(video)
         setActiveImageUrl(null)
         setActiveVideoId(null)
@@ -287,79 +286,32 @@ function AdminPage() {
         setVideoLoaded(true)
         setCameraStream(stream)
         setIsCameraStreaming(true)
-        console.log('[Camera] ✓ Stream active and applied to scene')
-      }
+      }, { once: true })
 
-      // NDI FIX: Try multiple event strategies
-      let resolved = false
+      // Start playback
+      video.play().catch(e => {
+        console.error('[Camera] Play error:', e)
+        stream.getTracks().forEach(t => t.stop())
+        video.remove()
+        alert('Camera playback failed: ' + e.message)
+      })
 
-      // Strategy 1: canplaythrough (most reliable for NDI)
-      video.oncanplaythrough = () => {
-        if (resolved) return
-        resolved = true
-        console.log('[Camera] canplaythrough fired')
-        finalizeStream()
-      }
-
-      // Strategy 2: canplay fallback
-      video.oncanplay = () => {
-        if (resolved) return
-        resolved = true
-        console.log('[Camera] canplay fired')
-        finalizeStream()
-      }
-
-      // Strategy 3: loadeddata fallback
-      video.onloadeddata = () => {
-        if (resolved) return
-        resolved = true
-        console.log('[Camera] loadeddata fired')
-        finalizeStream()
-      }
-
-      // Strategy 4: Manual play attempt after short delay (NDI often needs this)
+      // Timeout fallback: 10 seconds
       setTimeout(() => {
-        if (resolved) return
-        console.log('[Camera] Attempting manual play...')
-        video.play()
-          .then(() => {
-            if (resolved) return
-            resolved = true
-            console.log('[Camera] Manual play succeeded')
-            finalizeStream()
-          })
-          .catch(e => console.log('[Camera] Manual play attempt:', e.message))
-      }, 500)
-
-      // Strategy 5: Force finalize after 3s if video has dimensions (NDI workaround)
-      setTimeout(() => {
-        if (resolved) return
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-          resolved = true
-          console.log('[Camera] Forced finalize - video has dimensions:', video.videoWidth, 'x', video.videoHeight)
-          finalizeStream()
-        }
-      }, 3000)
-
-      // Final timeout: 15 seconds for slow NDI sources
-      setTimeout(() => {
-        if (!resolved && stream.active) {
-          console.warn('[Camera] 15s timeout reached')
+        if (!cameraVideoRef.current && stream.active) {
+          console.warn('[Camera] 10s timeout - aborting')
           stream.getTracks().forEach(t => t.stop())
-          video.remove?.()
+          video.remove()
           setIsCameraStreaming(false)
-          alert('Camera stream timed out after 15 seconds.\n\nFor NDI:\n1. Ensure NDI Virtual Input is running\n2. Select an NDI source in the app\n3. Try again')
+          alert('Camera stream timed out. Ensure NDI Virtual Input has a source selected.')
         }
-      }, 15000)
-
-      // Trigger load
-      video.load()
+      }, 10000)
 
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err)
-      setIsCameraStreaming(false)
       setCameraStream(null)
-      alert('Failed to access camera: ' + err.message + '\n\nFor NDI: Ensure NDI Virtual Input is running and has a source selected.')
+      setIsCameraStreaming(false)
+      alert('Failed to access camera: ' + err.message)
     }
   }, [selectedCameraId, cameraStream])
 
