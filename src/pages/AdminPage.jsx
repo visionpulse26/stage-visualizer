@@ -217,10 +217,17 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // Standard WebRTC-to-Three.js pipeline: wait for 'playing' event to fix race condition
+  // BULLETPROOF PIPELINE: Use persistent DOM-mounted video element (Chrome anti-throttling)
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
+      return
+    }
+
+    // Get the persistent DOM video element (mounted in JSX)
+    const video = cameraVideoRef.current
+    if (!video) {
+      console.error('[Camera] Video element ref not found')
       return
     }
 
@@ -231,11 +238,7 @@ function AdminPage() {
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop())
       }
-      if (cameraVideoRef.current) {
-        cameraVideoRef.current.pause()
-        cameraVideoRef.current.srcObject = null
-        cameraVideoRef.current.remove?.()
-      }
+      video.srcObject = null
 
       // Get camera stream with relaxed constraints for virtual cameras
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -245,16 +248,7 @@ function AdminPage() {
 
       console.log('[Camera] Stream obtained')
 
-      // Create video element with required attributes for browser policies
-      const video = document.createElement('video')
-      video.id = 'virtual-camera-feed'
-      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;'
-      video.muted = true
-      video.playsInline = true
-      video.autoplay = true
-      document.body.appendChild(video)
-
-      // Set stream source
+      // Set stream to persistent DOM element
       video.srcObject = stream
 
       // Handle device disconnect
@@ -267,10 +261,10 @@ function AdminPage() {
       }
 
       // CRITICAL: Wait for 'playing' event before passing to Three.js
-      // This ensures the first frame is decoded and prevents black screen
-      video.addEventListener('playing', () => {
+      // Chrome continuously decodes frames only when video is in DOM
+      const onPlaying = () => {
         console.log('[Camera] ✓ Playing event fired - video ready for Three.js')
-        cameraVideoRef.current = video
+        console.log('[Camera] Video dimensions:', video.videoWidth, 'x', video.videoHeight)
 
         // Clear any active playlist video
         if (videoRef.current) {
@@ -286,34 +280,33 @@ function AdminPage() {
         setVideoLoaded(true)
         setCameraStream(stream)
         setIsCameraStreaming(true)
-      }, { once: true })
+      }
 
-      // Start playback
-      video.play().catch(e => {
-        console.error('[Camera] Play error:', e)
-        stream.getTracks().forEach(t => t.stop())
-        video.remove()
-        alert('Camera playback failed: ' + e.message)
-      })
+      video.addEventListener('playing', onPlaying, { once: true })
+
+      // Start playback (await the promise)
+      await video.play()
+      console.log('[Camera] play() promise resolved')
 
       // Timeout fallback: 10 seconds
       setTimeout(() => {
-        if (!cameraVideoRef.current && stream.active) {
+        if (!isCameraStreaming && stream.active) {
           console.warn('[Camera] 10s timeout - aborting')
+          video.removeEventListener('playing', onPlaying)
           stream.getTracks().forEach(t => t.stop())
-          video.remove()
-          setIsCameraStreaming(false)
-          alert('Camera stream timed out. Ensure NDI Virtual Input has a source selected.')
+          video.srcObject = null
+          alert('Camera stream timed out. Ensure the camera/NDI source is active.')
         }
       }, 10000)
 
     } catch (err) {
-      console.error('[Camera] getUserMedia failed:', err)
+      console.error('[Camera] Error:', err)
+      video.srcObject = null
       setCameraStream(null)
       setIsCameraStreaming(false)
       alert('Failed to access camera: ' + err.message)
     }
-  }, [selectedCameraId, cameraStream])
+  }, [selectedCameraId, cameraStream, isCameraStreaming])
 
   const handleStopCameraStream = useCallback(() => {
     console.log('[Camera] Stopping stream')
@@ -326,19 +319,13 @@ function AdminPage() {
       })
     }
 
-    // Cleanup video element (including DOM removal for NDI fix)
+    // Clear the persistent video element (don't remove from DOM)
     if (cameraVideoRef.current) {
       cameraVideoRef.current.pause()
       cameraVideoRef.current.srcObject = null
-      cameraVideoRef.current.remove?.()  // Remove from DOM
-      cameraVideoRef.current = null
     }
 
-    // Also try to remove by ID (safety net)
-    const domVideo = document.getElementById('virtual-camera-feed')
-    if (domVideo) domVideo.remove()
-
-    // Reset state
+    // Reset state - clear videoElement so Scene removes texture
     setCameraStream(null)
     setIsCameraStreaming(false)
     setVideoElement(null)
@@ -874,6 +861,15 @@ function AdminPage() {
           onOpenProject={handleOpenProject}
         />
       )}
+      {/* PERSISTENT HIDDEN VIDEO ELEMENT for Virtual Camera (Chrome anti-throttling) */}
+      <video
+        ref={cameraVideoRef}
+        id="virtual-camera-feed"
+        style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, pointerEvents: 'none' }}
+        playsInline
+        muted
+        autoPlay
+      />
     </div>
   )
 }
