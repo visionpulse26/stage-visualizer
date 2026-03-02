@@ -217,6 +217,7 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
+  // FIX: NDI Virtual Camera freeze - 3 mandatory fixes applied
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
@@ -233,45 +234,81 @@ function AdminPage() {
         cameraVideoRef.current.srcObject = null
       }
 
-      // Request camera stream with specific device
+      // FIX 2: RELAXED MEDIA CONSTRAINTS
+      // DO NOT force strict frameRate or exact resolutions for virtual cameras
+      // NDI and OBS Virtual Camera can freeze if constraints are too strict
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: selectedCameraId }, frameRate: { ideal: 60 } },
-        audio: false
+        audio: false,  // MANDATORY: Force audio to false to prevent freeze
+        video: {
+          deviceId: { exact: selectedCameraId },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
       })
 
-      // Create hidden video element for the stream
+      // FIX 1: STRICT VIDEO ELEMENT ATTRIBUTES
+      // Virtual cameras with empty audio channels can block playback if not muted
       const video = document.createElement('video')
-      video.srcObject = stream
-      video.muted = true
-      video.playsInline = true
-      video.autoplay = true
+      video.muted      = true    // MANDATORY: Prevents browser blocking
+      video.playsInline = true   // MANDATORY: Prevents fullscreen on iOS
+      video.autoplay   = true    // MANDATORY: Allows instant playback
+      video.srcObject  = stream
 
       // Handle stream ended (device disconnected)
-      stream.getVideoTracks()[0].onended = () => {
-        console.log('[Camera] Device disconnected')
-        handleStopCameraStream()
+      const videoTrack = stream.getVideoTracks()[0]
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.log('[Camera] Device disconnected')
+          handleStopCameraStream()
+        }
       }
 
-      await video.play()
-      cameraVideoRef.current = video
+      // FIX 3: ASYNC PLAYBACK & ERROR RECOVERY
+      // Wait for metadata before applying to Three.js to prevent freeze
+      video.onloadedmetadata = () => {
+        video.play()
+          .then(() => {
+            console.log('[Camera] Playback started successfully')
+            cameraVideoRef.current = video
 
-      // Clear any active video/image and set camera as source
-      if (videoRef.current) {
-        videoRef.current.pause()
-        videoRef.current.src = ''
+            // Clear any active video/image and set camera as source
+            if (videoRef.current) {
+              videoRef.current.pause()
+              videoRef.current.src = ''
+            }
+            setVideoElement(video)
+            setActiveImageUrl(null)
+            setActiveVideoId(null)
+            setIsPlaying(false)
+            setVideoLoaded(true)
+
+            setCameraStream(stream)
+            setIsCameraStreaming(true)
+            console.log('[Camera] Started streaming from:', selectedCameraId)
+          })
+          .catch(playErr => {
+            console.error('[Camera] Playback failed:', playErr)
+            // Cleanup on failure
+            stream.getTracks().forEach(t => t.stop())
+            alert('Camera playback failed: ' + playErr.message)
+          })
       }
-      setVideoElement(video)
-      setActiveImageUrl(null)
-      setActiveVideoId(null)
-      setIsPlaying(false)
-      setVideoLoaded(true)
 
-      setCameraStream(stream)
-      setIsCameraStreaming(true)
-      console.log('[Camera] Started streaming from:', selectedCameraId)
+      // Timeout fallback: if metadata doesn't load in 5s, abort
+      setTimeout(() => {
+        if (!cameraVideoRef.current && stream.active) {
+          console.warn('[Camera] Metadata timeout - aborting')
+          stream.getTracks().forEach(t => t.stop())
+          alert('Camera stream timed out. Try selecting a different camera.')
+        }
+      }, 5000)
+
     } catch (err) {
-      console.error('[Camera] Failed to start:', err)
-      alert('Failed to start camera: ' + err.message)
+      console.error('[Camera] getUserMedia failed:', err)
+      // Reset UI state on failure
+      setCameraStream(null)
+      setIsCameraStreaming(false)
+      alert('Failed to start camera: ' + err.message + '\n\nTip: For NDI, ensure NDI Virtual Input is running.')
     }
   }, [selectedCameraId, cameraStream])
 
