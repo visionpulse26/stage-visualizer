@@ -217,7 +217,7 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // BULLETPROOF PIPELINE: Use persistent DOM-mounted video element (Chrome anti-throttling)
+  // BULLETPROOF PIPELINE: Multiple fallbacks for virtual camera compatibility
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
@@ -246,7 +246,7 @@ function AdminPage() {
         video: { deviceId: selectedCameraId }
       })
 
-      console.log('[Camera] Stream obtained')
+      console.log('[Camera] Stream obtained, tracks:', stream.getVideoTracks().length)
 
       // Set stream to persistent DOM element
       video.srcObject = stream
@@ -258,12 +258,15 @@ function AdminPage() {
           console.log('[Camera] Device disconnected')
           handleStopCameraStream()
         }
+        console.log('[Camera] Track settings:', videoTrack.getSettings())
       }
 
-      // CRITICAL: Wait for 'playing' event before passing to Three.js
-      // Chrome continuously decodes frames only when video is in DOM
-      const onPlaying = () => {
-        console.log('[Camera] ✓ Playing event fired - video ready for Three.js')
+      // Helper to finalize camera setup
+      let finalized = false
+      const finalizeCamera = (source) => {
+        if (finalized) return
+        finalized = true
+        console.log('[Camera] ✓ Finalized via:', source)
         console.log('[Camera] Video dimensions:', video.videoWidth, 'x', video.videoHeight)
 
         // Clear any active playlist video
@@ -272,7 +275,7 @@ function AdminPage() {
           videoRef.current.src = ''
         }
 
-        // NOW pass video to Scene (Three.js will create VideoTexture)
+        // Pass video to Scene for Three.js VideoTexture
         setVideoElement(video)
         setActiveImageUrl(null)
         setActiveVideoId(null)
@@ -282,22 +285,49 @@ function AdminPage() {
         setIsCameraStreaming(true)
       }
 
-      video.addEventListener('playing', onPlaying, { once: true })
+      // Strategy 1: playing event (standard)
+      video.addEventListener('playing', () => finalizeCamera('playing event'), { once: true })
 
-      // Start playback (await the promise)
+      // Strategy 2: loadeddata event (fallback for virtual cameras)
+      video.addEventListener('loadeddata', () => {
+        if (video.videoWidth > 0) finalizeCamera('loadeddata event')
+      }, { once: true })
+
+      // Start playback
       await video.play()
-      console.log('[Camera] play() promise resolved')
+      console.log('[Camera] play() resolved, paused:', video.paused, 'readyState:', video.readyState)
 
-      // Timeout fallback: 10 seconds
+      // Strategy 3: Immediate check after play() (OBS Virtual Camera often works here)
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        finalizeCamera('immediate (post-play)')
+      }
+
+      // Strategy 4: Polling fallback for stubborn virtual cameras
+      let pollCount = 0
+      const pollInterval = setInterval(() => {
+        pollCount++
+        if (finalized) {
+          clearInterval(pollInterval)
+          return
+        }
+        if (video.videoWidth > 0 && video.videoHeight > 0 && !video.paused) {
+          clearInterval(pollInterval)
+          finalizeCamera('polling (attempt ' + pollCount + ')')
+        }
+        if (pollCount >= 20) { // 2 seconds of polling
+          clearInterval(pollInterval)
+        }
+      }, 100)
+
+      // Final timeout: 5 seconds
       setTimeout(() => {
-        if (!isCameraStreaming && stream.active) {
-          console.warn('[Camera] 10s timeout - aborting')
-          video.removeEventListener('playing', onPlaying)
+        if (!finalized && stream.active) {
+          console.warn('[Camera] 5s timeout - aborting')
           stream.getTracks().forEach(t => t.stop())
           video.srcObject = null
-          alert('Camera stream timed out. Ensure the camera/NDI source is active.')
+          alert('Camera stream timed out. The virtual camera may not be outputting frames.')
         }
-      }, 10000)
+      }, 5000)
 
     } catch (err) {
       console.error('[Camera] Error:', err)
@@ -306,7 +336,7 @@ function AdminPage() {
       setIsCameraStreaming(false)
       alert('Failed to access camera: ' + err.message)
     }
-  }, [selectedCameraId, cameraStream, isCameraStreaming])
+  }, [selectedCameraId, cameraStream])
 
   const handleStopCameraStream = useCallback(() => {
     console.log('[Camera] Stopping stream')
