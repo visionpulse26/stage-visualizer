@@ -314,6 +314,7 @@ function StageCanvas({
   bloomThreshold,       // 0.0 – 2.0  only pixels above this luminance bloom
   protectLed,           // boolean    isolate LED material from env/tone mapping
   showHdriBackground,   // boolean    show HDRI as visible background (Stealth = OFF)
+  screenCrop,           // { top, bottom, left, right } in 0-100 percentage units
   children,
 }) {
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
@@ -423,6 +424,7 @@ function StageCanvas({
               protectLed={protectLed ?? true}
               sunIntensity={sunIntensity ?? 1}
               envIntensity={envIntensity ?? 1}
+              screenCrop={screenCrop}
             />
           )}
         </Suspense>

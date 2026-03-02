@@ -29,6 +29,15 @@ function AdminPage() {
   const [isScreenSharing,  setIsScreenSharing]  = useState(false)
   const screenVideoRef = useRef(null)
 
+  // ── Texture Crop (0-100 = percentage) ──────────────────────────────────
+  const [cropTop,    setCropTop]    = useState(0)
+  const [cropBottom, setCropBottom] = useState(0)
+  const [cropLeft,   setCropLeft]   = useState(0)
+  const [cropRight,  setCropRight]  = useState(0)
+
+  // Supabase Realtime channel for broadcasting crop to Collab in real-time
+  const cropChannelRef = useRef(null)
+
   // Local blob URLs created for admin preview — revoke on unmount
   const localBlobUrlsRef = useRef([])
 
@@ -99,8 +108,37 @@ function AdminPage() {
         screenVideoRef.current.pause()
         screenVideoRef.current.srcObject = null
       }
+      // Unsubscribe realtime crop channel
+      if (cropChannelRef.current) {
+        supabase.removeChannel(cropChannelRef.current)
+        cropChannelRef.current = null
+      }
     }
   }, [])
+
+  // ── Supabase Realtime: broadcast crop changes to Collab page ─────────────
+  // Subscribe once; broadcast whenever any crop value changes.
+  useEffect(() => {
+    const channel = supabase.channel('screen-crop-sync', {
+      config: { broadcast: { self: false } }
+    })
+    channel.subscribe()
+    cropChannelRef.current = channel
+    return () => {
+      supabase.removeChannel(channel)
+      cropChannelRef.current = null
+    }
+  }, [])
+
+  // Broadcast crop values whenever they change (debounce via realtime's built-in batching)
+  useEffect(() => {
+    if (!cropChannelRef.current) return
+    cropChannelRef.current.send({
+      type:    'broadcast',
+      event:   'crop_update',
+      payload: { cropTop, cropBottom, cropLeft, cropRight },
+    }).catch(() => {}) // silent — best-effort
+  }, [cropTop, cropBottom, cropLeft, cropRight])
 
   // Revoke HDRI blob URL whenever it changes (new file selected) or on unmount.
   // handleCustomHdriUpload already revokes synchronously; this covers edge cases
@@ -728,6 +766,7 @@ function AdminPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        screenCrop={{ top: cropTop, bottom: cropBottom, left: cropLeft, right: cropRight }}
       >
         <UIPanel
           onModelUpload={handleModelUpload}
@@ -749,6 +788,10 @@ function AdminPage() {
           isScreenSharing={isScreenSharing}
           onStartScreenShare={handleStartScreenShare}
           onStopScreenShare={handleStopScreenShare}
+          cropTop={cropTop}       onCropTopChange={setCropTop}
+          cropBottom={cropBottom} onCropBottomChange={setCropBottom}
+          cropLeft={cropLeft}     onCropLeftChange={setCropLeft}
+          cropRight={cropRight}   onCropRightChange={setCropRight}
           sunAzimuth={sunAzimuth}       onSunAzimuthChange={setSunAzimuth}
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}

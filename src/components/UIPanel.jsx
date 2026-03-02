@@ -58,6 +58,8 @@ function UIPanel({
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
   // ── Live Screen Share ───────────────────────────────────────────────────
   isScreenSharing, onStartScreenShare, onStopScreenShare,
+  cropTop, onCropTopChange, cropBottom, onCropBottomChange,
+  cropLeft, onCropLeftChange, cropRight, onCropRightChange,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
@@ -305,7 +307,7 @@ function UIPanel({
               {/* ── Live Screen Share ──────────────────────────────────────── */}
               <div className="pt-2 border-t border-white/5">
                 {isScreenSharing ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {/* Live indicator */}
                     <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-red-500/15 border border-red-500/30">
                       <span className="relative flex h-3 w-3">
@@ -314,6 +316,64 @@ function UIPanel({
                       </span>
                       <span className="text-red-400 text-xs font-semibold">Live Stream Active</span>
                     </div>
+
+                    {/* ── Texture Crop Controls ─────────────────────────── */}
+                    <div className="bg-white/[0.03] border border-white/8 rounded-xl p-2.5 space-y-2">
+                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1">Texture Crop</p>
+
+                      {/* Row 1: Top & Bottom */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { label: 'Crop T', value: cropTop,    onChange: onCropTopChange    },
+                          { label: 'Crop B', value: cropBottom, onChange: onCropBottomChange },
+                        ].map(({ label, value, onChange }) => (
+                          <div key={label}>
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[9px] text-white/35">{label}</span>
+                              <span className="text-[9px] font-mono text-cyan-400/70">{value}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="100" step="1"
+                              value={value}
+                              onChange={e => onChange(Number(e.target.value))}
+                              className="w-full h-1 rounded-full appearance-none cursor-pointer bg-white/10 accent-cyan-400"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Row 2: Left & Right */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { label: 'Crop L', value: cropLeft,  onChange: onCropLeftChange  },
+                          { label: 'Crop R', value: cropRight, onChange: onCropRightChange },
+                        ].map(({ label, value, onChange }) => (
+                          <div key={label}>
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[9px] text-white/35">{label}</span>
+                              <span className="text-[9px] font-mono text-cyan-400/70">{value}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="100" step="1"
+                              value={value}
+                              onChange={e => onChange(Number(e.target.value))}
+                              className="w-full h-1 rounded-full appearance-none cursor-pointer bg-white/10 accent-cyan-400"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Reset crop button */}
+                      {(cropTop > 0 || cropBottom > 0 || cropLeft > 0 || cropRight > 0) && (
+                        <button
+                          onClick={() => { onCropTopChange(0); onCropBottomChange(0); onCropLeftChange(0); onCropRightChange(0) }}
+                          className="w-full py-1 rounded-lg text-[9px] text-white/30 hover:text-cyan-400/70 hover:bg-cyan-500/5 border border-white/5 transition-all"
+                        >
+                          Reset Crop
+                        </button>
+                      )}
+                    </div>
+
                     {/* Stop button */}
                     <button
                       onClick={onStopScreenShare}

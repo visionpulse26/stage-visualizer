@@ -48,6 +48,12 @@ function CollabPage() {
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
 
+  // ── Texture Crop — synced from Admin via Supabase Realtime ───────────────
+  const [cropTop,    setCropTop]    = useState(0)
+  const [cropBottom, setCropBottom] = useState(0)
+  const [cropLeft,   setCropLeft]   = useState(0)
+  const [cropRight,  setCropRight]  = useState(0)
+
   // Track blob URLs created locally so we can revoke them on unmount (memory safety)
   const localBlobUrlsRef = useRef([])
 
@@ -64,6 +70,21 @@ function CollabPage() {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Realtime: receive crop updates broadcast from Admin ──────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('screen-crop-sync', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'crop_update' }, ({ payload }) => {
+        if (payload == null) return
+        if (payload.cropTop    != null) setCropTop(payload.cropTop)
+        if (payload.cropBottom != null) setCropBottom(payload.cropBottom)
+        if (payload.cropLeft   != null) setCropLeft(payload.cropLeft)
+        if (payload.cropRight  != null) setCropRight(payload.cropRight)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   // ── Video helpers ─────────────────────────────────────────────────────────
@@ -319,6 +340,7 @@ function CollabPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        screenCrop={{ top: cropTop, bottom: cropBottom, left: cropLeft, right: cropRight }}
       >
         <CollabPanel
           // ── Media ────────────────────────────────────────────────────────

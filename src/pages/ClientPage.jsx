@@ -36,6 +36,12 @@ function ClientPage() {
   const [sunPosition,        setSunPosition]        = useState([10.6, 10.6, 7.5])
   const [sunIntensity,       setSunIntensity]       = useState(1)
 
+  // ── Texture Crop — synced from Admin via Supabase Realtime ───────────────
+  const [cropTop,    setCropTop]    = useState(0)
+  const [cropBottom, setCropBottom] = useState(0)
+  const [cropLeft,   setCropLeft]   = useState(0)
+  const [cropRight,  setCropRight]  = useState(0)
+
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
@@ -47,6 +53,21 @@ function ClientPage() {
     return () => {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     }
+  }, [])
+
+  // ── Realtime: receive crop updates broadcast from Admin ──────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('screen-crop-sync', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'crop_update' }, ({ payload }) => {
+        if (payload == null) return
+        if (payload.cropTop    != null) setCropTop(payload.cropTop)
+        if (payload.cropBottom != null) setCropBottom(payload.cropBottom)
+        if (payload.cropLeft   != null) setCropLeft(payload.cropLeft)
+        if (payload.cropRight  != null) setCropRight(payload.cropRight)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   // ── Shared video activation helper ───────────────────────────────────────
@@ -239,6 +260,7 @@ function ClientPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        screenCrop={{ top: cropTop, bottom: cropBottom, left: cropLeft, right: cropRight }}
       >
         <ClientPanel
           cameraPresets={cameraPresets}
