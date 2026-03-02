@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOO:AWAKE STUDIO — Brand Typography
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --tooawake-orange: #FF5F1F;
+  --tooawake-orange-glow: #FF5F1F66;
+  --font-brand: 'Chakra Petch', sans-serif;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -13,6 +23,24 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   background-color: #0a0a0f;
+  font-family: var(--font-brand), system-ui, sans-serif;
+}
+
+/* TOO:AWAKE Brand Footer */
+.tooawake-footer {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  font-family: var(--font-brand);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--tooawake-orange);
+  text-shadow: 0 0 8px var(--tooawake-orange-glow);
+  pointer-events: none;
+  user-select: none;
 }
 
 ::-webkit-scrollbar {

@@ -4,6 +4,7 @@ import StageCanvas from '../components/StageCanvas'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
+import BrandFooter from '../components/BrandFooter'
 import { supabase } from '../lib/supabaseClient'
 
 function CollabPage() {
@@ -330,7 +331,7 @@ function CollabPage() {
     const isValidImage = ALLOWED_IMAGE_EXT.includes(ext) || ALLOWED_MIME_IMAGE.includes(mime)
 
     if (!isValidVideo && !isValidImage) {
-      alert(`⚠️ Format not supported!\n\nFile: ${file.name}\n\nSupported formats:\n• Videos: MP4, WebM\n• Images: WebP, PNG, JPG, JPEG, GIF\n\nMOV and AVI are not supported as they can crash the browser.`)
+      alert(`⚠️ FORMAT NOT SUPPORTED.\n\nPLEASE USE MP4/WEBM FOR VIDEOS.\nPLEASE USE WEBP/PNG/JPG FOR IMAGES.\n\nFile: ${file.name}`)
       return false
     }
     return true
@@ -562,6 +563,9 @@ function CollabPage() {
         muted
         autoPlay
       />
+
+      {/* TOO:AWAKE Brand Footer */}
+      <BrandFooter />
     </div>
   )
 }

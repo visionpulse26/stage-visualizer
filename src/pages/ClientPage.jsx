@@ -5,6 +5,7 @@ import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import { DbLoadingOverlay } from './CollabPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
+import BrandFooter from '../components/BrandFooter'
 import { supabase } from '../lib/supabaseClient'
 
 function ClientPage() {
@@ -256,6 +257,9 @@ function ClientPage() {
 
         <RoleBadge role="Client View" color="blue" />
       </StageCanvas>
+
+      {/* TOO:AWAKE Brand Footer */}
+      <BrandFooter />
     </div>
   )
 }
