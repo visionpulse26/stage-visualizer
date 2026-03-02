@@ -217,14 +217,13 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // BULLETPROOF PIPELINE: Multiple fallbacks for virtual camera compatibility
+  // SIMPLIFIED: Direct approach with visible video element (Chrome anti-throttle)
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
       return
     }
 
-    // Get the persistent DOM video element (mounted in JSX)
     const video = cameraVideoRef.current
     if (!video) {
       console.error('[Camera] Video element ref not found')
@@ -234,107 +233,62 @@ function AdminPage() {
     console.log('[Camera] Starting stream for device:', selectedCameraId)
 
     try {
-      // Cleanup any existing stream
+      // Cleanup existing
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop())
       }
       video.srcObject = null
 
-      // Get camera stream with relaxed constraints for virtual cameras
+      // Get stream - NO constraints at all for maximum compatibility
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { deviceId: selectedCameraId }
+        video: { deviceId: { exact: selectedCameraId } }
       })
 
-      console.log('[Camera] Stream obtained, tracks:', stream.getVideoTracks().length)
+      const track = stream.getVideoTracks()[0]
+      const settings = track?.getSettings()
+      console.log('[Camera] Stream obtained:', settings?.width, 'x', settings?.height)
 
-      // Set stream to persistent DOM element
+      // Assign to video
       video.srcObject = stream
 
-      // Handle device disconnect
-      const videoTrack = stream.getVideoTracks()[0]
-      if (videoTrack) {
-        videoTrack.onended = () => {
-          console.log('[Camera] Device disconnected')
-          handleStopCameraStream()
-        }
-        console.log('[Camera] Track settings:', videoTrack.getSettings())
+      // Handle disconnect
+      if (track) {
+        track.onended = () => handleStopCameraStream()
       }
 
-      // Helper to finalize camera setup
-      let finalized = false
-      const finalizeCamera = (source) => {
-        if (finalized) return
-        finalized = true
-        console.log('[Camera] ✓ Finalized via:', source)
-        console.log('[Camera] Video dimensions:', video.videoWidth, 'x', video.videoHeight)
-
-        // Clear any active playlist video
-        if (videoRef.current) {
-          videoRef.current.pause()
-          videoRef.current.src = ''
-        }
-
-        // Pass video to Scene for Three.js VideoTexture
-        setVideoElement(video)
-        setActiveImageUrl(null)
-        setActiveVideoId(null)
-        setIsPlaying(false)
-        setVideoLoaded(true)
-        setCameraStream(stream)
-        setIsCameraStreaming(true)
+      // SIMPLIFIED: Just wait for play to resolve, then pass immediately
+      try {
+        await video.play()
+        console.log('[Camera] Playing! Dimensions:', video.videoWidth, 'x', video.videoHeight)
+      } catch (playErr) {
+        console.error('[Camera] Play failed:', playErr)
+        throw playErr
       }
 
-      // Strategy 1: playing event (standard)
-      video.addEventListener('playing', () => finalizeCamera('playing event'), { once: true })
-
-      // Strategy 2: loadeddata event (fallback for virtual cameras)
-      video.addEventListener('loadeddata', () => {
-        if (video.videoWidth > 0) finalizeCamera('loadeddata event')
-      }, { once: true })
-
-      // Start playback
-      await video.play()
-      console.log('[Camera] play() resolved, paused:', video.paused, 'readyState:', video.readyState)
-
-      // Strategy 3: Immediate check after play() (OBS Virtual Camera often works here)
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        finalizeCamera('immediate (post-play)')
+      // Clear playlist video
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.src = ''
       }
 
-      // Strategy 4: Polling fallback for stubborn virtual cameras
-      let pollCount = 0
-      const pollInterval = setInterval(() => {
-        pollCount++
-        if (finalized) {
-          clearInterval(pollInterval)
-          return
-        }
-        if (video.videoWidth > 0 && video.videoHeight > 0 && !video.paused) {
-          clearInterval(pollInterval)
-          finalizeCamera('polling (attempt ' + pollCount + ')')
-        }
-        if (pollCount >= 20) { // 2 seconds of polling
-          clearInterval(pollInterval)
-        }
-      }, 100)
+      // IMMEDIATELY pass to Three.js - don't wait for events
+      setVideoElement(video)
+      setActiveImageUrl(null)
+      setActiveVideoId(null)
+      setIsPlaying(false)
+      setVideoLoaded(true)
+      setCameraStream(stream)
+      setIsCameraStreaming(true)
 
-      // Final timeout: 5 seconds
-      setTimeout(() => {
-        if (!finalized && stream.active) {
-          console.warn('[Camera] 5s timeout - aborting')
-          stream.getTracks().forEach(t => t.stop())
-          video.srcObject = null
-          alert('Camera stream timed out. The virtual camera may not be outputting frames.')
-        }
-      }, 5000)
+      console.log('[Camera] ✓ Stream active and passed to Three.js')
 
     } catch (err) {
       console.error('[Camera] Error:', err)
       video.srcObject = null
       setCameraStream(null)
       setIsCameraStreaming(false)
-      alert('Failed to access camera: ' + err.message)
+      alert('Camera error: ' + err.message)
     }
   }, [selectedCameraId, cameraStream])
 
@@ -891,11 +845,22 @@ function AdminPage() {
           onOpenProject={handleOpenProject}
         />
       )}
-      {/* PERSISTENT HIDDEN VIDEO ELEMENT for Virtual Camera (Chrome anti-throttling) */}
+      {/* PERSISTENT VIDEO ELEMENT for Virtual Camera - MUST be visible (1px) to prevent Chrome throttling */}
       <video
         ref={cameraVideoRef}
         id="virtual-camera-feed"
-        style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, pointerEvents: 'none' }}
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          right: 0,
+          width: isCameraStreaming ? 120 : 1,  // Show preview when streaming
+          height: isCameraStreaming ? 68 : 1,
+          opacity: isCameraStreaming ? 0.8 : 0.01,  // Barely visible when not streaming
+          pointerEvents: 'none',
+          zIndex: 9999,
+          borderRadius: 4,
+          border: isCameraStreaming ? '2px solid #ff5500' : 'none'
+        }}
         playsInline
         muted
         autoPlay
