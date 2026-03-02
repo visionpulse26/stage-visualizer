@@ -239,7 +239,7 @@ function UIPanel({
                   >
                     <IconCloud /><span>Add Video / Image</span>
                   </button>
-                  <input ref={videoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }} />
+                  <input ref={videoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }} />
                   <p className="text-[9px] text-white/25 mt-1.5 leading-snug">Saved to Supabase when you Publish.</p>
                 </>
               )}
@@ -287,7 +287,7 @@ function UIPanel({
                       <><IconServer /><span>Upload to Too:Awake NAS</span></>
                     )}
                   </button>
-                  <input ref={nasVideoInputRef} type="file" accept="video/*,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasUpload(f); e.target.value = '' }} />
+                  <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasUpload(f); e.target.value = '' }} />
                   {nasError && (
                     <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
                       <div className="flex items-start justify-between gap-2">

@@ -179,7 +179,7 @@ function CollabPanel({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="video/*,image/*"
+                accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif"
                 className="hidden"
                 onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
               />

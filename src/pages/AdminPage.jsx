@@ -151,8 +151,32 @@ function AdminPage() {
     v.load()
   }, [])
 
+  // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
+  const ALLOWED_VIDEO_EXT = ['mp4', 'webm']
+  const ALLOWED_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
+  const ALLOWED_MIME_VIDEO = ['video/mp4', 'video/webm']
+  const ALLOWED_MIME_IMAGE = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
+
+  const validateMediaFile = useCallback((file) => {
+    if (!file) return false
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const mime = file.type.toLowerCase()
+
+    const isValidVideo = ALLOWED_VIDEO_EXT.includes(ext) || ALLOWED_MIME_VIDEO.includes(mime)
+    const isValidImage = ALLOWED_IMAGE_EXT.includes(ext) || ALLOWED_MIME_IMAGE.includes(mime)
+
+    if (!isValidVideo && !isValidImage) {
+      alert(`⚠️ Format not supported!\n\nFile: ${file.name}\n\nSupported formats:\n• Videos: MP4, WebM\n• Images: WebP, PNG, JPG, JPEG, GIF\n\nMOV and AVI are not supported as they can crash the browser.`)
+      return false
+    }
+    return true
+  }, [])
+
   const handleVideoUpload = useCallback((file) => {
     if (!file) return
+    // VALIDATION: Block unsupported formats before creating blob URL
+    if (!validateMediaFile(file)) return
+
     clipCountRef.current += 1
     const url   = URL.createObjectURL(file)
     localBlobUrlsRef.current.push(url)
@@ -167,7 +191,7 @@ function AdminPage() {
     } else {
       setActiveImageUrl(null); activateVideo(id, url)
     }
-  }, [activateVideo])
+  }, [activateVideo, validateMediaFile])
 
   const handleExternalVideoAdd = useCallback((externalUrl, label) => {
     if (!externalUrl) return
@@ -436,6 +460,8 @@ function AdminPage() {
   // ── NAS upload — video / image → Too:Awake NAS server ───────────────────
   const handleNasUpload = useCallback(async (file) => {
     if (!file) return
+    // VALIDATION: Block unsupported formats before upload
+    if (!validateMediaFile(file)) return
     if (!projectName.trim()) {
       alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
       return
@@ -464,7 +490,7 @@ function AdminPage() {
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, activateVideo, nasUploadFetch])
+  }, [projectName, activateVideo, nasUploadFetch, validateMediaFile])
 
   // ── NAS upload — HDRI → Too:Awake NAS server ──────────────────────────
   const handleNasHdriUpload = useCallback(async (file) => {
