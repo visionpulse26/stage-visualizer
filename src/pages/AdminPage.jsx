@@ -24,6 +24,11 @@ function AdminPage() {
   const videoRef     = useRef(null)
   const clipCountRef = useRef(0)
 
+  // ── Live Screen Share ───────────────────────────────────────────────────
+  const [screenStream,     setScreenStream]     = useState(null)
+  const [isScreenSharing,  setIsScreenSharing]  = useState(false)
+  const screenVideoRef = useRef(null)
+
   // Local blob URLs created for admin preview — revoke on unmount
   const localBlobUrlsRef = useRef([])
 
@@ -89,6 +94,11 @@ function AdminPage() {
       localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
       if (stageUrl && stageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(stageUrl) } catch (_) {} }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
+      // Screen share cleanup
+      if (screenVideoRef.current) {
+        screenVideoRef.current.pause()
+        screenVideoRef.current.srcObject = null
+      }
     }
   }, [])
 
@@ -182,6 +192,89 @@ function AdminPage() {
   const handleToggleLoop = useCallback(() => {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
+
+  // ── Live Screen Share Handlers ──────────────────────────────────────────
+  const handleStartScreenShare = useCallback(async () => {
+    try {
+      // Stop any existing stream first
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop())
+      }
+      if (screenVideoRef.current) {
+        screenVideoRef.current.pause()
+        screenVideoRef.current.srcObject = null
+      }
+
+      // Request screen capture with high framerate
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'never', frameRate: 60 },
+        audio: false
+      })
+
+      // Create hidden video element for the stream
+      const video = document.createElement('video')
+      video.srcObject = stream
+      video.muted = true
+      video.playsInline = true
+      video.autoplay = true
+
+      // Handle stream ended (user clicked browser's "Stop sharing" button)
+      stream.getVideoTracks()[0].onended = () => {
+        console.log('[ScreenShare] User stopped sharing via browser UI')
+        handleStopScreenShare()
+      }
+
+      await video.play()
+      screenVideoRef.current = video
+
+      // Clear any active video/image and set screen share as source
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.src = ''
+      }
+      setVideoElement(video)
+      setActiveImageUrl(null)
+      setActiveVideoId(null)
+      setIsPlaying(false)
+      setVideoLoaded(true)
+
+      setScreenStream(stream)
+      setIsScreenSharing(true)
+      console.log('[ScreenShare] Started streaming')
+    } catch (err) {
+      console.error('[ScreenShare] Failed to start:', err)
+      if (err.name !== 'AbortError') {
+        alert('Failed to start screen sharing: ' + err.message)
+      }
+    }
+  }, [screenStream])
+
+  const handleStopScreenShare = useCallback(() => {
+    console.log('[ScreenShare] Stopping stream')
+
+    // Stop all tracks
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => {
+        track.stop()
+        console.log('[ScreenShare] Track stopped:', track.kind)
+      })
+    }
+
+    // Cleanup video element
+    if (screenVideoRef.current) {
+      screenVideoRef.current.pause()
+      screenVideoRef.current.srcObject = null
+      screenVideoRef.current = null
+    }
+
+    // Reset state
+    setScreenStream(null)
+    setIsScreenSharing(false)
+    setVideoElement(null)
+    setVideoLoaded(false)
+
+    console.log('[ScreenShare] Cleanup complete')
+  }, [screenStream])
 
   // ── Custom HDRI — always loaded from local RAM (blob URL), never auto-uploaded ──
   // The blob URL is passed directly to <Environment files={blobUrl} />, which
@@ -652,6 +745,10 @@ function AdminPage() {
           onPlay={handlePlay}
           onPause={handlePause}
           onToggleLoop={handleToggleLoop}
+          // ── Live Screen Share ─────────────────────────────────────────
+          isScreenSharing={isScreenSharing}
+          onStartScreenShare={handleStartScreenShare}
+          onStopScreenShare={handleStopScreenShare}
           sunAzimuth={sunAzimuth}       onSunAzimuthChange={setSunAzimuth}
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}

@@ -56,6 +56,8 @@ function UIPanel({
   videoLoaded, ledMaterialFound,
   videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
+  // ── Live Screen Share ───────────────────────────────────────────────────
+  isScreenSharing, onStartScreenShare, onStopScreenShare,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
@@ -299,6 +301,46 @@ function UIPanel({
                   </p>
                 </div>
               )}
+
+              {/* ── Live Screen Share ──────────────────────────────────────── */}
+              <div className="pt-2 border-t border-white/5">
+                {isScreenSharing ? (
+                  <div className="space-y-2">
+                    {/* Live indicator */}
+                    <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-red-500/15 border border-red-500/30">
+                      <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                      </span>
+                      <span className="text-red-400 text-xs font-semibold">Live Stream Active</span>
+                    </div>
+                    {/* Stop button */}
+                    <button
+                      onClick={onStopScreenShare}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 text-xs font-medium transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                      </svg>
+                      Stop Screen Share
+                    </button>
+                    <p className="text-[9px] text-red-400/50 leading-snug text-center">
+                      Your screen is being mirrored to the LED screens.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={onStartScreenShare}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-cyan-500/25 hover:border-cyan-500/50 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Stream Local Window
+                  </button>
+                )}
+              </div>
 
               {/* Playlist — double-click name to rename */}
               {videoPlaylist.length > 0 && (
