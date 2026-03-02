@@ -39,6 +39,17 @@ function CollabPage() {
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
 
+  // ── LOCAL Virtual Camera (OBS/NDI) — does NOT sync to Admin ─────────────
+  const [availableCameras, setAvailableCameras]   = useState([])
+  const [selectedCameraId, setSelectedCameraId]   = useState('')
+  const [localCameraStream, setLocalCameraStream] = useState(null)
+  const [isLocalCameraActive, setIsLocalCameraActive] = useState(false)
+  const localCameraVideoRef = useRef(null)
+  
+  // Store the "synced" video element from Admin so we can restore when local camera stops
+  const syncedVideoElementRef = useRef(null)
+  const syncedImageUrlRef = useRef(null)
+
   // ── Media playlist ────────────────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
@@ -62,9 +73,142 @@ function CollabPage() {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
+      // Cleanup local camera stream
+      if (localCameraStream) {
+        localCameraStream.getTracks().forEach(t => t.stop())
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Enumerate available cameras ─────────────────────────────────────────
+  useEffect(() => {
+    const enumerateCameras = async () => {
+      try {
+        // Request permission first (needed to get device labels)
+        await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()))
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const cameras = devices.filter(d => d.kind === 'videoinput')
+        setAvailableCameras(cameras)
+        console.log('[Collab Camera] Found devices:', cameras.map(c => c.label || c.deviceId))
+      } catch (err) {
+        console.warn('[Collab Camera] Could not enumerate devices:', err)
+      }
+    }
+    enumerateCameras()
+    navigator.mediaDevices.addEventListener('devicechange', enumerateCameras)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', enumerateCameras)
+  }, [])
+
+  // ── LOCAL Camera Handlers (NO socket emission — local-only override) ────
+  const handleStartLocalCamera = useCallback(async () => {
+    if (!selectedCameraId) {
+      alert('Please select a camera first')
+      return
+    }
+
+    const video = localCameraVideoRef.current
+    if (!video) {
+      console.error('[Collab Camera] Video element ref not found')
+      return
+    }
+
+    console.log('[Collab Camera] Starting LOCAL stream for device:', selectedCameraId)
+
+    try {
+      // Cleanup existing local stream
+      if (localCameraStream) {
+        localCameraStream.getTracks().forEach(track => track.stop())
+      }
+      video.srcObject = null
+
+      // Get stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { deviceId: { exact: selectedCameraId } }
+      })
+
+      const track = stream.getVideoTracks()[0]
+      const settings = track?.getSettings()
+      console.log('[Collab Camera] Stream obtained:', settings?.width, 'x', settings?.height)
+
+      // Assign to video
+      video.srcObject = stream
+
+      // Handle disconnect
+      if (track) {
+        track.onended = () => handleStopLocalCamera()
+      }
+
+      // Start playback
+      await video.play()
+      console.log('[Collab Camera] Playing! Dimensions:', video.videoWidth, 'x', video.videoHeight)
+
+      // SAVE the currently synced content so we can restore later
+      syncedVideoElementRef.current = videoElement
+      syncedImageUrlRef.current = activeImageUrl
+
+      // Pause any synced playlist video
+      if (videoRef.current) {
+        videoRef.current.pause()
+      }
+
+      // LOCAL OVERRIDE: Pass local camera video to Three.js (overrides Admin content)
+      setVideoElement(video)
+      setActiveImageUrl(null)
+      setVideoLoaded(true)
+      setLocalCameraStream(stream)
+      setIsLocalCameraActive(true)
+
+      console.log('[Collab Camera] ✓ LOCAL stream active (not synced to others)')
+
+    } catch (err) {
+      console.error('[Collab Camera] Error:', err)
+      video.srcObject = null
+      setLocalCameraStream(null)
+      setIsLocalCameraActive(false)
+      alert('Camera error: ' + err.message)
+    }
+  }, [selectedCameraId, localCameraStream, videoElement, activeImageUrl])
+
+  const handleStopLocalCamera = useCallback(() => {
+    console.log('[Collab Camera] Stopping LOCAL stream')
+
+    // Stop all tracks
+    if (localCameraStream) {
+      localCameraStream.getTracks().forEach(track => {
+        track.stop()
+        console.log('[Collab Camera] Track stopped:', track.kind)
+      })
+    }
+
+    // Clear the video element
+    if (localCameraVideoRef.current) {
+      localCameraVideoRef.current.pause()
+      localCameraVideoRef.current.srcObject = null
+    }
+
+    // RESTORE synced content from Admin
+    if (syncedVideoElementRef.current) {
+      setVideoElement(syncedVideoElementRef.current)
+      if (videoRef.current && !videoRef.current.paused === false) {
+        videoRef.current.play().catch(() => {})
+      }
+    } else if (syncedImageUrlRef.current) {
+      setActiveImageUrl(syncedImageUrlRef.current)
+      setVideoElement(null)
+    } else {
+      setVideoElement(null)
+    }
+
+    // Reset state
+    setLocalCameraStream(null)
+    setIsLocalCameraActive(false)
+    syncedVideoElementRef.current = null
+    syncedImageUrlRef.current = null
+
+    console.log('[Collab Camera] ✓ Restored synced content from Admin')
+  }, [localCameraStream])
 
   // ── Video helpers ─────────────────────────────────────────────────────────
   const activateVideo = useCallback((id, url) => {
@@ -334,6 +478,13 @@ function CollabPage() {
           onPlay={handlePlay}
           onPause={handlePause}
           onToggleLoop={handleToggleLoop}
+          // ── LOCAL Virtual Camera (doesn't sync to others) ────────────────
+          availableCameras={availableCameras}
+          selectedCameraId={selectedCameraId}
+          onCameraSelect={setSelectedCameraId}
+          isLocalCameraActive={isLocalCameraActive}
+          onStartLocalCamera={handleStartLocalCamera}
+          onStopLocalCamera={handleStopLocalCamera}
           // ── Lighting ─────────────────────────────────────────────────────
           sunAzimuth={sunAzimuth}       onSunAzimuthChange={setSunAzimuth}
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
@@ -366,6 +517,27 @@ function CollabPage() {
           Project: <span className="text-white/60 font-mono">{projectId}</span>
         </div>
       </StageCanvas>
+
+      {/* LOCAL Camera video element (visible preview when active) */}
+      <video
+        ref={localCameraVideoRef}
+        id="collab-local-camera-feed"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          right: 0,
+          width: isLocalCameraActive ? 120 : 1,
+          height: isLocalCameraActive ? 68 : 1,
+          opacity: isLocalCameraActive ? 0.8 : 0.01,
+          pointerEvents: 'none',
+          zIndex: 9999,
+          borderRadius: 4,
+          border: isLocalCameraActive ? '2px solid #22d3ee' : 'none'
+        }}
+        playsInline
+        muted
+        autoPlay
+      />
     </div>
   )
 }

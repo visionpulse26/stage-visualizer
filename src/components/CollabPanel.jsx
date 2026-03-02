@@ -75,6 +75,9 @@ function CollabPanel({
   videoLoaded,
   videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
+  // ── LOCAL Virtual Camera (OBS/NDI - local-only, no sync) ───────────────────
+  availableCameras, selectedCameraId, onCameraSelect,
+  isLocalCameraActive, onStartLocalCamera, onStopLocalCamera,
   // ── Lighting ───────────────────────────────────────────────────────────────
   sunAzimuth,   onSunAzimuthChange,
   sunElevation, onSunElevationChange,
@@ -218,7 +221,7 @@ function CollabPanel({
                 </div>
               )}
 
-              {videoLoaded && (
+              {videoLoaded && !isLocalCameraActive && (
                 <div className="flex gap-1 mt-2">
                   <button
                     onClick={isPlaying ? onPause : onPlay}
@@ -239,6 +242,62 @@ function CollabPanel({
                   </button>
                 </div>
               )}
+            </Section>
+
+            {/* ── LOCAL Virtual Camera (OBS/NDI) ─────────────────────────── */}
+            <Section icon={<IconCamera />} title="Local Preview" badge="Your Screen Only">
+              <p className="text-[10px] text-white/30 mb-2">
+                Stream from OBS Virtual Camera or NDI. <span className="text-amber-400">Only you</span> will see this — it won't affect others.
+              </p>
+
+              {/* Camera selector */}
+              {availableCameras && availableCameras.length > 0 ? (
+                <select
+                  value={selectedCameraId}
+                  onChange={e => onCameraSelect(e.target.value)}
+                  disabled={isLocalCameraActive}
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80 text-xs appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select Camera...</option>
+                  {availableCameras.map(cam => (
+                    <option key={cam.deviceId} value={cam.deviceId}>
+                      {cam.label || `Camera ${cam.deviceId.slice(0, 8)}...`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-[10px] text-white/20 text-center py-2">No cameras detected</p>
+              )}
+
+              {/* Stream controls */}
+              <div className="mt-2">
+                {isLocalCameraActive ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center gap-2 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      <span className="text-[11px] text-cyan-300 font-medium">Local Preview Active</span>
+                    </div>
+                    <button
+                      onClick={onStopLocalCamera}
+                      className="w-full py-2 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-medium transition-all"
+                    >
+                      Stop Local Camera
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={onStartLocalCamera}
+                    disabled={!selectedCameraId}
+                    className="w-full py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Start Local Stream
+                  </button>
+                )}
+              </div>
+
+              <p className="text-[9px] text-amber-400/50 text-center mt-2">
+                Use OBS Virtual Camera or NDI to preview compositions locally.
+              </p>
             </Section>
 
             {/* Screenshot */}
