@@ -116,16 +116,9 @@ function ProjectsTab({ onOpenProject }) {
         .from('projects')
         .list(project.id)
 
-      if (listErr) {
-        // Non-fatal — storage folder may not exist yet; log and continue
-        console.warn('Storage list warning:', listErr.message)
-      } else if (files && files.length > 0) {
+      if (!listErr && files && files.length > 0) {
         const paths = files.map(f => `${project.id}/${f.name}`)
-        const { error: removeErr } = await supabase.storage.from('projects').remove(paths)
-        if (removeErr) {
-          // Non-fatal — still try to delete the DB row
-          console.warn('Storage remove warning:', removeErr.message)
-        }
+        await supabase.storage.from('projects').remove(paths)
       }
 
       // 2. Delete the database row — explicitly check the error object.

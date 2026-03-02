@@ -103,39 +103,28 @@ function LiteHdriEnvironment({
   // AGGRESSIVE MEMORY CLEANUP — mandatory for RTX 4080 VRAM stability
   // ═══════════════════════════════════════════════════════════════════════════
   const deepCleanup = useCallback(() => {
-    console.log('[HDRI Lite] Deep cleanup triggered')
-    
-    // 1. Clear scene references FIRST
     scene.background = null
     scene.environment = null
     
-    // 2. Dispose env map
     if (envMapRef.current) {
       envMapRef.current.dispose()
       try { gl.initTexture?.(envMapRef.current) } catch (_) {}
       envMapRef.current = null
     }
     
-    // 3. Dispose raw texture
     if (rawTexRef.current) {
       rawTexRef.current.dispose()
       try { gl.initTexture?.(rawTexRef.current) } catch (_) {}
       rawTexRef.current = null
     }
     
-    // 4. Dispose PMREM generator
     if (pmremRef.current) {
       pmremRef.current.dispose()
       pmremRef.current = null
     }
     
-    // 5. Force GPU memory reset
-    if (gl.info) {
-      gl.info.reset()
-      console.log('[HDRI Lite] GPU textures after cleanup:', gl.info.memory?.textures ?? 0)
-    }
+    if (gl.info) gl.info.reset()
     
-    // 6. Clear any pending timeouts
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
@@ -162,10 +151,8 @@ function LiteHdriEnvironment({
     deepCleanup()
     onLoadingChange?.(true)
 
-    // Validate URL
     const isValidUrl = url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')
     if (!isValidUrl) {
-      console.warn('[HDRI Lite] Invalid URL:', url)
       onLoadingChange?.(false)
       onLoadError?.('Invalid URL format')
       onClearRequest?.()
@@ -179,29 +166,21 @@ function LiteHdriEnvironment({
       : url.toLowerCase().endsWith('.exr')
     const loader = isExr ? new EXRLoader() : new RGBELoader()
 
-    // CACHE BUSTING: Add timestamp to remote URLs to force fresh load
     const loadUrl = isBlob ? url : `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
-    console.log('[HDRI Lite] Loading with cache bust:', isBlob ? 'blob' : loadUrl.slice(-20))
 
-    // Set timeout for stuck loads
     timeoutRef.current = setTimeout(() => {
       if (!abortToken.aborted) {
-        console.error('[HDRI Lite] Load timeout (10s):', url)
         abortToken.aborted = true
         onLoadingChange?.(false)
         onLoadError?.('Load timed out')
-        alert('HDRI failed to load (timeout)')
         onClearRequest?.()
       }
     }, LOAD_TIMEOUT_MS)
 
-    // ── BULLETPROOF LOAD with try/catch/finally ──
     try {
       loader.load(
-        loadUrl,  // Use cache-busted URL
-        // Success
+        loadUrl,
         (texture) => {
-          // Clear timeout
           if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
           
           if (abortToken.aborted) {
@@ -210,7 +189,6 @@ function LiteHdriEnvironment({
           }
 
           try {
-            // Create PMREM
             pmremRef.current = new THREE.PMREMGenerator(gl)
             pmremRef.current.compileEquirectangularShader()
             
@@ -220,46 +198,33 @@ function LiteHdriEnvironment({
             const envMap = pmremRef.current.fromEquirectangular(texture).texture
             envMapRef.current = envMap
             
-            // Apply to scene
             scene.environment = envMap
             if (background) scene.background = envMap
             if ('backgroundBlurriness' in scene) {
               scene.backgroundBlurriness = background ? bgBlur : 0
             }
-            
-            console.log('[HDRI Lite] Loaded successfully')
-          } catch (applyErr) {
-            console.error('[HDRI Lite] Apply error:', applyErr)
+          } catch {
             texture.dispose()
-            alert('HDRI failed to load')
             onClearRequest?.()
           } finally {
-            // ★ MANDATORY: Always clear loading state
             onLoadingChange?.(false)
           }
         },
-        // Progress (unused)
         undefined,
-        // Error
         (err) => {
           if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
           
           if (!abortToken.aborted) {
-            console.error('[HDRI Lite] Load error:', err)
             onLoadingChange?.(false)
             onLoadError?.(err?.message || 'Load failed')
-            alert('HDRI failed to load')
             onClearRequest?.()
           }
         }
       )
     } catch (syncErr) {
-      // Catch synchronous errors
       if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
-      console.error('[HDRI Lite] Sync error:', syncErr)
       onLoadingChange?.(false)
       onLoadError?.(syncErr?.message || 'Load failed')
-      alert('HDRI failed to load')
       onClearRequest?.()
     }
 

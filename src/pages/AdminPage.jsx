@@ -109,14 +109,12 @@ function AdminPage() {
   useEffect(() => {
     const enumerateCameras = async () => {
       try {
-        // Request permission first (needed to see device labels)
         await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()))
         const devices = await navigator.mediaDevices.enumerateDevices()
         const cameras = devices.filter(d => d.kind === 'videoinput')
         setAvailableCameras(cameras)
-        console.log('[Camera] Found devices:', cameras.map(c => c.label || c.deviceId))
-      } catch (err) {
-        console.warn('[Camera] Could not enumerate devices:', err)
+      } catch {
+        // Camera enumeration failed - likely permission denied
       }
     }
     enumerateCameras()
@@ -144,7 +142,7 @@ function AdminPage() {
     v.src = url; v.crossOrigin = 'anonymous'; v.loop = true
     v.muted = true; v.playsInline = true; v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
-      v.play().catch(console.error)
+      v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v); setVideoLoaded(true)
       setActiveVideoId(id); setIsPlaying(true); setIsLooping(true)
@@ -235,14 +233,13 @@ function AdminPage() {
     )
   }, [])
 
-  const handlePlay       = useCallback(() => { videoRef.current?.play().catch(console.error); setIsPlaying(true)  }, [])
+  const handlePlay       = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause      = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
   const handleToggleLoop = useCallback(() => {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // SIMPLIFIED: Direct approach with visible video element (Chrome anti-throttle)
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
@@ -250,54 +247,33 @@ function AdminPage() {
     }
 
     const video = cameraVideoRef.current
-    if (!video) {
-      console.error('[Camera] Video element ref not found')
-      return
-    }
-
-    console.log('[Camera] Starting stream for device:', selectedCameraId)
+    if (!video) return
 
     try {
-      // Cleanup existing
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop())
       }
       video.srcObject = null
 
-      // Get stream - NO constraints at all for maximum compatibility
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { deviceId: { exact: selectedCameraId } }
       })
 
       const track = stream.getVideoTracks()[0]
-      const settings = track?.getSettings()
-      console.log('[Camera] Stream obtained:', settings?.width, 'x', settings?.height)
-
-      // Assign to video
       video.srcObject = stream
 
-      // Handle disconnect
       if (track) {
         track.onended = () => handleStopCameraStream()
       }
 
-      // SIMPLIFIED: Just wait for play to resolve, then pass immediately
-      try {
-        await video.play()
-        console.log('[Camera] Playing! Dimensions:', video.videoWidth, 'x', video.videoHeight)
-      } catch (playErr) {
-        console.error('[Camera] Play failed:', playErr)
-        throw playErr
-      }
+      await video.play()
 
-      // Clear playlist video
       if (videoRef.current) {
         videoRef.current.pause()
         videoRef.current.src = ''
       }
 
-      // IMMEDIATELY pass to Three.js - don't wait for events
       setVideoElement(video)
       setActiveImageUrl(null)
       setActiveVideoId(null)
@@ -306,10 +282,7 @@ function AdminPage() {
       setCameraStream(stream)
       setIsCameraStreaming(true)
 
-      console.log('[Camera] ✓ Stream active and passed to Three.js')
-
     } catch (err) {
-      console.error('[Camera] Error:', err)
       video.srcObject = null
       setCameraStream(null)
       setIsCameraStreaming(false)
@@ -318,29 +291,19 @@ function AdminPage() {
   }, [selectedCameraId, cameraStream])
 
   const handleStopCameraStream = useCallback(() => {
-    console.log('[Camera] Stopping stream')
-
-    // Stop all tracks
     if (cameraStream) {
-      cameraStream.getTracks().forEach(track => {
-        track.stop()
-        console.log('[Camera] Track stopped:', track.kind)
-      })
+      cameraStream.getTracks().forEach(track => track.stop())
     }
 
-    // Clear the persistent video element (don't remove from DOM)
     if (cameraVideoRef.current) {
       cameraVideoRef.current.pause()
       cameraVideoRef.current.srcObject = null
     }
 
-    // Reset state - clear videoElement so Scene removes texture
     setCameraStream(null)
     setIsCameraStreaming(false)
     setVideoElement(null)
     setVideoLoaded(false)
-
-    console.log('[Camera] Cleanup complete')
   }, [cameraStream])
 
   // ── Custom HDRI — always loaded from local RAM (blob URL), never auto-uploaded ──
@@ -382,7 +345,6 @@ function AdminPage() {
       setCustomHdriUrl(cloudUrl)
       setHdriFile(null)
     } catch (err) {
-      console.error('HDRI cloud upload error:', err)
       alert(`HDRI upload failed: ${err.message}`)
     } finally {
       setIsUploadingHdri(false)
@@ -401,7 +363,6 @@ function AdminPage() {
 
   // ★ CLEAR ALL HDRI — aggressive cleanup for GPU stability
   const handleClearAllHdri = useCallback(() => {
-    console.log('[AdminPage] Clear All HDRI triggered')
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
@@ -414,7 +375,6 @@ function AdminPage() {
 
   // Handle HDRI load errors — auto-clear to prevent stuck UI
   const handleHdriLoadError = useCallback((errorMsg) => {
-    console.warn('[AdminPage] HDRI load failed:', errorMsg)
     setHdriLoading(false)
     alert(`HDRI load failed: ${errorMsg}\nSwitching to environment OFF.`)
   }, [])
@@ -486,7 +446,6 @@ function AdminPage() {
         setActiveImageUrl(null); activateVideo(id, json.url)
       }
     } catch (err) {
-      console.error('NAS upload error:', err)
       setNasError(err.message)
     } finally {
       setIsNasUploading(false)
@@ -511,7 +470,6 @@ function AdminPage() {
       setHdriFile(null)
       setHdriPreset('none')
     } catch (err) {
-      console.error('NAS HDRI upload error:', err)
       setNasError(err.message)
     } finally {
       setIsNasUploading(false)
@@ -605,7 +563,6 @@ function AdminPage() {
 
       // HDRI URL
       if (cfg.customHdriUrl) {
-        console.log('[AdminPage] Loading saved HDRI URL:', cfg.customHdriUrl)
         setCustomHdriUrl(cfg.customHdriUrl)
       } else {
         setCustomHdriUrl(null)
@@ -759,7 +716,6 @@ function AdminPage() {
       setPublishStatus('success')
       setStageFile(null)
     } catch (err) {
-      console.error('Publish error:', err)
       setPublishStatus('error')
       setPublishError(err.message || 'Unknown error')
     } finally {
@@ -767,7 +723,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed])
+      bloomThreshold, protectLed, sunIntensity])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))

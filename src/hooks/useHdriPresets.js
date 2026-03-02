@@ -28,16 +28,12 @@ export default function useHdriPresets() {
       try {
         // CACHE BUSTING: Add timestamp to prevent stale list
         const fetchUrl = addCacheBuster(NAS_HDRI_LIST_URL)
-        console.log('[useHdriPresets] Fetching fresh list:', fetchUrl)
-        
         const res = await fetch(fetchUrl, { 
           mode: 'cors',
-          cache: 'no-store'  // Force bypass browser cache
+          cache: 'no-store'
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
-
-        console.log('[useHdriPresets] Fetched HDRIs:', json?.length || 0, 'items')
 
         if (cancelled) return
 
@@ -52,16 +48,11 @@ export default function useHdriPresets() {
             url:     h.url,
             url_low: h.url_low || null,
           }))
-          console.log('[useHdriPresets] Mapped presets:', nasPresets.length, 'items')
-          // OVERWRITE entire state (not append)
           setPresets([...BUILTIN_PRESETS, ...nasPresets])
         } else {
-          console.warn('[useHdriPresets] Empty HDRI array received')
-          // Reset to builtin only if empty
           setPresets([...BUILTIN_PRESETS])
         }
       } catch (err) {
-        console.error('[useHdriPresets] Failed to fetch NAS HDRIs:', err.message)
         if (!cancelled) setError(err.message)
       } finally {
         if (!cancelled) setLoading(false)
@@ -111,7 +102,6 @@ export default function useHdriPresets() {
                pLowBase === baseFilename
       })
       if (filenameMatch) {
-        console.log('[HDRI Sanitizer] Legacy URL redirected:', savedUrl, '->', filenameMatch.url)
         return { valid: true, url: filenameMatch.url, url_low: filenameMatch.url_low }
       }
     }
@@ -120,11 +110,9 @@ export default function useHdriPresets() {
     if (sanitizedFilename && sanitizedFilename.match(/\.(hdr|exr)$/i)) {
       const newUrl = `https://visual.tooawake.online/HDRIs/${sanitizedFilename}`
       const newUrlLow = `https://visual.tooawake.online/HDRIs_low/${sanitizedFilename}`
-      console.log('[HDRI Sanitizer] Reconstructed legacy URL:', savedUrl, '->', newUrl)
       return { valid: true, url: newUrl, url_low: newUrlLow, reconstructed: true }
     }
 
-    console.warn('[HDRI Sanitizer] Invalid URL (not found in presets):', savedUrl)
     return { valid: false, url: null }
   }, [presets])
   

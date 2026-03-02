@@ -86,14 +86,12 @@ function CollabPage() {
   useEffect(() => {
     const enumerateCameras = async () => {
       try {
-        // Request permission first (needed to get device labels)
         await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop()))
         const devices = await navigator.mediaDevices.enumerateDevices()
         const cameras = devices.filter(d => d.kind === 'videoinput')
         setAvailableCameras(cameras)
-        console.log('[Collab Camera] Found devices:', cameras.map(c => c.label || c.deviceId))
-      } catch (err) {
-        console.warn('[Collab Camera] Could not enumerate devices:', err)
+      } catch {
+        // Camera enumeration failed
       }
     }
     enumerateCameras()
@@ -109,62 +107,42 @@ function CollabPage() {
     }
 
     const video = localCameraVideoRef.current
-    if (!video) {
-      console.error('[Collab Camera] Video element ref not found')
-      return
-    }
-
-    console.log('[Collab Camera] Starting LOCAL stream for device:', selectedCameraId)
+    if (!video) return
 
     try {
-      // Cleanup existing local stream
       if (localCameraStream) {
         localCameraStream.getTracks().forEach(track => track.stop())
       }
       video.srcObject = null
 
-      // Get stream
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { deviceId: { exact: selectedCameraId } }
       })
 
       const track = stream.getVideoTracks()[0]
-      const settings = track?.getSettings()
-      console.log('[Collab Camera] Stream obtained:', settings?.width, 'x', settings?.height)
-
-      // Assign to video
       video.srcObject = stream
 
-      // Handle disconnect
       if (track) {
         track.onended = () => handleStopLocalCamera()
       }
 
-      // Start playback
       await video.play()
-      console.log('[Collab Camera] Playing! Dimensions:', video.videoWidth, 'x', video.videoHeight)
 
-      // SAVE the currently synced content so we can restore later
       syncedVideoElementRef.current = videoElement
       syncedImageUrlRef.current = activeImageUrl
 
-      // Pause any synced playlist video
       if (videoRef.current) {
         videoRef.current.pause()
       }
 
-      // LOCAL OVERRIDE: Pass local camera video to Three.js (overrides Admin content)
       setVideoElement(video)
       setActiveImageUrl(null)
       setVideoLoaded(true)
       setLocalCameraStream(stream)
       setIsLocalCameraActive(true)
 
-      console.log('[Collab Camera] ✓ LOCAL stream active (not synced to others)')
-
     } catch (err) {
-      console.error('[Collab Camera] Error:', err)
       video.srcObject = null
       setLocalCameraStream(null)
       setIsLocalCameraActive(false)
@@ -173,23 +151,15 @@ function CollabPage() {
   }, [selectedCameraId, localCameraStream, videoElement, activeImageUrl])
 
   const handleStopLocalCamera = useCallback(() => {
-    console.log('[Collab Camera] Stopping LOCAL stream')
-
-    // Stop all tracks
     if (localCameraStream) {
-      localCameraStream.getTracks().forEach(track => {
-        track.stop()
-        console.log('[Collab Camera] Track stopped:', track.kind)
-      })
+      localCameraStream.getTracks().forEach(track => track.stop())
     }
 
-    // Clear the video element
     if (localCameraVideoRef.current) {
       localCameraVideoRef.current.pause()
       localCameraVideoRef.current.srcObject = null
     }
 
-    // RESTORE synced content from Admin
     if (syncedVideoElementRef.current) {
       setVideoElement(syncedVideoElementRef.current)
       if (videoRef.current && !videoRef.current.paused === false) {
@@ -202,13 +172,10 @@ function CollabPage() {
       setVideoElement(null)
     }
 
-    // Reset state
     setLocalCameraStream(null)
     setIsLocalCameraActive(false)
     syncedVideoElementRef.current = null
     syncedImageUrlRef.current = null
-
-    console.log('[Collab Camera] ✓ Restored synced content from Admin')
   }, [localCameraStream])
 
   // ── Video helpers ─────────────────────────────────────────────────────────
@@ -218,7 +185,7 @@ function CollabPage() {
     v.src = url; v.crossOrigin = 'anonymous'; v.loop = true
     v.muted = true; v.playsInline = true; v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
-      v.play().catch(console.error)
+      v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v); setVideoLoaded(true)
       setActiveVideoId(id); setIsPlaying(true); setIsLooping(true)
@@ -292,7 +259,6 @@ function CollabPage() {
 
           // HDRI URL
           if (cfg.customHdriUrl) {
-            console.log('[CollabPage] Loading saved HDRI URL:', cfg.customHdriUrl)
             setCustomHdriUrl(cfg.customHdriUrl)
           } else {
             setCustomHdriUrl(null)
@@ -303,8 +269,7 @@ function CollabPage() {
           if (cfg.sunAzimuth != null)   setSunAzimuth(cfg.sunAzimuth)
           if (cfg.sunElevation != null) setSunElevation(cfg.sunElevation)
         }
-      } catch (err) {
-        console.error('Failed to load project:', err)
+      } catch {
         if (!cancelled) setProjectNotFound(true)
       } finally {
         if (!cancelled) setIsDbLoading(false)
@@ -384,7 +349,7 @@ function CollabPage() {
     localBlobUrlsRef.current = []
   }, [])
 
-  const handlePlay       = useCallback(() => { videoRef.current?.play().catch(console.error); setIsPlaying(true)  }, [])
+  const handlePlay       = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause      = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
   const handleToggleLoop = useCallback(() => {
     if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
@@ -415,7 +380,6 @@ function CollabPage() {
 
   // ★ CLEAR ALL HDRI — aggressive cleanup
   const handleClearAllHdri = useCallback(() => {
-    console.log('[CollabPage] Clear All HDRI triggered')
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
@@ -425,8 +389,7 @@ function CollabPage() {
   }, [customHdriUrl])
 
   // Handle HDRI load errors — auto-clear
-  const handleHdriLoadError = useCallback((errorMsg) => {
-    console.warn('[CollabPage] HDRI load failed:', errorMsg)
+  const handleHdriLoadError = useCallback(() => {
     setHdriLoading(false)
   }, [])
 

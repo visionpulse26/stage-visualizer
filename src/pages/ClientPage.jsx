@@ -57,7 +57,7 @@ function ClientPage() {
     v.src = url; v.crossOrigin = 'anonymous'; v.loop = true
     v.muted = true; v.playsInline = true; v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
-      v.play().catch(console.error)
+      v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v)
       setVideoLoaded(true)
@@ -120,21 +120,16 @@ function ClientPage() {
 
         // Restore scene_config — consistent with Admin settings
         const cfg = data.scene_config
-        console.log('[ClientPage] scene_config from DB:', JSON.stringify(cfg, null, 2))
-        
         if (cfg) {
-          // HDRI & Environment
           setHdriPreset(cfg.hdriPreset             ?? 'none')
           setEnvIntensity(cfg.envIntensity         ?? 1)
           setBgBlur(cfg.bgBlur                     ?? 0)
           setShowHdriBackground(cfg.showHdriBackground ?? false)
           
-          // Post-FX
           setBloomStrength(cfg.bloomStrength       ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold     ?? 1.2)
           setProtectLed(cfg.protectLed             ?? true)
 
-          // ★ Sun lighting - load from Admin's saved config
           if (cfg.sunPosition && Array.isArray(cfg.sunPosition)) {
             setSunPosition(cfg.sunPosition)
           }
@@ -142,19 +137,13 @@ function ClientPage() {
             setSunIntensity(cfg.sunIntensity)
           }
 
-          // HDRI URL
           if (cfg.customHdriUrl) {
             setCustomHdriUrl(cfg.customHdriUrl)
           } else {
             setCustomHdriUrl(null)
           }
-          
-          console.log('[ClientPage] Loaded values - envIntensity:', cfg.envIntensity, 'sunIntensity:', cfg.sunIntensity)
-        } else {
-          console.warn('[ClientPage] No scene_config found in project data')
         }
-      } catch (err) {
-        console.error('Failed to load project:', err)
+      } catch {
         if (!cancelled) setProjectNotFound(true)
       } finally {
         if (!cancelled) setIsDbLoading(false)
@@ -176,7 +165,7 @@ function ClientPage() {
     }
   }, [activateVideo])
 
-  const handlePlay  = useCallback(() => { videoRef.current?.play().catch(console.error); setIsPlaying(true)  }, [])
+  const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
 
   const handleScreenshot = useCallback(() => {
@@ -194,8 +183,7 @@ function ClientPage() {
   }, [])
 
   // Handle HDRI load errors — auto-clear silently for client
-  const handleHdriLoadError = useCallback((errorMsg) => {
-    console.warn('[ClientPage] HDRI load failed:', errorMsg)
+  const handleHdriLoadError = useCallback(() => {
     setHdriLoading(false)
   }, [])
   

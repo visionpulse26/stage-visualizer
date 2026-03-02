@@ -4,8 +4,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
 
 const LED_MATERIAL_NAME  = 'LED_MASTER_MAT'
-const EMISSIVE_TARGET    = 1.5   // final emissiveIntensity in glow mode
-const EMISSIVE_FADE_SECS = 0.5   // seconds to reach full brightness on clip swap
+const EMISSIVE_TARGET    = 1.5
+const EMISSIVE_FADE_SECS = 0.5
 
 // ── LED screen light sources ──────────────────────────────────────────────────
 function LedLights({ positions, color, active }) {
@@ -29,51 +29,80 @@ function LedLights({ positions, color, active }) {
 function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   const gltf = useLoader(GLTFLoader, url)
   const videoTextureRef = useRef(null)
+  const imageTextureRef = useRef(null)
+  const prevLedMaterialsRef = useRef([])
 
   const [ledPositions, setLedPositions] = useState([])
   const [ledColor,     setLedColor]     = useState('#ffffff')
 
-  // Live refs to glow-mode LED materials — updated by useFrame for fade-in
   const ledMaterialsRef    = useRef([])
   const emissiveCurrentRef = useRef(0)
 
   const clonedScene = useMemo(() => gltf.scene.clone(true), [gltf])
 
-  // ── Video texture ─────────────────────────────────────────────────────────
+  // ── Video texture with disposal ─────────────────────────────────────────────
   const videoTexture = useMemo(() => {
+    // DISPOSE previous texture
+    if (videoTextureRef.current) {
+      videoTextureRef.current.dispose()
+      videoTextureRef.current = null
+    }
     if (!videoElement) return null
-    const t = new THREE.VideoTexture(videoElement)
-    t.minFilter   = THREE.LinearFilter
-    t.magFilter   = THREE.LinearFilter
-    t.colorSpace  = THREE.SRGBColorSpace
-    t.flipY       = false
-    t.wrapS       = THREE.ClampToEdgeWrapping
-    t.wrapT       = THREE.ClampToEdgeWrapping
-    videoTextureRef.current = t
-    return t
+    try {
+      const t = new THREE.VideoTexture(videoElement)
+      t.minFilter   = THREE.LinearFilter
+      t.magFilter   = THREE.LinearFilter
+      t.colorSpace  = THREE.SRGBColorSpace
+      t.flipY       = false
+      t.wrapS       = THREE.ClampToEdgeWrapping
+      t.wrapT       = THREE.ClampToEdgeWrapping
+      videoTextureRef.current = t
+      return t
+    } catch {
+      return null
+    }
   }, [videoElement])
 
-  // ── Image texture ─────────────────────────────────────────────────────────
+  // ── Image texture with disposal ─────────────────────────────────────────────
   const imageTexture = useMemo(() => {
+    // DISPOSE previous texture
+    if (imageTextureRef.current) {
+      imageTextureRef.current.dispose()
+      imageTextureRef.current = null
+    }
     if (!activeImageUrl) return null
-    const t = new THREE.TextureLoader().load(activeImageUrl)
-    t.colorSpace = THREE.SRGBColorSpace
-    t.flipY      = false
-    t.wrapS      = THREE.ClampToEdgeWrapping
-    t.wrapT      = THREE.ClampToEdgeWrapping
-    return t
+    try {
+      const t = new THREE.TextureLoader().load(activeImageUrl)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.flipY      = false
+      t.wrapS      = THREE.ClampToEdgeWrapping
+      t.wrapT      = THREE.ClampToEdgeWrapping
+      imageTextureRef.current = t
+      return t
+    } catch {
+      return null
+    }
   }, [activeImageUrl])
 
   const activeTexture = videoTexture || imageTexture
 
-  // FIX 4 — reset fade counter every time the active texture changes (new clip)
+  // Reset fade counter on texture change
   const prevTextureRef = useRef(null)
   useEffect(() => {
     if (activeTexture && activeTexture !== prevTextureRef.current) {
       prevTextureRef.current    = activeTexture
-      emissiveCurrentRef.current = 0   // restart lerp from black
+      emissiveCurrentRef.current = 0
     }
   }, [activeTexture])
+
+  // ── CLEANUP on unmount ──────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (videoTextureRef.current) videoTextureRef.current.dispose()
+      if (imageTextureRef.current) imageTextureRef.current.dispose()
+      prevLedMaterialsRef.current.forEach(m => m?.dispose?.())
+    }
+  }, [])
 
   // ── Sample average color from active video each second ───────────────────
   const colorSampleRef = useRef(null)
@@ -126,7 +155,11 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   useEffect(() => {
     if (!clonedScene) return
 
-    ledMaterialsRef.current = []   // clear stale material refs before rebuilding
+    // DISPOSE previous LED materials
+    prevLedMaterialsRef.current.forEach(m => m?.dispose?.())
+    prevLedMaterialsRef.current = []
+    ledMaterialsRef.current = []
+    
     let found = false
     const newLedPositions = []
 
@@ -134,6 +167,7 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
       if (!child.isMesh) return
       child.castShadow    = true
       child.receiveShadow = true
+      child.frustumCulled = true // FRUSTUM CULLING: enabled by default
 
       const mats = Array.isArray(child.material) ? child.material : [child.material]
       mats.forEach((mat, i) => {
@@ -147,35 +181,43 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
           const centre = box.getCenter(new THREE.Vector3())
           newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
 
-          if (activeTexture) {
-            let ledMat
-
-            if (protectLed) {
-              // PROTECTED — MeshBasicMaterial: zero lighting, zero tone-mapping, pixel-perfect
-              ledMat = new THREE.MeshBasicMaterial({
-                map:        activeTexture,
-                side:       THREE.DoubleSide,
-                toneMapped: false,
-              })
+          let ledMat
+          try {
+            if (activeTexture) {
+              if (protectLed) {
+                ledMat = new THREE.MeshBasicMaterial({
+                  map:        activeTexture,
+                  side:       THREE.DoubleSide,
+                  toneMapped: false,
+                })
+              } else {
+                ledMat = new THREE.MeshStandardMaterial({
+                  color:             new THREE.Color(0, 0, 0),
+                  map:               activeTexture,
+                  emissive:          new THREE.Color(1, 1, 1),
+                  emissiveMap:       activeTexture,
+                  emissiveIntensity: 0,
+                  roughness:         0,
+                  metalness:         0,
+                  side:              THREE.DoubleSide,
+                  toneMapped:        true,
+                })
+                ledMaterialsRef.current.push(ledMat)
+              }
             } else {
-              // GLOW MODE
-              // FIX 1 — color: black zeroes the diffuse (map) channel so only
-              //          the emissive channel contributes. Prevents double-exposure.
-              // FIX 4 — emissiveIntensity starts at 0; useFrame lerps it to target.
-              ledMat = new THREE.MeshStandardMaterial({
-                color:             new THREE.Color(0, 0, 0),
-                map:               activeTexture,   // kept for reflections but muted by black color
-                emissive:          new THREE.Color(1, 1, 1),
-                emissiveMap:       activeTexture,
-                emissiveIntensity: 0,               // fade starts here
-                roughness:         0,
-                metalness:         0,
-                side:              THREE.DoubleSide,
-                toneMapped:        true,
+              // ERROR BOUNDARY: No texture = black fallback
+              ledMat = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                side: THREE.DoubleSide,
               })
-              ledMaterialsRef.current.push(ledMat) // register for fade-in
             }
-
+            ledMat.name = LED_MATERIAL_NAME
+            prevLedMaterialsRef.current.push(ledMat)
+            if (Array.isArray(child.material)) child.material[i] = ledMat
+            else child.material = ledMat
+          } catch {
+            // Material creation failed - use black fallback
+            ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
             ledMat.name = LED_MATERIAL_NAME
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
@@ -185,7 +227,6 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
             mat.roughness       = Math.min(mat.roughness ?? 1, 0.25)
             mat.metalness       = Math.max(mat.metalness ?? 0, 0.45)
-            // ★ Use user's envIntensity instead of hardcoded value
             mat.envMapIntensity = envIntensity ?? 1
             mat.needsUpdate     = true
           }
