@@ -217,12 +217,16 @@ function AdminPage() {
   }, [])
 
   // ── Virtual Camera Handlers (OBS Virtual Cam / NDI) ─────────────────────
-  // FIX: NDI Virtual Camera freeze - 3 mandatory fixes applied
+  // NDI-SAFE: Multiple fallback strategies for virtual camera compatibility
   const handleStartCameraStream = useCallback(async () => {
     if (!selectedCameraId) {
       alert('Please select a camera first')
       return
     }
+
+    // Show loading state
+    setIsCameraStreaming(true)
+    console.log('[Camera] Starting stream for device:', selectedCameraId)
 
     try {
       // Stop any existing stream first
@@ -232,29 +236,33 @@ function AdminPage() {
       if (cameraVideoRef.current) {
         cameraVideoRef.current.pause()
         cameraVideoRef.current.srcObject = null
+        cameraVideoRef.current.remove?.()
       }
 
-      // FIX 2: RELAXED MEDIA CONSTRAINTS
-      // DO NOT force strict frameRate or exact resolutions for virtual cameras
-      // NDI and OBS Virtual Camera can freeze if constraints are too strict
+      // NDI FIX: Use minimal constraints - virtual cameras hate strict requirements
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,  // MANDATORY: Force audio to false to prevent freeze
-        video: {
-          deviceId: { exact: selectedCameraId },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
+        audio: false,
+        video: { deviceId: selectedCameraId }  // No 'exact', no resolution constraints
       })
 
-      // FIX 1: STRICT VIDEO ELEMENT ATTRIBUTES
-      // Virtual cameras with empty audio channels can block playback if not muted
-      const video = document.createElement('video')
-      video.muted      = true    // MANDATORY: Prevents browser blocking
-      video.playsInline = true   // MANDATORY: Prevents fullscreen on iOS
-      video.autoplay   = true    // MANDATORY: Allows instant playback
-      video.srcObject  = stream
+      console.log('[Camera] Stream obtained, video tracks:', stream.getVideoTracks().length)
 
-      // Handle stream ended (device disconnected)
+      // NDI FIX: Create video element and ADD TO DOM (required for some browsers)
+      const video = document.createElement('video')
+      video.id = 'virtual-camera-feed'
+      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;pointer-events:none;'
+      video.muted = true
+      video.playsInline = true
+      video.autoplay = true
+      video.setAttribute('muted', '')
+      video.setAttribute('playsinline', '')
+      video.setAttribute('autoplay', '')
+      document.body.appendChild(video)
+
+      // Set srcObject AFTER adding to DOM
+      video.srcObject = stream
+
+      // Handle device disconnect
       const videoTrack = stream.getVideoTracks()[0]
       if (videoTrack) {
         videoTrack.onended = () => {
@@ -263,52 +271,95 @@ function AdminPage() {
         }
       }
 
-      // FIX 3: ASYNC PLAYBACK & ERROR RECOVERY
-      // Wait for metadata before applying to Three.js to prevent freeze
-      video.onloadedmetadata = () => {
-        video.play()
-          .then(() => {
-            console.log('[Camera] Playback started successfully')
-            cameraVideoRef.current = video
+      // NDI FIX: Helper to finalize the stream
+      const finalizeStream = () => {
+        console.log('[Camera] Finalizing stream...')
+        cameraVideoRef.current = video
 
-            // Clear any active video/image and set camera as source
-            if (videoRef.current) {
-              videoRef.current.pause()
-              videoRef.current.src = ''
-            }
-            setVideoElement(video)
-            setActiveImageUrl(null)
-            setActiveVideoId(null)
-            setIsPlaying(false)
-            setVideoLoaded(true)
-
-            setCameraStream(stream)
-            setIsCameraStreaming(true)
-            console.log('[Camera] Started streaming from:', selectedCameraId)
-          })
-          .catch(playErr => {
-            console.error('[Camera] Playback failed:', playErr)
-            // Cleanup on failure
-            stream.getTracks().forEach(t => t.stop())
-            alert('Camera playback failed: ' + playErr.message)
-          })
+        if (videoRef.current) {
+          videoRef.current.pause()
+          videoRef.current.src = ''
+        }
+        setVideoElement(video)
+        setActiveImageUrl(null)
+        setActiveVideoId(null)
+        setIsPlaying(false)
+        setVideoLoaded(true)
+        setCameraStream(stream)
+        setIsCameraStreaming(true)
+        console.log('[Camera] ✓ Stream active and applied to scene')
       }
 
-      // Timeout fallback: if metadata doesn't load in 5s, abort
+      // NDI FIX: Try multiple event strategies
+      let resolved = false
+
+      // Strategy 1: canplaythrough (most reliable for NDI)
+      video.oncanplaythrough = () => {
+        if (resolved) return
+        resolved = true
+        console.log('[Camera] canplaythrough fired')
+        finalizeStream()
+      }
+
+      // Strategy 2: canplay fallback
+      video.oncanplay = () => {
+        if (resolved) return
+        resolved = true
+        console.log('[Camera] canplay fired')
+        finalizeStream()
+      }
+
+      // Strategy 3: loadeddata fallback
+      video.onloadeddata = () => {
+        if (resolved) return
+        resolved = true
+        console.log('[Camera] loadeddata fired')
+        finalizeStream()
+      }
+
+      // Strategy 4: Manual play attempt after short delay (NDI often needs this)
       setTimeout(() => {
-        if (!cameraVideoRef.current && stream.active) {
-          console.warn('[Camera] Metadata timeout - aborting')
-          stream.getTracks().forEach(t => t.stop())
-          alert('Camera stream timed out. Try selecting a different camera.')
+        if (resolved) return
+        console.log('[Camera] Attempting manual play...')
+        video.play()
+          .then(() => {
+            if (resolved) return
+            resolved = true
+            console.log('[Camera] Manual play succeeded')
+            finalizeStream()
+          })
+          .catch(e => console.log('[Camera] Manual play attempt:', e.message))
+      }, 500)
+
+      // Strategy 5: Force finalize after 3s if video has dimensions (NDI workaround)
+      setTimeout(() => {
+        if (resolved) return
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          resolved = true
+          console.log('[Camera] Forced finalize - video has dimensions:', video.videoWidth, 'x', video.videoHeight)
+          finalizeStream()
         }
-      }, 5000)
+      }, 3000)
+
+      // Final timeout: 15 seconds for slow NDI sources
+      setTimeout(() => {
+        if (!resolved && stream.active) {
+          console.warn('[Camera] 15s timeout reached')
+          stream.getTracks().forEach(t => t.stop())
+          video.remove?.()
+          setIsCameraStreaming(false)
+          alert('Camera stream timed out after 15 seconds.\n\nFor NDI:\n1. Ensure NDI Virtual Input is running\n2. Select an NDI source in the app\n3. Try again')
+        }
+      }, 15000)
+
+      // Trigger load
+      video.load()
 
     } catch (err) {
       console.error('[Camera] getUserMedia failed:', err)
-      // Reset UI state on failure
-      setCameraStream(null)
       setIsCameraStreaming(false)
-      alert('Failed to start camera: ' + err.message + '\n\nTip: For NDI, ensure NDI Virtual Input is running.')
+      setCameraStream(null)
+      alert('Failed to access camera: ' + err.message + '\n\nFor NDI: Ensure NDI Virtual Input is running and has a source selected.')
     }
   }, [selectedCameraId, cameraStream])
 
@@ -323,12 +374,17 @@ function AdminPage() {
       })
     }
 
-    // Cleanup video element
+    // Cleanup video element (including DOM removal for NDI fix)
     if (cameraVideoRef.current) {
       cameraVideoRef.current.pause()
       cameraVideoRef.current.srcObject = null
+      cameraVideoRef.current.remove?.()  // Remove from DOM
       cameraVideoRef.current = null
     }
+
+    // Also try to remove by ID (safety net)
+    const domVideo = document.getElementById('virtual-camera-feed')
+    if (domVideo) domVideo.remove()
 
     // Reset state
     setCameraStream(null)
