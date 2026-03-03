@@ -56,6 +56,7 @@ function AdminPage() {
   // ── Camera presets ───────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
 
   // ── Publish ──────────────────────────────────────────────────────────────
   const [publishedId,   setPublishedId]   = useState(null)
@@ -505,8 +506,31 @@ function AdminPage() {
   }, [])
 
   const handleGoToView = useCallback((preset) => {
-    animateCameraToPreset(cameraControlsRef, preset, { duration: 3, ease: 'power2.inOut' })
+    animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
   }, [])
+
+  const handleSaveAutoplayConfig = useCallback(async () => {
+    if (!publishedId) {
+      alert('Publish the project first, then save autoplay config.')
+      return
+    }
+    try {
+      const { data: existing } = await supabase.from('projects').select('scene_config').eq('id', publishedId).single()
+      const cfg = existing?.scene_config || {}
+      const scene_config = {
+        ...cfg,
+        autoplayIntervalSeconds: autoplayIntervalSeconds,
+      }
+      const { error } = await supabase.from('projects').update({
+        camera_presets: cameraPresets,
+        scene_config,
+      }).eq('id', publishedId)
+      if (error) throw error
+      alert('Autoplay config saved.')
+    } catch (err) {
+      alert('Failed to save autoplay config: ' + err.message)
+    }
+  }, [publishedId, cameraPresets, autoplayIntervalSeconds])
 
   const handleDeletePreset = useCallback((id) => {
     setCameraPresets(prev => prev.filter(p => p.id !== id))
@@ -564,6 +588,10 @@ function AdminPage() {
         setCustomHdriUrl(cfg.customHdriUrl)
       } else {
         setCustomHdriUrl(null)
+      }
+
+      if (cfg.autoplayIntervalSeconds != null) {
+        setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
       }
     }
 
@@ -682,6 +710,7 @@ function AdminPage() {
         sunIntensity:        sunIntensity,
         sunAzimuth:          sunAzimuth,
         sunElevation:        sunElevation,
+        autoplayIntervalSeconds: autoplayIntervalSeconds,
       }
 
       // 5. Upsert project record
@@ -721,7 +750,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, sunIntensity])
+      bloomThreshold, protectLed, sunIntensity, autoplayIntervalSeconds])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -783,6 +812,9 @@ function AdminPage() {
           onSaveView={handleSaveView}
           onGoToView={handleGoToView}
           onDeletePreset={handleDeletePreset}
+          autoplayIntervalSeconds={autoplayIntervalSeconds}
+          onAutoplayIntervalChange={setAutoplayIntervalSeconds}
+          onSaveAutoplayConfig={handleSaveAutoplayConfig}
           onPublish={handlePublish}
           canPublish={canPublish}
           isPublishing={isPublishing}

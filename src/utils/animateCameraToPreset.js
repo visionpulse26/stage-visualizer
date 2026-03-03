@@ -1,56 +1,49 @@
 import gsap from 'gsap'
 import * as THREE from 'three'
 
-const DURATION = 3
-const EASE = 'power2.inOut'
+const ANIM_DURATION = 2.5
+const EASE = 'power3.inOut'
 
 /**
- * Animate camera position and target to a preset using GSAP.
- * Disables controls during animation to avoid conflicts, then syncs and re-enables.
+ * Bulletproof GSAP camera transition. Do NOT disable controls.
+ * Uses target proxy + setTarget since camera-controls may not expose .target.
  */
-export function animateCameraToPreset(controlsRef, preset, options = {}) {
+export function animateCameraToPreset(controlsRef, targetCam, options = {}) {
   const controls = controlsRef?.current
   if (!controls) return
+
+  if (!targetCam || !targetCam.position || !targetCam.target) return
 
   const camera = controls.camera
   if (!camera) return
 
-  const duration = options.duration ?? DURATION
+  const duration = options.duration ?? ANIM_DURATION
   const ease = options.ease ?? EASE
 
-  const pos = new THREE.Vector3()
-  const tgt = new THREE.Vector3()
-  controls.getPosition(pos, false)
-  controls.getTarget(tgt, false)
+  gsap.killTweensOf([camera.position])
 
-  gsap.killTweensOf([camera.position, tgt])
-  controls.enabled = false
+  const targetProxy = new THREE.Vector3()
+  controls.getTarget(targetProxy)
+
+  gsap.killTweensOf([targetProxy])
 
   gsap.to(camera.position, {
-    x: preset.position.x,
-    y: preset.position.y,
-    z: preset.position.z,
+    x: targetCam.position.x,
+    y: targetCam.position.y,
+    z: targetCam.position.z,
     duration,
     ease,
   })
 
-  gsap.to(tgt, {
-    x: preset.target.x,
-    y: preset.target.y,
-    z: preset.target.z,
+  gsap.to(targetProxy, {
+    x: targetCam.target.x,
+    y: targetCam.target.y,
+    z: targetCam.target.z,
     duration,
     ease,
     onUpdate: () => {
-      camera.lookAt(tgt.x, tgt.y, tgt.z)
-      if (controls.update) controls.update(0)
-    },
-    onComplete: () => {
-      controls.setLookAt(
-        preset.position.x, preset.position.y, preset.position.z,
-        preset.target.x, preset.target.y, preset.target.z,
-        false
-      )
-      controls.enabled = true
+      controls.setTarget(targetProxy.x, targetProxy.y, targetProxy.z, false)
+      if (typeof controls.update === 'function') controls.update(0)
     },
   })
 }

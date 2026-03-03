@@ -28,6 +28,9 @@ function ClientPage() {
 
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
+  const [isAutoplayActive, setIsAutoplayActive] = useState(false)
+  const autoplayIntervalRef = useRef(null)
 
   const [gridCellSize, setGridCellSize] = useState(1)
 
@@ -50,6 +53,8 @@ function ClientPage() {
   const [isPlaying,     setIsPlaying]     = useState(false)
 
   const videoRef = useRef(null)
+
+  const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
   useEffect(() => {
     return () => {
@@ -153,6 +158,9 @@ function ClientPage() {
           } else {
             setCustomHdriUrl(null)
           }
+          if (cfg.autoplayIntervalSeconds != null) {
+            setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
+          }
         }
       } catch {
         if (!cancelled) setProjectNotFound(true)
@@ -187,8 +195,51 @@ function ClientPage() {
   }, [projectId])
 
   const handleGoToView = useCallback((preset) => {
-    animateCameraToPreset(cameraControlsRef, preset, { duration: 3, ease: 'power2.inOut' })
+    animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
   }, [])
+
+  const handleToggleAutoplay = useCallback(() => {
+    setIsAutoplayActive(prev => !prev)
+  }, [])
+
+  // Autoplay loop
+  useEffect(() => {
+    if (!isAutoplayActive || cameraPresets.length === 0) {
+      if (autoplayIntervalRef.current) {
+        clearInterval(autoplayIntervalRef.current)
+        autoplayIntervalRef.current = null
+      }
+      return
+    }
+    let idx = 0
+    const interval = autoplayIntervalSeconds * 1000
+    const tick = () => {
+      const preset = cameraPresets[idx % cameraPresets.length]
+      if (preset) animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+      idx++
+    }
+    tick()
+    autoplayIntervalRef.current = setInterval(tick, interval)
+    return () => {
+      if (autoplayIntervalRef.current) clearInterval(autoplayIntervalRef.current)
+    }
+  }, [isAutoplayActive, cameraPresets, autoplayIntervalSeconds])
+
+  // Interrupt on user control — run when stage is ready (controls exist)
+  useEffect(() => {
+    if (!sceneReady) return
+    const controls = cameraControlsRef?.current
+    if (!controls) return
+    const onControlStart = () => {
+      if (autoplayIntervalRef.current) {
+        clearInterval(autoplayIntervalRef.current)
+        autoplayIntervalRef.current = null
+      }
+      setIsAutoplayActive(false)
+    }
+    controls.addEventListener?.('controlstart', onControlStart)
+    return () => controls.removeEventListener?.('controlstart', onControlStart)
+  }, [sceneReady])
 
   // Handle HDRI load errors — auto-clear silently for client
   const handleHdriLoadError = useCallback(() => {
@@ -207,8 +258,6 @@ function ClientPage() {
   }
 
   const activeClip = videoPlaylist.find(c => c.id === activeVideoId)
-
-  const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
   return (
     <div className="w-full h-full relative">
@@ -257,6 +306,23 @@ function ClientPage() {
         />
 
         <RoleBadge role="Client View" color="blue" />
+
+        {/* Autoplay Cameras — floating button */}
+        {cameraPresets.length > 0 && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
+            <button
+              onClick={handleToggleAutoplay}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+                isAutoplayActive
+                  ? 'bg-[#FF5F1F] text-[#000000]'
+                  : 'bg-black/50 text-white/80 hover:bg-black/70 border border-white/20'
+              }`}
+              style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+            >
+              {isAutoplayActive ? '⏸ STOP AUTOPLAY' : '▶ AUTOPLAY CAMERAS'}
+            </button>
+          </div>
+        )}
       </StageCanvas>
 
       {/* TOO:AWAKE Brand Footer */}

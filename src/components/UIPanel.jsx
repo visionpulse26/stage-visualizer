@@ -62,6 +62,7 @@ function UIPanel({
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
+  autoplayIntervalSeconds, onAutoplayIntervalChange, onSaveAutoplayConfig,
   onPublish, canPublish, isPublishing, publishStatus, publishError, publishedId,
   projectName, onProjectNameChange, onOpenDashboard,
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
@@ -816,6 +817,7 @@ function UIPanel({
 
         {/* ── CAMERA ────────────────────────────────────────────────────── */}
         {activeSection === 'camera' && (
+          <>
           <Section icon={<IconCamera />} title="Camera Presets">
             <div className="flex gap-1 mb-2">
               <input
@@ -853,6 +855,29 @@ function UIPanel({
               </div>
             )}
           </Section>
+
+          <Section icon={<IconCamera />} title="DIRECTOR MODE">
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-white/35 uppercase tracking-widest">Interval (seconds)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={autoplayIntervalSeconds ?? 10}
+                  onChange={e => onAutoplayIntervalChange?.(Math.max(1, parseInt(e.target.value, 10) || 10))}
+                  className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-violet-500/40"
+                />
+              </div>
+              <button
+                onClick={() => onSaveAutoplayConfig?.()}
+                className="w-full py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-medium transition-all"
+              >
+                Save Autoplay Config
+              </button>
+            </div>
+          </Section>
+          </>
         )}
 
         {/* ── PUBLISH ───────────────────────────────────────────────────── */}
