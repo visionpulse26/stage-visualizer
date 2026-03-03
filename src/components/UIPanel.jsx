@@ -62,7 +62,9 @@ function UIPanel({
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
-  autoplayIntervalSeconds, onAutoplayIntervalChange, onSaveAutoplayConfig,
+  autoplayIntervalSeconds, onAutoplayIntervalChange,
+  cameraFlyDurationSeconds, onCameraFlyDurationChange,
+  onSaveAutoplayConfig,
   onPublish, canPublish, isPublishing, publishStatus, publishError, publishedId,
   projectName, onProjectNameChange, onOpenDashboard,
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
@@ -868,6 +870,20 @@ function UIPanel({
                   onChange={e => onAutoplayIntervalChange?.(Math.max(1, parseInt(e.target.value, 10) || 10))}
                   className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-violet-500/40"
                 />
+              </div>
+              <div>
+                <label className="text-[10px] text-white/35 uppercase tracking-widest">Fly Duration (Seconds)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  value={cameraFlyDurationSeconds ?? 4}
+                  onChange={e => onCameraFlyDurationChange?.(Math.max(1, Math.min(10, parseFloat(e.target.value) || 4)))}
+                  className="w-full mt-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-violet-500/40"
+                  title="How long the camera takes to fly between presets (1–10 sec)"
+                />
+                <p className="text-[9px] text-white/25 mt-0.5">Higher = slower, more cinematic</p>
               </div>
               <button
                 onClick={() => onSaveAutoplayConfig?.()}

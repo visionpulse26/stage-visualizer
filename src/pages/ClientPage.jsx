@@ -30,6 +30,7 @@ function ClientPage() {
   const cameraControlsRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
+  const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
   const [isAutoplayActive, setIsAutoplayActive] = useState(false)
   const autoplayIntervalRef = useRef(null)
 
@@ -162,6 +163,9 @@ function ClientPage() {
           if (cfg.autoplayIntervalSeconds != null) {
             setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
           }
+          if (cfg.cameraFlyDurationSeconds != null) {
+            setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
+          }
         }
       } catch {
         if (!cancelled) setProjectNotFound(true)
@@ -281,6 +285,7 @@ function ClientPage() {
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
+        cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={customHdriUrl?.split('.').pop()?.toLowerCase() || 'hdr'}

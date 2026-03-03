@@ -274,7 +274,8 @@ function LiteHdriEnvironment({
 
 // ── Smooth camera fly via LERP in render loop ────────────────────────────────
 // Must use setLookAt() each frame — controls.update() overwrites camera.position
-const LERP_SPEED = 4.5
+// flyDurationSeconds: higher = slower, more cinematic (1–10)
+const BASE_LERP = 10
 const REACHED_THRESHOLD = 0.002
 
 function lerp3(current, target, speed, delta) {
@@ -282,7 +283,9 @@ function lerp3(current, target, speed, delta) {
   return current.lerp(target, factor)
 }
 
-function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
+function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef, flyDurationSeconds = 4 }) {
+  const duration = Math.max(1, Math.min(10, Number(flyDurationSeconds) || 4))
+  const lerpSpeed = BASE_LERP / duration
   const { camera } = useThree()
   const targetPos = useRef(new THREE.Vector3())
   const targetLookAt = useRef(new THREE.Vector3())
@@ -314,8 +317,8 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
     controls.getTarget(currentLookAt.current)
 
     // Lerp both position and target
-    lerp3(currentPos.current, targetPos.current, LERP_SPEED, delta)
-    lerp3(currentLookAt.current, targetLookAt.current, LERP_SPEED, delta)
+    lerp3(currentPos.current, targetPos.current, lerpSpeed, delta)
+    lerp3(currentLookAt.current, targetLookAt.current, lerpSpeed, delta)
 
     // Drive controls via setLookAt — update() would overwrite camera otherwise
     controls.setLookAt(
@@ -354,6 +357,7 @@ function StageCanvas({
   modelLoaded,
   cameraControlsRef,
   cameraTargetPresetRef,
+  cameraFlyDurationSeconds,
   // ── Stage loading (Client/Collab — THREE.LoadingManager for progress) ───
   loadingManager,       // optional THREE.LoadingManager
   // ── Scene config ──────────────────────────────────────────────────────
@@ -498,6 +502,7 @@ function StageCanvas({
           <CameraSmoothFlyController
             cameraControlsRef={cameraControlsRef}
             targetPresetRef={presetRef}
+            flyDurationSeconds={cameraFlyDurationSeconds}
           />
         )}
 

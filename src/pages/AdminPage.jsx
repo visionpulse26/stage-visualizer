@@ -58,6 +58,7 @@ function AdminPage() {
   const cameraControlsRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
+  const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
 
   // ── Publish ──────────────────────────────────────────────────────────────
   const [publishedId,   setPublishedId]   = useState(null)
@@ -523,7 +524,8 @@ function AdminPage() {
       const cfg = existing?.scene_config || {}
       const scene_config = {
         ...cfg,
-        autoplayIntervalSeconds: autoplayIntervalSeconds,
+        autoplayIntervalSeconds,
+        cameraFlyDurationSeconds,
       }
       const { error } = await supabase.from('projects').update({
         camera_presets: cameraPresets,
@@ -534,7 +536,7 @@ function AdminPage() {
     } catch (err) {
       alert('Failed to save autoplay config: ' + err.message)
     }
-  }, [publishedId, cameraPresets, autoplayIntervalSeconds])
+  }, [publishedId, cameraPresets, autoplayIntervalSeconds, cameraFlyDurationSeconds])
 
   const handleDeletePreset = useCallback((id) => {
     setCameraPresets(prev => prev.filter(p => p.id !== id))
@@ -596,6 +598,9 @@ function AdminPage() {
 
       if (cfg.autoplayIntervalSeconds != null) {
         setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
+      }
+      if (cfg.cameraFlyDurationSeconds != null) {
+        setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
       }
     }
 
@@ -773,6 +778,7 @@ function AdminPage() {
         modelLoaded={!!(stageFile || cloudStageUrl)}
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
+        cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -819,6 +825,8 @@ function AdminPage() {
           onDeletePreset={handleDeletePreset}
           autoplayIntervalSeconds={autoplayIntervalSeconds}
           onAutoplayIntervalChange={setAutoplayIntervalSeconds}
+          cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+          onCameraFlyDurationChange={setCameraFlyDurationSeconds}
           onSaveAutoplayConfig={handleSaveAutoplayConfig}
           onPublish={handlePublish}
           canPublish={canPublish}

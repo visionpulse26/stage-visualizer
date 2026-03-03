@@ -50,6 +50,7 @@ function CollabPage() {
   const cameraControlsRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
+  const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
   const [isAutoplayActive, setIsAutoplayActive] = useState(false)
   const autoplayIntervalRef = useRef(null)
 
@@ -286,6 +287,7 @@ function CollabPage() {
           if (cfg.sunAzimuth != null)   setSunAzimuth(cfg.sunAzimuth)
           if (cfg.sunElevation != null) setSunElevation(cfg.sunElevation)
           if (cfg.autoplayIntervalSeconds != null) setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
+          if (cfg.cameraFlyDurationSeconds != null) setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
         }
       } catch {
         if (!cancelled) setProjectNotFound(true)
@@ -502,6 +504,7 @@ function CollabPage() {
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
+        cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
