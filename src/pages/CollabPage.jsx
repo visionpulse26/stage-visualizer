@@ -5,10 +5,18 @@ import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import BrandFooter from '../components/BrandFooter'
+import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
 
 function CollabPage() {
   const { projectId } = useParams()
+  const {
+    loadingManager,
+    progress,
+    status,
+    loaded: stageLoaded,
+    reset: resetStageLoading,
+  } = useStageLoading()
 
   const [modelUrl,        setModelUrl]        = useState(null)
   const [videoElement,    setVideoElement]    = useState(null)
@@ -64,6 +72,8 @@ function CollabPage() {
   const localBlobUrlsRef = useRef([])
 
   useEffect(() => { playlistRef.current = videoPlaylist }, [videoPlaylist])
+
+  useEffect(() => { resetStageLoading() }, [projectId, resetStageLoading])
 
   // ── Cleanup on unmount — revoke only locally-created blob URLs ───────────
   useEffect(() => {
@@ -423,14 +433,19 @@ function CollabPage() {
     return <ProjectNotFound projectId={projectId} />
   }
 
-  const sceneReady = !isDbLoading && !!modelUrl
+  const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
   return (
     <div className="w-full h-full relative">
-      <BrandedLoadingScreen isLoaded={sceneReady} />
+      <BrandedLoadingScreen
+        isLoaded={sceneReady}
+        progress={progress}
+        status={status}
+      />
 
       <StageCanvas
         modelUrl={modelUrl}
+        loadingManager={modelUrl ? loadingManager : null}
         videoElement={videoElement}
         activeImageUrl={activeImageUrl}
         onLedMaterialStatus={setLedMaterialFound}

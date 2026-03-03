@@ -3,13 +3,20 @@ import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
-import { DbLoadingOverlay } from './CollabPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import BrandFooter from '../components/BrandFooter'
+import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
 
 function ClientPage() {
   const { projectId } = useParams()
+  const {
+    loadingManager,
+    progress,
+    status,
+    loaded: stageLoaded,
+    reset: resetStageLoading,
+  } = useStageLoading()
 
   const [modelUrl,       setModelUrl]       = useState(null)
   const [videoElement,   setVideoElement]   = useState(null)
@@ -43,12 +50,15 @@ function ClientPage() {
 
   const videoRef = useRef(null)
 
-  // Cleanup video element on unmount
   useEffect(() => {
     return () => {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     }
   }, [])
+
+  useEffect(() => {
+    resetStageLoading()
+  }, [projectId, resetStageLoading])
 
   // ── Shared video activation helper ───────────────────────────────────────
   const activateVideo = useCallback((id, url) => {
@@ -200,14 +210,19 @@ function ClientPage() {
 
   const activeClip = videoPlaylist.find(c => c.id === activeVideoId)
 
-  const sceneReady = !isDbLoading && !!modelUrl
+  const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
   return (
     <div className="w-full h-full relative">
-      <BrandedLoadingScreen isLoaded={sceneReady} />
+      <BrandedLoadingScreen
+        isLoaded={sceneReady}
+        progress={progress}
+        status={status}
+      />
 
       <StageCanvas
         modelUrl={modelUrl}
+        loadingManager={modelUrl ? loadingManager : null}
         videoElement={videoElement}
         activeImageUrl={activeImageUrl}
         onLedMaterialStatus={() => {}}

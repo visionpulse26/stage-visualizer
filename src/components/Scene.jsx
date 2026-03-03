@@ -3,7 +3,7 @@ import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
 
-const LED_MATERIAL_NAME  = 'LED_MASTER_MAT'
+const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const EMISSIVE_TARGET    = 1.5
 const EMISSIVE_FADE_SECS = 0.5
 
@@ -26,8 +26,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
-  const gltf = useLoader(GLTFLoader, url)
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -270,19 +269,43 @@ function Model({ url, videoElement, activeImageUrl, onLedMaterialStatus, protect
   )
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
+function ModelWithUrl({ url, ...rest }) {
+  const gltf = useLoader(GLTFLoader, url)
+  return <ModelContent gltf={gltf} {...rest} />
+}
+
+function ManualModelLoader({ url, loadingManager, ...rest }) {
+  const [gltf, setGltf] = useState(null)
+  useEffect(() => {
+    if (!url || !loadingManager) return
+    const loader = new GLTFLoader()
+    loader.manager = loadingManager
+    loader.load(
+      url,
+      (g) => setGltf(g),
+      undefined,
+      () => setGltf(null)
+    )
+  }, [url, loadingManager])
+  if (!gltf) return null
+  return <ModelContent gltf={gltf} {...rest} />
+}
+
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, loadingManager }) {
+  const common = {
+    videoElement,
+    activeImageUrl,
+    onLedMaterialStatus,
+    protectLed,
+    sunIntensity,
+    envIntensity,
+  }
   return (
     <group>
       {modelUrl && (
-        <Model
-          url={modelUrl}
-          videoElement={videoElement}
-          activeImageUrl={activeImageUrl}
-          onLedMaterialStatus={onLedMaterialStatus}
-          protectLed={protectLed}
-          sunIntensity={sunIntensity}
-          envIntensity={envIntensity}
-        />
+        loadingManager
+          ? <ManualModelLoader url={modelUrl} loadingManager={loadingManager} {...common} />
+          : <ModelWithUrl url={modelUrl} {...common} />
       )}
     </group>
   )

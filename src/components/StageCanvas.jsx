@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useCallback } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
@@ -65,9 +65,24 @@ function EnvIntensityController({ intensity }) {
 // LITE & STABLE: All rotation logic removed to prevent GPU crashes.
 // Using simple LiteHdriEnvironment with aggressive cleanup.
 
+// ── First-frame reporter — registers "firstframe" with LoadingManager so onLoad waits for GPU render ─
+function FirstFrameReporter({ loadingManager }) {
+  const fired = useRef(false)
+  const started = useRef(false)
+  useEffect(() => {
+    if (!loadingManager || started.current) return
+    started.current = true
+    loadingManager.itemStart?.('firstframe')
+  }, [loadingManager])
+  useFrame(() => {
+    if (fired.current || !loadingManager) return
+    fired.current = true
+    loadingManager.itemEnd?.('firstframe')
+  })
+  return null
+}
+
 // ── Tone-mapping controller — ACES + clamped exposure for HDR control ────────
-// FIX 3 — toneMappingExposure = 0.8 compresses highlights so video content
-//          never clips to pure white before Bloom can evaluate it.
 function ToneMappingController() {
   const { gl } = useThree()
   useEffect(() => {
@@ -91,6 +106,7 @@ function LiteHdriEnvironment({
   onLoadingChange,
   onLoadError,
   onClearRequest,  // callback to notify parent when we need to clear (on fatal error)
+  loadingManager,  // optional THREE.LoadingManager for progress tracking
 }) {
   const { gl, scene } = useThree()
   const envMapRef   = useRef(null)
@@ -159,12 +175,12 @@ function LiteHdriEnvironment({
       return
     }
 
-    // Determine loader type
     const isBlob = url.startsWith('blob:')
     const isExr = isBlob
       ? (ext || '').toLowerCase() === 'exr'
       : url.toLowerCase().endsWith('.exr')
     const loader = isExr ? new EXRLoader() : new RGBELoader()
+    if (loadingManager) loader.manager = loadingManager
 
     const loadUrl = isBlob ? url : `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
 
@@ -233,7 +249,7 @@ function LiteHdriEnvironment({
       if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
       deepCleanup()
     }
-  }, [url, ext, background, bgBlur, gl, scene, deepCleanup, onLoadingChange, onLoadError, onClearRequest])
+  }, [url, ext, background, bgBlur, gl, scene, deepCleanup, onLoadingChange, onLoadError, onClearRequest, loadingManager])
 
   // Background toggle (no reload needed)
   useEffect(() => {
@@ -270,19 +286,21 @@ function StageCanvas({
   gridCellSize,
   modelLoaded,
   cameraControlsRef,
+  // ── Stage loading (Client/Collab — THREE.LoadingManager for progress) ───
+  loadingManager,       // optional THREE.LoadingManager
   // ── Scene config ──────────────────────────────────────────────────────
   hdriPreset,
   customHdriUrl,
-  hdriFileExt,          // 'hdr' | 'exr' — required for blob: URLs (no extension in URL)
-  onHdriLoading,        // callback(boolean) — loading lock for UI
-  onHdriLoadError,      // callback(errorMsg) — when HDRI fails
-  onHdriClearRequest,   // callback() — request to clear HDRI (on fatal error)
+  hdriFileExt,
+  onHdriLoading,
+  onHdriLoadError,
+  onHdriClearRequest,
   envIntensity,
   bgBlur,
   bloomStrength,
-  bloomThreshold,       // 0.0 – 2.0  only pixels above this luminance bloom
-  protectLed,           // boolean    isolate LED material from env/tone mapping
-  showHdriBackground,   // boolean    show HDRI as visible background (Stealth = OFF)
+  bloomThreshold,
+  protectLed,
+  showHdriBackground,
   children,
 }) {
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
@@ -331,6 +349,7 @@ function StageCanvas({
                 onLoadingChange={onHdriLoading}
                 onLoadError={onHdriLoadError}
                 onClearRequest={onHdriClearRequest}
+                loadingManager={loadingManager}
               />
             ) : (
               resolvedShowBg
@@ -382,6 +401,7 @@ function StageCanvas({
 
         <AtmosphericDust />
 
+        {loadingManager && <FirstFrameReporter loadingManager={loadingManager} />}
         <Suspense fallback={null}>
           {modelUrl && (
             <Scene
@@ -392,6 +412,7 @@ function StageCanvas({
               protectLed={protectLed ?? true}
               sunIntensity={sunIntensity ?? 1}
               envIntensity={envIntensity ?? 1}
+              loadingManager={loadingManager}
             />
           )}
         </Suspense>
