@@ -6,6 +6,7 @@ import ProjectsDashboard from '../components/ProjectsDashboard'
 import BrandFooter from '../components/BrandFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
+import { animateCameraToPreset } from '../utils/animateCameraToPreset'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -504,10 +505,7 @@ function AdminPage() {
   }, [])
 
   const handleGoToView = useCallback((preset) => {
-    cameraControlsRef.current?.setLookAt(
-      preset.position.x, preset.position.y, preset.position.z,
-      preset.target.x,   preset.target.y,   preset.target.z, true
-    )
+    animateCameraToPreset(cameraControlsRef, preset, { duration: 3, ease: 'power2.inOut' })
   }, [])
 
   const handleDeletePreset = useCallback((id) => {

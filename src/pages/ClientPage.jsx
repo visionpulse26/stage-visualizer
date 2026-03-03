@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
+import { animateCameraToPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -186,10 +187,7 @@ function ClientPage() {
   }, [projectId])
 
   const handleGoToView = useCallback((preset) => {
-    cameraControlsRef.current?.setLookAt(
-      preset.position.x, preset.position.y, preset.position.z,
-      preset.target.x,   preset.target.y,   preset.target.z, true
-    )
+    animateCameraToPreset(cameraControlsRef, preset, { duration: 3, ease: 'power2.inOut' })
   }, [])
 
   // Handle HDRI load errors — auto-clear silently for client

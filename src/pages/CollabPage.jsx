@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
+import { animateCameraToPreset } from '../utils/animateCameraToPreset'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -405,10 +406,7 @@ function CollabPage() {
 
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
-    cameraControlsRef.current?.setLookAt(
-      preset.position.x, preset.position.y, preset.position.z,
-      preset.target.x,   preset.target.y,   preset.target.z, true
-    )
+    animateCameraToPreset(cameraControlsRef, preset, { duration: 3, ease: 'power2.inOut' })
   }, [])
 
   // ── Screenshot ────────────────────────────────────────────────────────────
