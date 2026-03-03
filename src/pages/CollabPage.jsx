@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
-import { moveCameraToPreset } from '../utils/animateCameraToPreset'
+import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -48,6 +48,7 @@ function CollabPage() {
   // ── Camera ───────────────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [isAutoplayActive, setIsAutoplayActive] = useState(false)
   const autoplayIntervalRef = useRef(null)
@@ -412,7 +413,7 @@ function CollabPage() {
 
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
-    moveCameraToPreset(cameraControlsRef, preset)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
   const handleToggleAutoplay = useCallback(() => {
@@ -432,7 +433,7 @@ function CollabPage() {
     const interval = autoplayIntervalSeconds * 1000
     const tick = () => {
       const preset = cameraPresets[idx % cameraPresets.length]
-      if (preset) moveCameraToPreset(cameraControlsRef, preset)
+      if (preset) setCameraTargetPreset(cameraTargetPresetRef, preset)
       idx++
     }
     tick()
@@ -453,6 +454,7 @@ function CollabPage() {
         autoplayIntervalRef.current = null
       }
       setIsAutoplayActive(false)
+      cameraTargetPresetRef.current = null
     }
     controls.addEventListener?.('controlstart', onControlStart)
     return () => controls.removeEventListener?.('controlstart', onControlStart)
@@ -499,6 +501,7 @@ function CollabPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
+        cameraTargetPresetRef={cameraTargetPresetRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}

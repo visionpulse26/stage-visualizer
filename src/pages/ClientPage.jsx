@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
-import { moveCameraToPreset } from '../utils/animateCameraToPreset'
+import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -28,6 +28,7 @@ function ClientPage() {
 
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [isAutoplayActive, setIsAutoplayActive] = useState(false)
   const autoplayIntervalRef = useRef(null)
@@ -195,7 +196,7 @@ function ClientPage() {
   }, [projectId])
 
   const handleGoToView = useCallback((preset) => {
-    moveCameraToPreset(cameraControlsRef, preset)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
   const handleToggleAutoplay = useCallback(() => {
@@ -215,7 +216,7 @@ function ClientPage() {
     const interval = autoplayIntervalSeconds * 1000
     const tick = () => {
       const preset = cameraPresets[idx % cameraPresets.length]
-      if (preset) moveCameraToPreset(cameraControlsRef, preset)
+      if (preset) setCameraTargetPreset(cameraTargetPresetRef, preset)
       idx++
     }
     tick()
@@ -236,6 +237,7 @@ function ClientPage() {
         autoplayIntervalRef.current = null
       }
       setIsAutoplayActive(false)
+      cameraTargetPresetRef.current = null
     }
     controls.addEventListener?.('controlstart', onControlStart)
     return () => controls.removeEventListener?.('controlstart', onControlStart)
@@ -278,6 +280,7 @@ function ClientPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
+        cameraTargetPresetRef={cameraTargetPresetRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={customHdriUrl?.split('.').pop()?.toLowerCase() || 'hdr'}

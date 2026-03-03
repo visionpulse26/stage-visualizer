@@ -1,11 +1,11 @@
 import { Suspense, useEffect, useRef, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
+import * as THREE from 'three'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
-import * as THREE from 'three'
 import Scene from './Scene'
 
 // ── Atmospheric dust particles ────────────────────────────────────────────────
@@ -272,6 +272,63 @@ function LiteHdriEnvironment({
   return null
 }
 
+// ── Smooth camera fly via LERP in render loop (Unity-style damp) ───────────────
+// factor = 1 - exp(-speed * delta) gives smooth deceleration at end
+const LERP_SPEED = 4.5
+const REACHED_THRESHOLD = 0.002
+
+function damp3Vec(current, target, speed, delta) {
+  const factor = 1 - Math.exp(-speed * delta)
+  return current.lerp(target, factor)
+}
+
+function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
+  const { camera } = useThree()
+  const targetPos = useRef(new THREE.Vector3())
+  const targetLookAt = useRef(new THREE.Vector3())
+  const currentLookAt = useRef(new THREE.Vector3())
+
+  // Cancel fly when user starts manual control
+  useEffect(() => {
+    const controls = cameraControlsRef?.current
+    if (!controls || !targetPresetRef) return
+    const onControlStart = () => { targetPresetRef.current = null }
+    controls.addEventListener?.('controlstart', onControlStart)
+    return () => controls.removeEventListener?.('controlstart', onControlStart)
+  }, [cameraControlsRef, targetPresetRef])
+
+  useFrame((_, delta) => {
+    const controls = cameraControlsRef?.current
+    if (!controls) return
+    const preset = targetPresetRef?.current
+    if (!preset || !preset.position || !preset.target) return
+
+    targetPos.current.set(preset.position.x, preset.position.y, preset.position.z)
+    targetLookAt.current.set(preset.target.x, preset.target.y, preset.target.z)
+
+    // Smooth interpolation (lerp with exponential factor — cinematic deceleration)
+    damp3Vec(camera.position, targetPos.current, LERP_SPEED, delta)
+
+    controls.getTarget(currentLookAt.current)
+    damp3Vec(currentLookAt.current, targetLookAt.current, LERP_SPEED, delta)
+    controls.setTarget(
+      currentLookAt.current.x,
+      currentLookAt.current.y,
+      currentLookAt.current.z,
+      false
+    )
+    controls.update(delta)
+
+    if (
+      camera.position.distanceTo(targetPos.current) < REACHED_THRESHOLD &&
+      currentLookAt.current.distanceTo(targetLookAt.current) < REACHED_THRESHOLD
+    ) {
+      targetPresetRef.current = null
+    }
+  })
+  return null
+}
+
 /**
  * Reusable 3D canvas shared across Admin, Collab, and Client views.
  * Accepts scene_config props so all roles see the identical environment.
@@ -286,6 +343,7 @@ function StageCanvas({
   gridCellSize,
   modelLoaded,
   cameraControlsRef,
+  cameraTargetPresetRef,
   // ── Stage loading (Client/Collab — THREE.LoadingManager for progress) ───
   loadingManager,       // optional THREE.LoadingManager
   // ── Scene config ──────────────────────────────────────────────────────
@@ -423,6 +481,13 @@ function StageCanvas({
           smoothTime={0.5}
           dollySpeed={0.5}
         />
+
+        {cameraTargetPresetRef && (
+          <CameraSmoothFlyController
+            cameraControlsRef={cameraControlsRef}
+            targetPresetRef={cameraTargetPresetRef}
+          />
+        )}
 
         {/* Bloom — luminanceThreshold driven by admin slider */}
         <EffectComposer>

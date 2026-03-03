@@ -6,7 +6,7 @@ import ProjectsDashboard from '../components/ProjectsDashboard'
 import BrandFooter from '../components/BrandFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
-import { moveCameraToPreset } from '../utils/animateCameraToPreset'
+import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -56,6 +56,7 @@ function AdminPage() {
   // ── Camera presets ───────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
 
   // ── Publish ──────────────────────────────────────────────────────────────
@@ -506,7 +507,7 @@ function AdminPage() {
   }, [])
 
   const handleGoToView = useCallback((preset) => {
-    moveCameraToPreset(cameraControlsRef, preset)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
   const handleSaveAutoplayConfig = useCallback(async () => {
@@ -768,6 +769,7 @@ function AdminPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!(stageFile || cloudStageUrl)}
         cameraControlsRef={cameraControlsRef}
+        cameraTargetPresetRef={cameraTargetPresetRef}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
