@@ -1,49 +1,33 @@
-import gsap from 'gsap'
-import * as THREE from 'three'
-
-const ANIM_DURATION = 2.5
-const EASE = 'power3.inOut'
-
 /**
- * Bulletproof GSAP camera transition. Do NOT disable controls.
- * Uses target proxy + setTarget since camera-controls may not expose .target.
+ * Native Three.js camera preset movement — instant, no GSAP.
+ * Uses camera-controls setLookAt with enableTransition: false.
  */
-export function animateCameraToPreset(controlsRef, targetCam, options = {}) {
+export function moveCameraToPreset(controlsRef, targetCam) {
   const controls = controlsRef?.current
   if (!controls) return
 
   if (!targetCam || !targetCam.position || !targetCam.target) return
 
-  const camera = controls.camera
-  if (!camera) return
+  const px = targetCam.position.x
+  const py = targetCam.position.y
+  const pz = targetCam.position.z
+  const tx = targetCam.target.x
+  const ty = targetCam.target.y
+  const tz = targetCam.target.z
 
-  const duration = options.duration ?? ANIM_DURATION
-  const ease = options.ease ?? EASE
+  // Instant jump — enableTransition: false
+  if (typeof controls.setLookAt === 'function') {
+    controls.setLookAt(px, py, pz, tx, ty, tz, false)
+  } else {
+    // Fallback: set camera position and target directly
+    const camera = controls.camera
+    if (camera) {
+      camera.position.set(px, py, pz)
+      controls.setTarget?.(tx, ty, tz, false)
+    }
+  }
 
-  gsap.killTweensOf([camera.position])
-
-  const targetProxy = new THREE.Vector3()
-  controls.getTarget(targetProxy)
-
-  gsap.killTweensOf([targetProxy])
-
-  gsap.to(camera.position, {
-    x: targetCam.position.x,
-    y: targetCam.position.y,
-    z: targetCam.position.z,
-    duration,
-    ease,
-  })
-
-  gsap.to(targetProxy, {
-    x: targetCam.target.x,
-    y: targetCam.target.y,
-    z: targetCam.target.z,
-    duration,
-    ease,
-    onUpdate: () => {
-      controls.setTarget(targetProxy.x, targetProxy.y, targetProxy.z, false)
-      if (typeof controls.update === 'function') controls.update(0)
-    },
-  })
+  if (typeof controls.update === 'function') {
+    controls.update(0)
+  }
 }

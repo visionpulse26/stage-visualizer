@@ -16,6 +16,8 @@ function ClientPanel({
   onPause,
   videoLoaded,
   onScreenshot,
+  isAutoplayActive,
+  onToggleAutoplay,
 }) {
   const [isVisible, setIsVisible] = useState(true)
   const activeIsVideo = activeClip?.type !== 'image'
@@ -132,12 +134,23 @@ function ClientPanel({
           </>
         )}
 
-        {/* ── Camera presets ── */}
+        {/* ── Camera presets & Autoplay ── */}
         {cameraPresets.length > 0 && (
           <>
             <Divider />
             <div className="space-y-2">
               <CLabel>Camera Angles</CLabel>
+              <button
+                onClick={() => onToggleAutoplay?.()}
+                className={`w-full py-2 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+                  isAutoplayActive
+                    ? 'bg-[#FF5F1F] text-[#000000]'
+                    : 'bg-white/5 hover:bg-white/15 border border-white/5 hover:border-white/15 text-white/70 hover:text-white'
+                }`}
+                style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+              >
+                {isAutoplayActive ? '⏸ STOP AUTOPLAY' : '▶ AUTOPLAY CAMERAS'}
+              </button>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {cameraPresets.map((preset, i) => (
                   <button

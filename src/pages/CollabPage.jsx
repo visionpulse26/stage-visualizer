@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
-import { animateCameraToPreset } from '../utils/animateCameraToPreset'
+import { moveCameraToPreset } from '../utils/animateCameraToPreset'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -412,7 +412,7 @@ function CollabPage() {
 
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
-    animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+    moveCameraToPreset(cameraControlsRef, preset)
   }, [])
 
   const handleToggleAutoplay = useCallback(() => {
@@ -432,7 +432,7 @@ function CollabPage() {
     const interval = autoplayIntervalSeconds * 1000
     const tick = () => {
       const preset = cameraPresets[idx % cameraPresets.length]
-      if (preset) animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+      if (preset) moveCameraToPreset(cameraControlsRef, preset)
       idx++
     }
     tick()
@@ -555,28 +555,13 @@ function CollabPage() {
           // ── Camera (read-only) ───────────────────────────────────────────
           cameraPresets={cameraPresets}
           onGoToView={handleGoToView}
+          isAutoplayActive={isAutoplayActive}
+          onToggleAutoplay={handleToggleAutoplay}
           // ── Screenshot ───────────────────────────────────────────────────
           onScreenshot={handleScreenshot}
         />
 
         <TopBar role="Collaborator" color="cyan" />
-
-        {/* Autoplay Cameras — floating button */}
-        {cameraPresets.length > 0 && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
-            <button
-              onClick={handleToggleAutoplay}
-              className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                isAutoplayActive
-                  ? 'bg-[#FF5F1F] text-[#000000]'
-                  : 'bg-black/50 text-white/80 hover:bg-black/70 border border-white/20'
-              }`}
-              style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-            >
-              {isAutoplayActive ? '⏸ STOP AUTOPLAY' : '▶ AUTOPLAY CAMERAS'}
-            </button>
-          </div>
-        )}
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
           Project: <span className="text-white/60 font-mono">{projectId}</span>

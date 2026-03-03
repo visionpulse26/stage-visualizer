@@ -859,7 +859,7 @@ function UIPanel({
           <Section icon={<IconCamera />} title="DIRECTOR MODE">
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] text-white/35 uppercase tracking-widest">Interval (seconds)</label>
+                <label className="text-[10px] text-white/35 uppercase tracking-widest">Interval Time (Seconds)</label>
                 <input
                   type="number"
                   min={1}

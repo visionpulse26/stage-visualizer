@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
-import { animateCameraToPreset } from '../utils/animateCameraToPreset'
+import { moveCameraToPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
@@ -195,7 +195,7 @@ function ClientPage() {
   }, [projectId])
 
   const handleGoToView = useCallback((preset) => {
-    animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+    moveCameraToPreset(cameraControlsRef, preset)
   }, [])
 
   const handleToggleAutoplay = useCallback(() => {
@@ -215,7 +215,7 @@ function ClientPage() {
     const interval = autoplayIntervalSeconds * 1000
     const tick = () => {
       const preset = cameraPresets[idx % cameraPresets.length]
-      if (preset) animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+      if (preset) moveCameraToPreset(cameraControlsRef, preset)
       idx++
     }
     tick()
@@ -303,26 +303,11 @@ function ClientPage() {
           onPause={handlePause}
           videoLoaded={videoLoaded}
           onScreenshot={handleScreenshot}
+          isAutoplayActive={isAutoplayActive}
+          onToggleAutoplay={handleToggleAutoplay}
         />
 
         <RoleBadge role="Client View" color="blue" />
-
-        {/* Autoplay Cameras — floating button */}
-        {cameraPresets.length > 0 && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
-            <button
-              onClick={handleToggleAutoplay}
-              className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                isAutoplayActive
-                  ? 'bg-[#FF5F1F] text-[#000000]'
-                  : 'bg-black/50 text-white/80 hover:bg-black/70 border border-white/20'
-              }`}
-              style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-            >
-              {isAutoplayActive ? '⏸ STOP AUTOPLAY' : '▶ AUTOPLAY CAMERAS'}
-            </button>
-          </div>
-        )}
       </StageCanvas>
 
       {/* TOO:AWAKE Brand Footer */}

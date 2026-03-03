@@ -6,7 +6,7 @@ import ProjectsDashboard from '../components/ProjectsDashboard'
 import BrandFooter from '../components/BrandFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
-import { animateCameraToPreset } from '../utils/animateCameraToPreset'
+import { moveCameraToPreset } from '../utils/animateCameraToPreset'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -506,7 +506,7 @@ function AdminPage() {
   }, [])
 
   const handleGoToView = useCallback((preset) => {
-    animateCameraToPreset(cameraControlsRef, preset, { duration: 2.5, ease: 'power3.inOut' })
+    moveCameraToPreset(cameraControlsRef, preset)
   }, [])
 
   const handleSaveAutoplayConfig = useCallback(async () => {

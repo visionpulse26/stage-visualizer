@@ -98,6 +98,7 @@ function CollabPanel({
   protectLed,     onProtectLedToggle,
   // ── Camera (read-only — view only, no add/delete) ──────────────────────────
   cameraPresets, onGoToView,
+  isAutoplayActive, onToggleAutoplay,
   // ── Screenshot ─────────────────────────────────────────────────────────────
   onScreenshot,
 }) {
@@ -501,7 +502,19 @@ function CollabPanel({
                 No camera presets saved yet. Ask the Admin to save views from the Admin panel.
               </p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-2">
+                <button
+                  onClick={() => onToggleAutoplay?.()}
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+                    isAutoplayActive
+                      ? 'bg-[#FF5F1F] text-[#000000]'
+                      : 'bg-white/5 hover:bg-white/15 border border-white/10 hover:border-cyan-500/30 text-white/70 hover:text-white'
+                  }`}
+                  style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+                >
+                  {isAutoplayActive ? '⏸ STOP AUTOPLAY' : '▶ AUTOPLAY CAMERAS'}
+                </button>
+                <div className="space-y-1">
                 {cameraPresets.map(p => (
                   <button
                     key={p.id}
@@ -511,6 +524,7 @@ function CollabPanel({
                     {p.name}
                   </button>
                 ))}
+                </div>
               </div>
             )}
             <p className="text-[9px] text-white/20 mt-3 leading-snug">
