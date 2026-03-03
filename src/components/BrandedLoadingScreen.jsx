@@ -41,22 +41,32 @@ function BrandedLoadingScreen({ isLoaded, progress = 0, status = 'INITIALIZING..
         pointerEvents: fading ? 'none' : 'auto',
       }}
     >
-      <div className="w-full max-w-md px-10 flex flex-col items-center">
-        <div
-          className="mb-10"
+      {/* Logo banner — top-center, label/tab shape */}
+      <div
+        className="absolute top-0 left-1/2 -translate-x-1/2"
+        style={{
+          padding: '8px 20px',
+          backgroundColor: NEON_ORANGE,
+          borderBottomLeftRadius: 10,
+          borderBottomRightRadius: 10,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}
+      >
+        <span
           style={{
             fontFamily: "'Chakra Petch', sans-serif",
-            animation: 'loadingPulse 2s ease-in-out infinite',
+            fontWeight: 700,
+            fontSize: '11px',
+            letterSpacing: '0.15em',
+            color: '#000000',
+            textTransform: 'uppercase',
           }}
         >
-          <img
-            src="https://visual.tooawake.online/logo_tooawake.png"
-            alt="TOO:AWAKE"
-            className="h-16 object-contain"
-            draggable={false}
-          />
-        </div>
+          POWERED BY TOO:AWAKE STUDIO
+        </span>
+      </div>
 
+      <div className="w-full max-w-md px-10 flex flex-col items-center">
         <p
           className="text-sm tracking-[0.2em] uppercase mb-4"
           style={{
