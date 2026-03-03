@@ -272,12 +272,12 @@ function LiteHdriEnvironment({
   return null
 }
 
-// ── Smooth camera fly via LERP in render loop (Unity-style damp) ───────────────
-// factor = 1 - exp(-speed * delta) gives smooth deceleration at end
+// ── Smooth camera fly via LERP in render loop ────────────────────────────────
+// Must use setLookAt() each frame — controls.update() overwrites camera.position
 const LERP_SPEED = 4.5
 const REACHED_THRESHOLD = 0.002
 
-function damp3Vec(current, target, speed, delta) {
+function lerp3(current, target, speed, delta) {
   const factor = 1 - Math.exp(-speed * delta)
   return current.lerp(target, factor)
 }
@@ -286,9 +286,9 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
   const { camera } = useThree()
   const targetPos = useRef(new THREE.Vector3())
   const targetLookAt = useRef(new THREE.Vector3())
+  const currentPos = useRef(new THREE.Vector3())
   const currentLookAt = useRef(new THREE.Vector3())
 
-  // Cancel fly when user starts manual control
   useEffect(() => {
     const controls = cameraControlsRef?.current
     if (!controls || !targetPresetRef) return
@@ -301,17 +301,27 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
     const controls = cameraControlsRef?.current
     if (!controls) return
     const preset = targetPresetRef?.current
-    if (!preset || !preset.position || !preset.target) return
+    if (!preset) return
+    const pos = preset.position
+    const tgt = preset.target
+    if (!pos || !tgt || typeof pos.x !== 'number' || typeof tgt.x !== 'number') return
 
-    targetPos.current.set(preset.position.x, preset.position.y, preset.position.z)
-    targetLookAt.current.set(preset.target.x, preset.target.y, preset.target.z)
+    targetPos.current.set(pos.x, pos.y, pos.z)
+    targetLookAt.current.set(tgt.x, tgt.y, tgt.z)
 
-    // Smooth interpolation (lerp with exponential factor — cinematic deceleration)
-    damp3Vec(camera.position, targetPos.current, LERP_SPEED, delta)
-
+    // Copy current state from camera and controls
+    currentPos.current.copy(camera.position)
     controls.getTarget(currentLookAt.current)
-    damp3Vec(currentLookAt.current, targetLookAt.current, LERP_SPEED, delta)
-    controls.setTarget(
+
+    // Lerp both position and target
+    lerp3(currentPos.current, targetPos.current, LERP_SPEED, delta)
+    lerp3(currentLookAt.current, targetLookAt.current, LERP_SPEED, delta)
+
+    // Drive controls via setLookAt — update() would overwrite camera otherwise
+    controls.setLookAt(
+      currentPos.current.x,
+      currentPos.current.y,
+      currentPos.current.z,
       currentLookAt.current.x,
       currentLookAt.current.y,
       currentLookAt.current.z,
@@ -320,7 +330,7 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef }) {
     controls.update(delta)
 
     if (
-      camera.position.distanceTo(targetPos.current) < REACHED_THRESHOLD &&
+      currentPos.current.distanceTo(targetPos.current) < REACHED_THRESHOLD &&
       currentLookAt.current.distanceTo(targetLookAt.current) < REACHED_THRESHOLD
     ) {
       targetPresetRef.current = null
@@ -361,6 +371,8 @@ function StageCanvas({
   showHdriBackground,
   children,
 }) {
+  const internalPresetRef = useRef(null)
+  const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom     = bloomStrength      ?? 0.3
   const resolvedEnvInt    = envIntensity       ?? 1
@@ -482,10 +494,10 @@ function StageCanvas({
           dollySpeed={0.5}
         />
 
-        {cameraTargetPresetRef && (
+        {cameraControlsRef && (
           <CameraSmoothFlyController
             cameraControlsRef={cameraControlsRef}
-            targetPresetRef={cameraTargetPresetRef}
+            targetPresetRef={presetRef}
           />
         )}
 

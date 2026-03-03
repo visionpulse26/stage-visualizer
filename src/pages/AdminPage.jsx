@@ -501,8 +501,11 @@ function AdminPage() {
   // ── Camera preset helpers ────────────────────────────────────────────────
   const handleSaveView = useCallback((name) => {
     if (!cameraControlsRef.current) return
-    const pos = cameraControlsRef.current.getPosition  ? cameraControlsRef.current.getPosition()  : { x:0, y:5, z:10 }
-    const tgt = cameraControlsRef.current.getTarget    ? cameraControlsRef.current.getTarget()    : { x:0, y:0, z:0  }
+    const ctrl = cameraControlsRef.current
+    const posVal = ctrl.getPosition?.() ?? { x: 0, y: 5, z: 10 }
+    const tgtVal = ctrl.getTarget?.() ?? { x: 0, y: 0, z: 0 }
+    const pos = { x: posVal.x, y: posVal.y, z: posVal.z }
+    const tgt = { x: tgtVal.x, y: tgtVal.y, z: tgtVal.z }
     setCameraPresets(prev => [...prev, { id: Date.now(), name, position: pos, target: tgt }])
   }, [])
 
