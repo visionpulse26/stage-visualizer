@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 
 const FADE_MS = 700
-const NEON_ORANGE = '#FF5F1F'
 
 function BrandedLoadingScreen({ isLoaded, progress = 0, status = 'INITIALIZING...' }) {
   const [visible, setVisible] = useState(true)
@@ -33,78 +32,118 @@ function BrandedLoadingScreen({ isLoaded, progress = 0, status = 'INITIALIZING..
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center select-none"
+      className="fixed inset-0 z-50 select-none"
       style={{
-        backgroundColor: '#000000',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#FF5F1F',
         opacity: fading ? 0 : 1,
         transition: `opacity ${FADE_MS}ms cubic-bezier(.4,0,.2,1)`,
         pointerEvents: fading ? 'none' : 'auto',
       }}
     >
-      {/* Logo banner — top-center, label/tab shape */}
       <div
-        className="absolute top-0 left-1/2 -translate-x-1/2"
         style={{
-          padding: '8px 20px',
-          backgroundColor: NEON_ORANGE,
-          borderBottomLeftRadius: 10,
-          borderBottomRightRadius: 10,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
         }}
       >
-        <span
-          style={{
-            fontFamily: "'Chakra Petch', sans-serif",
-            fontWeight: 700,
-            fontSize: '11px',
-            letterSpacing: '0.15em',
-            color: '#000000',
-            textTransform: 'uppercase',
-          }}
-        >
-          POWERED BY TOO:AWAKE STUDIO
-        </span>
-      </div>
-
-      <div className="w-full max-w-md px-10 flex flex-col items-center">
         <p
-          className="text-sm tracking-[0.2em] uppercase mb-4"
           style={{
             fontFamily: "'Chakra Petch', sans-serif",
             fontWeight: 600,
-            color: NEON_ORANGE,
-            textShadow: `0 0 12px ${NEON_ORANGE}66`,
+            fontSize: '11px',
+            letterSpacing: '0.2em',
+            color: '#000000',
+            textTransform: 'uppercase',
+            margin: 0,
+          }}
+        >
+          POWERED BY
+        </p>
+
+        <div style={{ height: 20 }} />
+
+        <img
+          src="https://visual.tooawake.online/logo_tooawake.png"
+          alt="TOO:AWAKE"
+          className="loading-logo-pulse"
+          style={{
+            margin: '0 auto',
+            display: 'block',
+            height: 56,
+            objectFit: 'contain',
+          }}
+        />
+
+        <div style={{ height: 40 }} />
+
+        <p
+          style={{
+            fontFamily: "'Chakra Petch', sans-serif",
+            fontWeight: 600,
+            fontSize: '14px',
+            letterSpacing: '0.15em',
+            color: '#000000',
+            margin: 0,
           }}
         >
           LOADING SYSTEM: {Math.round(displayProgress)}%
         </p>
 
+        <div style={{ height: 10 }} />
+
         <p
-          className="text-xs tracking-widest uppercase mb-6 text-white/50"
-          style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          style={{
+            fontFamily: "'Chakra Petch', sans-serif",
+            fontWeight: 500,
+            fontSize: '12px',
+            letterSpacing: '0.1em',
+            color: '#000000',
+            margin: 0,
+          }}
         >
           {status}
         </p>
 
+        <div style={{ height: 20 }} />
+
         <div
-          className="w-full h-1.5 rounded-full overflow-hidden"
-          style={{ backgroundColor: 'rgba(255,95,31,0.15)' }}
+          style={{
+            width: 'min(320px, 80vw)',
+            height: 6,
+            borderRadius: 3,
+            overflow: 'hidden',
+            backgroundColor: 'rgba(0,0,0,0.25)',
+          }}
         >
           <div
-            className="h-full rounded-full transition-all duration-300 ease-out"
             style={{
               width: `${displayProgress}%`,
-              backgroundColor: NEON_ORANGE,
-              boxShadow: `0 0 12px ${NEON_ORANGE}`,
+              height: '100%',
+              borderRadius: 3,
+              backgroundColor: '#000000',
+              transition: 'width 300ms ease-out',
             }}
           />
         </div>
       </div>
 
       <style>{`
-        @keyframes loadingPulse {
-          0%, 100% { opacity: 0.7; transform: scale(0.98); }
-          50% { opacity: 1; transform: scale(1); }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        .loading-logo-pulse {
+          animation: pulse 1s ease-in-out infinite;
         }
       `}</style>
     </div>
