@@ -102,6 +102,7 @@ function CollabPanel({
   // ── Screenshot ─────────────────────────────────────────────────────────────
   onScreenshot,
 }) {
+  const [isVisible, setIsVisible] = useState(true)
   const [activeSection, setActiveSection] = useState('media')
   const [hdriDropdownOpen, setHdriDropdownOpen] = useState(false)
   const fileInputRef = useRef(null)
@@ -129,16 +130,39 @@ function CollabPanel({
     { id: 'camera', label: 'Camera', icon: <IconCamera /> },
   ]
 
+  if (!isVisible) {
+    return (
+      <button
+        onClick={() => setIsVisible(true)}
+        className="absolute top-4 left-4 z-10 w-10 h-10 bg-black/50 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-black/70 transition-all"
+        title="Show Menu"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+    )
+  }
+
   return (
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
 
-      {/* ── Sandbox Mode badge ─────────────────────────────────────────────── */}
+      {/* ── Sandbox Mode badge + minimize ───────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20">
         <span className="text-amber-400 text-xs leading-none flex-shrink-0">⚡</span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold text-amber-300/80 uppercase tracking-widest leading-tight">Sandbox Mode</p>
           <p className="text-[9px] text-amber-400/40 leading-tight mt-0.5 truncate">Changes are temporary — nothing is saved</p>
         </div>
+        <button
+          onClick={() => setIsVisible(false)}
+          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-all flex-shrink-0"
+          title="Minimize Menu"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+        </button>
       </div>
 
       {/* Section tabs */}
