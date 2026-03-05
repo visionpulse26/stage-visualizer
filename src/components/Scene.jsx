@@ -26,10 +26,12 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, onImageTextureLoaded }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
+  const onImageLoadedRef = useRef(onImageTextureLoaded)
+  onImageLoadedRef.current = onImageTextureLoaded
 
   const [ledPositions, setLedPositions] = useState([])
   const [ledColor,     setLedColor]     = useState('#ffffff')
@@ -71,7 +73,12 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
     if (!activeImageUrl) return null
     try {
-      const t = new THREE.TextureLoader().load(activeImageUrl)
+      const t = new THREE.TextureLoader().load(
+        activeImageUrl,
+        () => onImageLoadedRef.current?.(),
+        undefined,
+        () => {}
+      )
       t.colorSpace = THREE.SRGBColorSpace
       t.flipY      = false
       t.wrapS      = THREE.ClampToEdgeWrapping
@@ -274,7 +281,7 @@ function ModelWithUrl({ url, ...rest }) {
   return <ModelContent gltf={gltf} {...rest} />
 }
 
-function ManualModelLoader({ url, loadingManager, ...rest }) {
+function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest }) {
   const [gltf, setGltf] = useState(null)
   useEffect(() => {
     if (!url || !loadingManager) return
@@ -288,10 +295,10 @@ function ManualModelLoader({ url, loadingManager, ...rest }) {
     )
   }, [url, loadingManager])
   if (!gltf) return null
-  return <ModelContent gltf={gltf} {...rest} />
+  return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, loadingManager }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, loadingManager, onImageTextureLoaded }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -304,8 +311,8 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
     <group>
       {modelUrl && (
         loadingManager
-          ? <ManualModelLoader url={modelUrl} loadingManager={loadingManager} {...common} />
-          : <ModelWithUrl url={modelUrl} {...common} />
+          ? <ManualModelLoader url={modelUrl} loadingManager={loadingManager} onImageTextureLoaded={onImageTextureLoaded} {...common} />
+          : <ModelWithUrl url={modelUrl} onImageTextureLoaded={onImageTextureLoaded} {...common} />
       )}
     </group>
   )

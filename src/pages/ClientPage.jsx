@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
+import { useSecurityLockdown } from '../hooks/useSecurityLockdown'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
 import Notch from '../components/Notch'
@@ -8,17 +9,24 @@ import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
+import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function ClientPage() {
   const { projectId } = useParams()
+  useSecurityLockdown()
   const {
     loadingManager,
     progress,
     status,
     loaded: stageLoaded,
     reset: resetStageLoading,
-  } = useStageLoading()
+  } = useStageLoading({
+    onLoadComplete: () => {
+      if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
+      if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null }
+    },
+  })
 
   const [modelUrl,       setModelUrl]       = useState(null)
   const [videoElement,   setVideoElement]   = useState(null)
@@ -58,26 +66,41 @@ function ClientPage() {
   const [isPlaying,     setIsPlaying]     = useState(false)
 
   const videoRef = useRef(null)
+  const modelBlobRef = useRef(null)
+  const hdriBlobRef = useRef(null)
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
+
+  const revokeBlob = useCallback((url) => {
+    if (url && typeof url === 'string' && url.startsWith('blob:')) {
+      try { URL.revokeObjectURL(url) } catch (_) {}
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
+      revokeBlob(modelBlobRef.current)
+      revokeBlob(hdriBlobRef.current)
     }
-  }, [])
+  }, [revokeBlob])
 
   useEffect(() => {
     resetStageLoading()
   }, [projectId, resetStageLoading])
 
-  // ── Shared video activation helper ───────────────────────────────────────
+  // ── Shared video activation helper (revokes blob URL after load for IP protection) ──
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     const v = document.createElement('video')
-    v.src = url; v.crossOrigin = 'anonymous'; v.loop = true
-    v.muted = true; v.playsInline = true; v.preload = 'auto'
+    v.src = url
+    v.crossOrigin = 'anonymous'
+    v.loop = true
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
+      revokeBlob(url)
       v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v)
@@ -86,7 +109,7 @@ function ClientPage() {
       setIsPlaying(true)
     })
     v.load()
-  }, [])
+  }, [revokeBlob])
 
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
@@ -110,17 +133,37 @@ function ClientPage() {
           return
         }
 
-        // Load stage model directly via its public HTTP URL
-        setModelUrl(data.stage_url)
+        const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
-        // Load full media playlist, or fall back to legacy single video_url
+        // Asset masking: fetch remote URLs as blobs to avoid exposing raw URLs
+        const modelSrc = data.stage_url
+        if (modelSrc && isRemote(modelSrc)) {
+          try {
+            const blobUrl = await fetchAsBlobUrl(modelSrc)
+            modelBlobRef.current = blobUrl
+            setModelUrl(blobUrl)
+          } catch {
+            setModelUrl(modelSrc)
+          }
+        } else {
+          setModelUrl(modelSrc)
+        }
+
+        const loadMediaPlaylist = async (items) => {
+          const restored = []
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i]
+            let url = item.url
+            if (isRemote(url)) {
+              try { url = await fetchAsBlobUrl(url) } catch {}
+            }
+            restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
+          }
+          return restored
+        }
+
         if (data.media_playlist && data.media_playlist.length > 0) {
-          const restored = data.media_playlist.map((item, i) => ({
-            id:   Date.now() + i,
-            name: item.name,
-            url:  item.url,
-            type: item.type,
-          }))
+          const restored = await loadMediaPlaylist(data.media_playlist)
           setVideoPlaylist(restored)
           const first = restored[0]
           if (first.type === 'image') {
@@ -131,9 +174,13 @@ function ClientPage() {
             activateVideo(first.id, first.url)
           }
         } else if (data.video_url) {
+          let vidUrl = data.video_url
+          if (isRemote(vidUrl)) {
+            try { vidUrl = await fetchAsBlobUrl(vidUrl) } catch {}
+          }
           const id = Date.now()
-          setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: data.video_url }])
-          activateVideo(id, data.video_url)
+          setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: vidUrl }])
+          activateVideo(id, vidUrl)
         }
 
         setCameraPresets(data.camera_presets || [])
@@ -160,7 +207,18 @@ function ClientPage() {
           }
 
           if (cfg.customHdriUrl) {
-            setCustomHdriUrl(cfg.customHdriUrl)
+            const hdriSrc = cfg.customHdriUrl
+            if (isRemote(hdriSrc)) {
+              try {
+                const blobUrl = await fetchAsBlobUrl(hdriSrc)
+                hdriBlobRef.current = blobUrl
+                setCustomHdriUrl(blobUrl)
+              } catch {
+                setCustomHdriUrl(hdriSrc)
+              }
+            } else {
+              setCustomHdriUrl(hdriSrc)
+            }
           } else {
             setCustomHdriUrl(null)
           }
@@ -302,6 +360,8 @@ function ClientPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
+        onHdriLoadComplete={() => { if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null } }}
+        onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}

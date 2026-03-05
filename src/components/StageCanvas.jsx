@@ -106,6 +106,7 @@ function LiteHdriEnvironment({
   onLoadingChange,
   onLoadError,
   onClearRequest,  // callback to notify parent when we need to clear (on fatal error)
+  onLoadComplete,  // optional: called when HDRI loaded (for blob URL revocation)
   loadingManager,  // optional THREE.LoadingManager for progress tracking
 }) {
   const { gl, scene } = useThree()
@@ -219,6 +220,7 @@ function LiteHdriEnvironment({
             if ('backgroundBlurriness' in scene) {
               scene.backgroundBlurriness = background ? bgBlur : 0
             }
+            onLoadComplete?.()
           } catch {
             texture.dispose()
             onClearRequest?.()
@@ -249,7 +251,7 @@ function LiteHdriEnvironment({
       if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
       deepCleanup()
     }
-  }, [url, ext, background, bgBlur, gl, scene, deepCleanup, onLoadingChange, onLoadError, onClearRequest, loadingManager])
+  }, [url, ext, background, bgBlur, gl, scene, deepCleanup, onLoadingChange, onLoadError, onClearRequest, onLoadComplete, loadingManager])
 
   // Background toggle (no reload needed)
   useEffect(() => {
@@ -360,6 +362,7 @@ function StageCanvas({
   cameraFlyDurationSeconds,
   // ── Stage loading (Client/Collab — THREE.LoadingManager for progress) ───
   loadingManager,       // optional THREE.LoadingManager
+  onImageTextureLoaded, // optional: callback when image texture finishes loading (for blob revoke)
   // ── Scene config ──────────────────────────────────────────────────────
   hdriPreset,
   customHdriUrl,
@@ -367,6 +370,7 @@ function StageCanvas({
   onHdriLoading,
   onHdriLoadError,
   onHdriClearRequest,
+  onHdriLoadComplete,
   envIntensity,
   bgBlur,
   bloomStrength,
@@ -423,6 +427,7 @@ function StageCanvas({
                 onLoadingChange={onHdriLoading}
                 onLoadError={onHdriLoadError}
                 onClearRequest={onHdriClearRequest}
+                onLoadComplete={onHdriLoadComplete}
                 loadingManager={loadingManager}
               />
             ) : (
@@ -487,6 +492,7 @@ function StageCanvas({
               sunIntensity={sunIntensity ?? 1}
               envIntensity={envIntensity ?? 1}
               loadingManager={loadingManager}
+              onImageTextureLoaded={onImageTextureLoaded}
             />
           )}
         </Suspense>

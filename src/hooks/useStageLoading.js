@@ -6,8 +6,11 @@ const POST_LOAD_DELAY_MS = 500
 /**
  * Global LoadingManager for GLB, HDRI, Textures.
  * Tracks progress via onProgress, triggers "ready" only after onLoad + 500ms post-render.
+ * @param {{ onLoadComplete?: () => void }} opts - Optional. onLoadComplete called when LoadingManager finishes (for blob URL revocation).
  */
-export function useStageLoading() {
+export function useStageLoading(opts = {}) {
+  const onLoadCompleteRef = useRef(opts?.onLoadComplete)
+  onLoadCompleteRef.current = opts?.onLoadComplete
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('INITIALIZING...')
   const [loaded, setLoaded] = useState(false)
@@ -34,6 +37,7 @@ export function useStageLoading() {
       setProgress(100)
       setStatus('READY')
       setAllAssetsLoaded(true)
+      onLoadCompleteRef.current?.()
       if (postLoadTimerRef.current) clearTimeout(postLoadTimerRef.current)
       postLoadTimerRef.current = setTimeout(() => {
         postLoadTimerRef.current = null

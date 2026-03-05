@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
+import { useSecurityLockdown } from '../hooks/useSecurityLockdown'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
@@ -9,17 +10,24 @@ import GlobalFooter from '../components/GlobalFooter'
 import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
+import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function CollabPage() {
   const { projectId } = useParams()
+  useSecurityLockdown()
   const {
     loadingManager,
     progress,
     status,
     loaded: stageLoaded,
     reset: resetStageLoading,
-  } = useStageLoading()
+  } = useStageLoading({
+    onLoadComplete: () => {
+      if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
+      if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null }
+    },
+  })
 
   const [modelUrl,        setModelUrl]        = useState(null)
   const [videoElement,    setVideoElement]    = useState(null)
@@ -77,11 +85,19 @@ function CollabPage() {
   const videoRef     = useRef(null)
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
+  const modelBlobRef = useRef(null)
+  const hdriBlobRef  = useRef(null)
 
   // Track blob URLs created locally so we can revoke them on unmount (memory safety)
   const localBlobUrlsRef = useRef([])
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
+
+  const revokeBlob = useCallback((url) => {
+    if (url && typeof url === 'string' && url.startsWith('blob:')) {
+      try { URL.revokeObjectURL(url) } catch (_) {}
+    }
+  }, [])
 
   useEffect(() => { playlistRef.current = videoPlaylist }, [videoPlaylist])
 
@@ -91,12 +107,12 @@ function CollabPage() {
   useEffect(() => {
     return () => {
       localBlobUrlsRef.current.forEach(url => { try { URL.revokeObjectURL(url) } catch (_) {} })
-      // Also revoke any local HDRI blob
+      revokeBlob(modelBlobRef.current)
+      revokeBlob(hdriBlobRef.current)
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
-      // Cleanup local camera stream
       if (localCameraStream) {
         localCameraStream.getTracks().forEach(t => t.stop())
       }
@@ -200,20 +216,28 @@ function CollabPage() {
     syncedImageUrlRef.current = null
   }, [localCameraStream])
 
-  // ── Video helpers ─────────────────────────────────────────────────────────
+  // ── Video helpers (revoke blob after load for IP protection) ───────────────
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     const v = document.createElement('video')
-    v.src = url; v.crossOrigin = 'anonymous'; v.loop = true
-    v.muted = true; v.playsInline = true; v.preload = 'auto'
+    v.src = url
+    v.crossOrigin = 'anonymous'
+    v.loop = true
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
+      revokeBlob(url)
       v.play().catch(() => {})
       videoRef.current = v
-      setVideoElement(v); setVideoLoaded(true)
-      setActiveVideoId(id); setIsPlaying(true); setIsLooping(true)
+      setVideoElement(v)
+      setVideoLoaded(true)
+      setActiveVideoId(id)
+      setIsPlaying(true)
+      setIsLooping(true)
     })
     v.load()
-  }, [])
+  }, [revokeBlob])
 
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
@@ -237,17 +261,36 @@ function CollabPage() {
           return
         }
 
-        setModelUrl(data.stage_url)
+        const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
-        // Load full media playlist, or fall back to legacy single video_url
+        const modelSrc = data.stage_url
+        if (modelSrc && isRemote(modelSrc)) {
+          try {
+            const blobUrl = await fetchAsBlobUrl(modelSrc)
+            modelBlobRef.current = blobUrl
+            setModelUrl(blobUrl)
+          } catch {
+            setModelUrl(modelSrc)
+          }
+        } else {
+          setModelUrl(modelSrc)
+        }
+
+        const loadMediaPlaylist = async (items) => {
+          const restored = []
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i]
+            let url = item.url
+            if (isRemote(url)) {
+              try { url = await fetchAsBlobUrl(url) } catch {}
+            }
+            restored.push({ id: Date.now() + i, name: item.name, url, type: item.type, external: true })
+          }
+          return restored
+        }
+
         if (data.media_playlist && data.media_playlist.length > 0) {
-          const restored = data.media_playlist.map((item, i) => ({
-            id:       Date.now() + i,
-            name:     item.name,
-            url:      item.url,
-            type:     item.type,
-            external: true,
-          }))
+          const restored = await loadMediaPlaylist(data.media_playlist)
           clipCountRef.current = restored.length
           setVideoPlaylist(restored)
           const first = restored[0]
@@ -259,10 +302,14 @@ function CollabPage() {
             activateVideo(first.id, first.url)
           }
         } else if (data.video_url) {
+          let vidUrl = data.video_url
+          if (isRemote(vidUrl)) {
+            try { vidUrl = await fetchAsBlobUrl(vidUrl) } catch {}
+          }
           const id = Date.now()
           clipCountRef.current = 1
-          setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: data.video_url }])
-          activateVideo(id, data.video_url)
+          setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: vidUrl, external: true }])
+          activateVideo(id, vidUrl)
         }
 
         setCameraPresets(data.camera_presets || [])
@@ -280,9 +327,19 @@ function CollabPage() {
           setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
           setProtectLed(cfg.protectLed              ?? true)
 
-          // HDRI URL
           if (cfg.customHdriUrl) {
-            setCustomHdriUrl(cfg.customHdriUrl)
+            const hdriSrc = cfg.customHdriUrl
+            if (isRemote(hdriSrc)) {
+              try {
+                const blobUrl = await fetchAsBlobUrl(hdriSrc)
+                hdriBlobRef.current = blobUrl
+                setCustomHdriUrl(blobUrl)
+              } catch {
+                setCustomHdriUrl(hdriSrc)
+              }
+            } else {
+              setCustomHdriUrl(hdriSrc)
+            }
           } else {
             setCustomHdriUrl(null)
           }
@@ -518,6 +575,8 @@ function CollabPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
+        onHdriLoadComplete={() => { if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null } }}
+        onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
