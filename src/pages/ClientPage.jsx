@@ -9,6 +9,7 @@ import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
+import { useVisitorTracking } from '../hooks/useVisitorTracking'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -67,6 +68,7 @@ function ClientPage() {
   const videoRef = useRef(null)
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
+  const { logUserEvent } = useVisitorTracking(`client/${projectId || 'unknown'}`)
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
@@ -253,20 +255,25 @@ function ClientPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
+    logUserEvent('SCREENSHOT_TAKEN', { details: 'Triggered from Client' })
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Client_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName, versionStatus])
+  }, [projectId, projectName, versionStatus, logUserEvent])
 
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
-  }, [])
+    logUserEvent('CAMERA_CHANGE', { presetName: preset?.name ?? 'Unknown' })
+  }, [logUserEvent])
 
   const handleToggleAutoplay = useCallback(() => {
-    setIsAutoplayActive(prev => !prev)
-  }, [])
+    setIsAutoplayActive(prev => {
+      logUserEvent('AUTOPLAY_TOGGLED', { state: prev ? 'OFF' : 'ON' })
+      return !prev
+    })
+  }, [logUserEvent])
 
   // Autoplay loop
   useEffect(() => {
