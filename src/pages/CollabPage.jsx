@@ -253,6 +253,8 @@ function CollabPage() {
           return
         }
 
+        incrementStat('total_views')
+
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
         const modelSrc = data.stage_url
@@ -354,7 +356,7 @@ function CollabPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs, incrementStat])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────

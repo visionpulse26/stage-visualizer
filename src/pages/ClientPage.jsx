@@ -128,6 +128,9 @@ function ClientPage() {
           return
         }
 
+        // Count view only after project exists in DB (ensures increment hits a real row)
+        incrementStat('total_views')
+
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
         // Asset masking: fetch remote URLs as blobs to avoid exposing raw URLs
@@ -237,7 +240,7 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs, incrementStat])
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {

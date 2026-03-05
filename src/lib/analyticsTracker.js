@@ -24,17 +24,38 @@ export function getOrCreateSessionId() {
   }
 }
 
-/** Increment integer stat. total_views sent immediately; others batched. */
+/**
+ * Increment integer stat. total_views: awaited + one retry so metrics reliably update.
+ * Others go through batched TrackingService.
+ */
 export function incrementProjectStat(projectId, statName) {
   if (!projectId || !statName) return
-  // total_views: send immediately — critical for metrics; batched events can be lost
   if (statName === 'total_views') {
-    supabase.rpc('increment_project_stat', { p_project_id: projectId, p_stat_name: statName })
-      .then(({ error }) => { if (error) console.warn('[Analytics] total_views:', error.message) })
-      .catch((e) => console.warn('[Analytics] total_views:', e))
+    incrementTotalViewsOnce(projectId).catch(() => {})
     return
   }
   trackStat(projectId, statName)
+}
+
+/** Awaited call with one retry — ensures view count is persisted. */
+async function incrementTotalViewsOnce(projectId) {
+  const run = async () => {
+    const { error } = await supabase.rpc('increment_project_stat', {
+      p_project_id: projectId,
+      p_stat_name: 'total_views',
+    })
+    if (error) throw new Error(error.message)
+  }
+  try {
+    await run()
+  } catch (e) {
+    await new Promise((r) => setTimeout(r, 600))
+    try {
+      await run()
+    } catch (e2) {
+      console.warn('[Analytics] total_views failed:', e2?.message || e2)
+    }
+  }
 }
 
 /** Increment JSONB key. Delegates to TrackingService (batched + debounced). */

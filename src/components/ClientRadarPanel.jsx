@@ -45,13 +45,6 @@ export default function ClientRadarPanel({ publishedId }) {
     loadStats()
   }, [loadStats])
 
-  // Auto-refresh so Admin sees metric updates without clicking Refresh
-  useEffect(() => {
-    if (!publishedId) return
-    const iv = setInterval(loadStats, 15000)
-    return () => clearInterval(iv)
-  }, [publishedId, loadStats])
-
   useEffect(() => {
     const channel = supabase.channel(REALTIME_CHANNEL_NAME)
     channel

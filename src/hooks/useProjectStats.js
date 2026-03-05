@@ -28,7 +28,7 @@ export function useProjectStats(projectId, pageLabel = 'client') {
     const sessionId = getOrCreateSessionId()
     const pageVisited = `${pageLabel}/${projectId}`
     leavePresenceRef.current = subscribePresence(sessionId, pageVisited)
-    incrementProjectStat(projectId, 'total_views')
+    // total_views is now incremented from ClientPage/CollabPage after project loads
     const onUnload = () => { flushNow() }
     window.addEventListener('beforeunload', onUnload)
     return () => {
