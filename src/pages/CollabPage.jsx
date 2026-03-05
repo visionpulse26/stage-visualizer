@@ -24,8 +24,8 @@ function CollabPage() {
     reset: resetStageLoading,
   } = useStageLoading({
     onLoadComplete: () => {
+      // Revoke GLB blob only — HDRI blob is revoked separately in onHdriLoadComplete
       if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
-      if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null }
     },
   })
 
@@ -329,6 +329,9 @@ function CollabPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
+            // Extract extension from the ORIGINAL URL before any blob conversion
+            const rawExt = hdriSrc.split('.').pop()?.toLowerCase() || 'hdr'
+            setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
             if (isRemote(hdriSrc)) {
               try {
                 const blobUrl = await fetchAsBlobUrl(hdriSrc)
@@ -341,6 +344,7 @@ function CollabPage() {
               setCustomHdriUrl(hdriSrc)
             }
           } else {
+            setHdriFileExt('hdr')
             setCustomHdriUrl(null)
           }
 

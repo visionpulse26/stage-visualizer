@@ -23,8 +23,9 @@ function ClientPage() {
     reset: resetStageLoading,
   } = useStageLoading({
     onLoadComplete: () => {
+      // Revoke GLB blob only — HDRI blob is revoked separately in onHdriLoadComplete
+      // (HDRI may still be loading when GLB finishes; early revoke breaks HDRI load)
       if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
-      if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null }
     },
   })
 
@@ -50,6 +51,7 @@ function ClientPage() {
   // ── Scene config (LITE & STABLE — consistent with Admin settings) ───────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
   const [customHdriUrl,      setCustomHdriUrl]      = useState(null)
+  const [hdriFileExt,        setHdriFileExt]        = useState('hdr')
   const [hdriLoading,        setHdriLoading]        = useState(false)
   const [envIntensity,       setEnvIntensity]       = useState(1)
   const [bgBlur,             setBgBlur]             = useState(0)
@@ -208,6 +210,9 @@ function ClientPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
+            // Extract extension from the ORIGINAL URL before any blob conversion
+            const rawExt = hdriSrc.split('.').pop()?.toLowerCase() || 'hdr'
+            setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
             if (isRemote(hdriSrc)) {
               try {
                 const blobUrl = await fetchAsBlobUrl(hdriSrc)
@@ -220,6 +225,7 @@ function ClientPage() {
               setCustomHdriUrl(hdriSrc)
             }
           } else {
+            setHdriFileExt('hdr')
             setCustomHdriUrl(null)
           }
           if (cfg.autoplayIntervalSeconds != null) {
@@ -356,7 +362,7 @@ function ClientPage() {
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
-        hdriFileExt={customHdriUrl?.split('.').pop()?.toLowerCase() || 'hdr'}
+        hdriFileExt={hdriFileExt}
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
