@@ -22,11 +22,26 @@ export function getOrCreateSessionId() {
   }
 }
 
-/** Increment a project stat. Fire-and-forget; does not block UI. */
+/** Increment integer stat (total_views, total_screenshots, etc). Fire-and-forget. */
 export function incrementProjectStat(projectId, statName) {
   if (!projectId || !statName) return
   supabase
     .rpc('increment_project_stat', { p_project_id: projectId, p_stat_name: statName })
+    .then(() => {})
+    .catch(() => {})
+}
+
+/** Increment a key in a JSONB column (clip_popularity, camera_popularity, screenshot_hotspots). */
+export function incrementProjectJsonbKey(projectId, columnName, key) {
+  if (!projectId || !columnName || !key) return
+  const safeKey = String(key).trim()
+  if (!safeKey) return
+  supabase
+    .rpc('increment_project_jsonb_key', {
+      p_project_id: projectId,
+      p_column: columnName,
+      p_key: safeKey,
+    })
     .then(() => {})
     .catch(() => {})
 }

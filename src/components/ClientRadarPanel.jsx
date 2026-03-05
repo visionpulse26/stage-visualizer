@@ -13,6 +13,9 @@ export default function ClientRadarPanel({ publishedId }) {
     total_screenshots: 0,
     total_camera_changes: 0,
     total_clip_clicks: 0,
+    clip_popularity: {},
+    camera_popularity: {},
+    screenshot_hotspots: {},
   })
   const [loading, setLoading] = useState(false)
 
@@ -21,7 +24,7 @@ export default function ClientRadarPanel({ publishedId }) {
     setLoading(true)
     const { data, error } = await supabase
       .from('projects')
-      .select('total_views, total_screenshots, total_camera_changes, total_clip_clicks')
+      .select('total_views, total_screenshots, total_camera_changes, total_clip_clicks, clip_popularity, camera_popularity, screenshot_hotspots')
       .eq('id', publishedId)
       .single()
     if (!error && data) {
@@ -30,6 +33,9 @@ export default function ClientRadarPanel({ publishedId }) {
         total_screenshots: data.total_screenshots ?? 0,
         total_camera_changes: data.total_camera_changes ?? 0,
         total_clip_clicks: data.total_clip_clicks ?? 0,
+        clip_popularity: data.clip_popularity ?? {},
+        camera_popularity: data.camera_popularity ?? {},
+        screenshot_hotspots: data.screenshot_hotspots ?? {},
       })
     }
     setLoading(false)
@@ -137,12 +143,19 @@ export default function ClientRadarPanel({ publishedId }) {
             loading ? (
               <p className="text-[10px] text-white/35">Loading…</p>
             ) : (
-              <div className="space-y-1.5 text-[11px]">
-                <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />
-                <MetricRow icon="📸" label="Screenshots Taken" value={stats.total_screenshots} />
-                <MetricRow icon="🎥" label="Camera Angles Explored" value={stats.total_camera_changes} />
-                <MetricRow icon="🎬" label="Media Clips Played" value={stats.total_clip_clicks} />
-              </div>
+              <>
+                <div className="space-y-1.5 text-[11px]">
+                  <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />
+                  <MetricRow icon="📸" label="Screenshots Taken" value={stats.total_screenshots} />
+                  <MetricRow icon="🎥" label="Camera Angles Explored" value={stats.total_camera_changes} />
+                  <MetricRow icon="🎬" label="Media Clips Played" value={stats.total_clip_clicks} />
+                </div>
+                <TopCharts
+                  clipPopularity={stats.clip_popularity}
+                  cameraPopularity={stats.camera_popularity}
+                  screenshotHotspots={stats.screenshot_hotspots}
+                />
+              </>
             )
           ) : (
             <p className="text-[10px] text-white/35">Open a project to view stats</p>
@@ -163,5 +176,61 @@ function MetricRow({ icon, label, value }) {
       </span>
       <span className="font-semibold" style={{ color: ACCENT }}>{value}</span>
     </div>
+  )
+}
+
+function topEntries(obj, limit = 3) {
+  if (!obj || typeof obj !== 'object') return []
+  return Object.entries(obj)
+    .map(([k, v]) => ({ key: k, value: typeof v === 'number' ? v : parseInt(v, 10) || 0 }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit)
+}
+
+function TopCharts({ clipPopularity, cameraPopularity, screenshotHotspots }) {
+  const clips = topEntries(clipPopularity)
+  const cameras = topEntries(cameraPopularity)
+  const hotspots = topEntries(screenshotHotspots)
+  if (clips.length === 0 && cameras.length === 0 && hotspots.length === 0) return null
+  return (
+    <>
+      <div className="h-px mt-3" style={{ background: `${ACCENT}20` }} />
+      <p className="text-[9px] uppercase tracking-widest text-white/40 mt-2 mb-1.5">Top Charts</p>
+      <div className="space-y-2 text-[10px]">
+        {clips.length > 0 && (
+          <div>
+            <p className="text-white/50 mb-0.5">🎬 Clips</p>
+            {clips.map(({ key, value }) => (
+              <div key={key} className="flex justify-between py-0.5">
+                <span className="text-white/70 truncate mr-2 max-w-[140px]" title={key}>{key}</span>
+                <span style={{ color: ACCENT }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {cameras.length > 0 && (
+          <div>
+            <p className="text-white/50 mb-0.5">🎥 Cameras</p>
+            {cameras.map(({ key, value }) => (
+              <div key={key} className="flex justify-between py-0.5">
+                <span className="text-white/70 truncate mr-2 max-w-[140px]" title={key}>{key}</span>
+                <span style={{ color: ACCENT }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {hotspots.length > 0 && (
+          <div>
+            <p className="text-white/50 mb-0.5">📸 Screenshot hotspots</p>
+            {hotspots.map(({ key, value }) => (
+              <div key={key} className="flex justify-between py-0.5">
+                <span className="text-white/70 truncate mr-2 max-w-[140px]" title={key}>{key}</span>
+                <span style={{ color: ACCENT }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   )
 }

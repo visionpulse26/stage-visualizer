@@ -7,6 +7,7 @@ const IconCopy       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="cu
 const IconEdit       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 const IconTrash      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
 const IconFolderOpen = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/></svg>
+const IconClone      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
 const IconRefresh    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ function Toast({ msg, type = 'error', onDismiss }) {
 }
 
 // ── Projects Tab ──────────────────────────────────────────────────────────────
-function ProjectsTab({ onOpenProject }) {
+function ProjectsTab({ onOpenProject, onClose }) {
   const [projects,    setProjects]    = useState([])
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState(null)
@@ -68,6 +69,7 @@ function ProjectsTab({ onOpenProject }) {
   const [editingName, setEditingName] = useState('')
   const [confirmId,   setConfirmId]   = useState(null)
   const [deletingId,  setDeletingId]  = useState(null)
+  const [cloningId,   setCloningId]   = useState(null)
   const [copied,      setCopied]      = useState(null)
 
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
@@ -106,6 +108,43 @@ function ProjectsTab({ onOpenProject }) {
       await load()
     }
   }, [editingName, load])
+
+  const handleClone = useCallback(async (project) => {
+    const name = window.prompt('Enter name for the cloned project:', `${project.name || 'Untitled'} - Round 2`)
+    if (!name || !name.trim()) return
+    setCloningId(project.id); setToast(null)
+    try {
+      const { data: newId, error: rpcErr } = await supabase.rpc('clone_project', {
+        p_source_id: project.id,
+        p_new_name: name.trim(),
+      })
+      if (rpcErr) {
+        setToast({ msg: `Clone failed: ${rpcErr.message}`, type: 'error' })
+        return
+      }
+      if (!newId) {
+        setToast({ msg: 'Clone failed: source project not found.', type: 'error' })
+        return
+      }
+      const { data: newProject, error: fetchErr } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', newId)
+        .single()
+      if (fetchErr || !newProject) {
+        setToast({ msg: 'Cloned but failed to load. Refresh the list.', type: 'error' })
+        await load()
+        return
+      }
+      setToast({ msg: 'Project cloned successfully. Ready for new media assets.', type: 'success' })
+      onOpenProject(newProject)
+      onClose?.()
+    } catch (err) {
+      setToast({ msg: `Unexpected error: ${err.message}`, type: 'error' })
+    } finally {
+      setCloningId(null)
+    }
+  }, [load, onOpenProject, onClose])
 
   const handleDelete = useCallback(async (project) => {
     setDeletingId(project.id); setConfirmId(null); setToast(null)
@@ -196,6 +235,14 @@ function ProjectsTab({ onOpenProject }) {
               title="Rename"
             >
               <IconEdit />
+            </button>
+            <button
+              onClick={() => handleClone(p)}
+              disabled={cloningId === p.id}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-white/25 hover:text-white/60 transition-all disabled:opacity-50"
+              title="Clone project"
+            >
+              <IconClone />
             </button>
           </div>
 
@@ -513,7 +560,7 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
         <div className="flex-1 overflow-y-auto px-6 py-5 scrollbar-thin">
           {activeTab === 'projects' && (
             <>
-              <ProjectsTab onOpenProject={handleOpenProject} />
+              <ProjectsTab onOpenProject={handleOpenProject} onClose={onClose} />
               <RlsBanner />
             </>
           )}

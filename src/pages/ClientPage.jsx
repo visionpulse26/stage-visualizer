@@ -68,7 +68,8 @@ function ClientPage() {
   const videoRef = useRef(null)
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
-  const { incrementStat } = useProjectStats(projectId, 'client')
+  const { incrementStat, incrementJsonb } = useProjectStats(projectId, 'client')
+  const currentCameraRef = useRef(null)
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
@@ -241,6 +242,7 @@ function ClientPage() {
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
     incrementStat('total_clip_clicks')
+    incrementJsonb('clip_popularity', clip?.name || 'Unknown')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -248,7 +250,7 @@ function ClientPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo, incrementStat])
+  }, [activateVideo, incrementStat, incrementJsonb])
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
@@ -257,6 +259,7 @@ function ClientPage() {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
     incrementStat('total_screenshots')
+    incrementJsonb('screenshot_hotspots', currentCameraRef.current || 'Default')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Client_${projectId}.png`
@@ -267,7 +270,9 @@ function ClientPage() {
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
     incrementStat('total_camera_changes')
-  }, [incrementStat])
+    incrementJsonb('camera_popularity', preset?.name || 'Unknown')
+    currentCameraRef.current = preset?.name || null
+  }, [incrementStat, incrementJsonb])
 
   const handleToggleAutoplay = useCallback(() => {
     setIsAutoplayActive(prev => !prev)

@@ -86,7 +86,8 @@ function CollabPage() {
   const playlistRef  = useRef([])
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
-  const { incrementStat } = useProjectStats(projectId, 'collab')
+  const { incrementStat, incrementJsonb } = useProjectStats(projectId, 'collab')
+  const currentCameraRef = useRef(null)
 
   // Track blob URLs from local uploads (Collab-only) — revoked on clear/unmount
   const localBlobUrlsRef = useRef([])
@@ -400,6 +401,7 @@ function CollabPage() {
 
   const handleActivateVideo = useCallback((clip) => {
     incrementStat('total_clip_clicks')
+    incrementJsonb('clip_popularity', clip?.name || 'Unknown')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -407,7 +409,7 @@ function CollabPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo, incrementStat])
+  }, [activateVideo, incrementStat, incrementJsonb])
 
   const handleClearPlaylist = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -478,7 +480,9 @@ function CollabPage() {
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
     incrementStat('total_camera_changes')
-  }, [incrementStat])
+    incrementJsonb('camera_popularity', preset?.name || 'Unknown')
+    currentCameraRef.current = preset?.name || null
+  }, [incrementStat, incrementJsonb])
 
   const handleToggleAutoplay = useCallback(() => {
     setIsAutoplayActive(prev => !prev)
@@ -534,7 +538,7 @@ function CollabPage() {
     a.download = `Stage_Collab_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName, versionStatus, incrementStat])
+  }, [projectId, projectName, versionStatus, incrementStat, incrementJsonb])
 
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {

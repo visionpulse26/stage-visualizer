@@ -2,20 +2,24 @@ import { useEffect, useCallback, useRef } from 'react'
 import {
   getOrCreateSessionId,
   incrementProjectStat,
+  incrementProjectJsonbKey,
   subscribePresence,
 } from '../lib/analyticsTracker'
 
 /**
  * Aggregate stats tracking for Client/Collab pages.
  * - On mount: increment total_views, join presence channel.
- * - Returns incrementStat(statName) for: total_screenshots, total_camera_changes, total_clip_clicks.
- * - Fire-and-forget; does not block UI.
+ * - Returns incrementStat(statName), incrementJsonb(columnName, key).
  */
 export function useProjectStats(projectId, pageLabel = 'client') {
   const leavePresenceRef = useRef(null)
 
   const incrementStat = useCallback((statName) => {
     if (projectId) incrementProjectStat(projectId, statName)
+  }, [projectId])
+
+  const incrementJsonb = useCallback((columnName, key) => {
+    if (projectId) incrementProjectJsonbKey(projectId, columnName, key)
   }, [projectId])
 
   useEffect(() => {
@@ -29,5 +33,5 @@ export function useProjectStats(projectId, pageLabel = 'client') {
     }
   }, [projectId, pageLabel])
 
-  return { incrementStat }
+  return { incrementStat, incrementJsonb }
 }

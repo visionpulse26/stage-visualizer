@@ -1,15 +1,20 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- AGGREGATE STATS: project-level counters (replaces granular event logging)
--- Run in Supabase SQL Editor after projects table exists.
+-- AGGREGATE STATS + JSONB ANALYTICS + CLONE
+-- Run in Supabase SQL Editor. Fixes metrics stuck at 0 (ensure RPC exists).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- 1. Add stat columns to projects (integer counters, default 0)
+-- 1. Integer stat columns (project-level counters)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_views INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_screenshots INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_camera_changes INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS total_clip_clicks INTEGER NOT NULL DEFAULT 0;
 
--- 2. RPC: Increment a stat column. SECURITY DEFINER allows anon to call it.
+-- 2. JSONB popularity / hotspot columns
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS clip_popularity JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS camera_popularity JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS screenshot_hotspots JSONB NOT NULL DEFAULT '{}';
+
+-- 3. RPC: Increment integer stat. SECURITY DEFINER bypasses RLS (fixes metrics stuck at 0).
 CREATE OR REPLACE FUNCTION increment_project_stat(p_project_id UUID, p_stat_name TEXT)
 RETURNS void
 LANGUAGE plpgsql
@@ -29,6 +34,88 @@ BEGIN
 END;
 $$;
 
--- 3. Grant execute to anon (Client/Collab) and authenticated (Admin)
+-- 4. RPC: Increment a key inside a JSONB column (clip_popularity, camera_popularity, screenshot_hotspots)
+CREATE OR REPLACE FUNCTION increment_project_jsonb_key(p_project_id UUID, p_column TEXT, p_key TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  current_val INTEGER;
+  target_col TEXT;
+BEGIN
+  target_col := LOWER(TRIM(p_column));
+  IF target_col NOT IN ('clip_popularity', 'camera_popularity', 'screenshot_hotspots') THEN
+    RETURN;
+  END IF;
+  IF p_key IS NULL OR LENGTH(TRIM(p_key)) = 0 THEN
+    RETURN;
+  END IF;
+
+  IF target_col = 'clip_popularity' THEN
+    SELECT COALESCE((clip_popularity->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+    UPDATE projects SET clip_popularity = jsonb_set(COALESCE(clip_popularity, '{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1))
+    WHERE id = p_project_id;
+  ELSIF target_col = 'camera_popularity' THEN
+    SELECT COALESCE((camera_popularity->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+    UPDATE projects SET camera_popularity = jsonb_set(COALESCE(camera_popularity, '{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1))
+    WHERE id = p_project_id;
+  ELSIF target_col = 'screenshot_hotspots' THEN
+    SELECT COALESCE((screenshot_hotspots->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+    UPDATE projects SET screenshot_hotspots = jsonb_set(COALESCE(screenshot_hotspots, '{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1))
+    WHERE id = p_project_id;
+  END IF;
+END;
+$$;
+
+-- 5. RPC: Clone project (reuse stage/HDRI URLs; reset playlist & stats)
+CREATE OR REPLACE FUNCTION clone_project(p_source_id UUID, p_new_name TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  src RECORD;
+  new_id UUID;
+BEGIN
+  SELECT id, stage_url, video_url, camera_presets, grid_cell_size, scene_config, name
+  INTO src FROM projects WHERE id = p_source_id LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  new_id := gen_random_uuid();
+
+  INSERT INTO projects (
+    id, name, stage_url, video_url, media_playlist, camera_presets, grid_cell_size, scene_config,
+    total_views, total_screenshots, total_camera_changes, total_clip_clicks,
+    clip_popularity, camera_popularity, screenshot_hotspots
+  ) VALUES (
+    new_id,
+    COALESCE(NULLIF(TRIM(p_new_name), ''), src.name || ' (Clone)'),
+    src.stage_url,
+    NULL,
+    '[]'::jsonb,
+    COALESCE(src.camera_presets, '[]'::jsonb),
+    COALESCE(src.grid_cell_size, 1),
+    jsonb_set(
+      COALESCE(src.scene_config, '{}'::jsonb),
+      ARRAY['versionStatus'],
+      '""'::jsonb
+    ),
+    0, 0, 0, 0,
+    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb
+  );
+
+  RETURN new_id;
+END;
+$$;
+
+-- 6. Grants
 GRANT EXECUTE ON FUNCTION increment_project_stat(UUID, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION increment_project_stat(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION increment_project_jsonb_key(UUID, TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION increment_project_jsonb_key(UUID, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION clone_project(UUID, TEXT) TO authenticated;
