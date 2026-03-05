@@ -86,7 +86,6 @@ function CollabPage() {
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
   const modelBlobRef = useRef(null)
-  const hdriBlobRef  = useRef(null)
 
   // Track blob URLs created locally so we can revoke them on unmount (memory safety)
   const localBlobUrlsRef = useRef([])
@@ -108,7 +107,6 @@ function CollabPage() {
     return () => {
       localBlobUrlsRef.current.forEach(url => { try { URL.revokeObjectURL(url) } catch (_) {} })
       revokeBlob(modelBlobRef.current)
-      revokeBlob(hdriBlobRef.current)
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
@@ -329,20 +327,12 @@ function CollabPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
-            // Extract extension from the ORIGINAL URL before any blob conversion
-            const rawExt = hdriSrc.split('.').pop()?.toLowerCase() || 'hdr'
+            // Extract extension (strip query string: file.hdr?q=1 -> hdr)
+            const basePath = hdriSrc.split('?')[0] || hdriSrc
+            const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
             setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
-            if (isRemote(hdriSrc)) {
-              try {
-                const blobUrl = await fetchAsBlobUrl(hdriSrc)
-                hdriBlobRef.current = blobUrl
-                setCustomHdriUrl(blobUrl)
-              } catch {
-                setCustomHdriUrl(hdriSrc)
-              }
-            } else {
-              setCustomHdriUrl(hdriSrc)
-            }
+            // Use direct URL — same as AdminPage. Blob conversion caused errors on Client/Collab.
+            setCustomHdriUrl(hdriSrc)
           } else {
             setHdriFileExt('hdr')
             setCustomHdriUrl(null)
@@ -460,6 +450,11 @@ function CollabPage() {
   const handleSetHdriUrl = useCallback((url) => {
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    if (url) {
+      const basePath = url.split('?')[0] || url
+      const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
+      setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
     }
     setCustomHdriUrl(url)
     setHdriPreset('none')
@@ -579,7 +574,6 @@ function CollabPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
-        onHdriLoadComplete={() => { if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null } }}
         onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}

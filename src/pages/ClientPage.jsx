@@ -69,7 +69,6 @@ function ClientPage() {
 
   const videoRef = useRef(null)
   const modelBlobRef = useRef(null)
-  const hdriBlobRef = useRef(null)
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
@@ -83,7 +82,6 @@ function ClientPage() {
     return () => {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
       revokeBlob(modelBlobRef.current)
-      revokeBlob(hdriBlobRef.current)
     }
   }, [revokeBlob])
 
@@ -210,20 +208,12 @@ function ClientPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
-            // Extract extension from the ORIGINAL URL before any blob conversion
-            const rawExt = hdriSrc.split('.').pop()?.toLowerCase() || 'hdr'
+            // Extract extension (strip query string: file.hdr?q=1 -> hdr)
+            const basePath = hdriSrc.split('?')[0] || hdriSrc
+            const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
             setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
-            if (isRemote(hdriSrc)) {
-              try {
-                const blobUrl = await fetchAsBlobUrl(hdriSrc)
-                hdriBlobRef.current = blobUrl
-                setCustomHdriUrl(blobUrl)
-              } catch {
-                setCustomHdriUrl(hdriSrc)
-              }
-            } else {
-              setCustomHdriUrl(hdriSrc)
-            }
+            // Use direct URL — same as AdminPage. Blob conversion caused CORS/fetch errors on Client.
+            setCustomHdriUrl(hdriSrc)
           } else {
             setHdriFileExt('hdr')
             setCustomHdriUrl(null)
@@ -366,7 +356,6 @@ function ClientPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
-        onHdriLoadComplete={() => { if (hdriBlobRef.current) { revokeBlob(hdriBlobRef.current); hdriBlobRef.current = null } }}
         onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
