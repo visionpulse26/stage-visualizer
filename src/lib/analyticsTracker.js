@@ -1,7 +1,7 @@
 /**
  * Stealth analytics: presence + aggregate stat increments.
  * Stats stored on projects table; anon increments via RPC.
- * Uses TrackingService for batched, debounced updates (fixes metrics stuck at 0).
+ * total_views sent immediately (critical); other stats batched via TrackingService.
  */
 
 import { supabase } from './supabaseClient'
@@ -24,8 +24,16 @@ export function getOrCreateSessionId() {
   }
 }
 
-/** Increment integer stat. Delegates to TrackingService (batched + debounced). */
+/** Increment integer stat. total_views sent immediately; others batched. */
 export function incrementProjectStat(projectId, statName) {
+  if (!projectId || !statName) return
+  // total_views: send immediately — critical for metrics; batched events can be lost
+  if (statName === 'total_views') {
+    supabase.rpc('increment_project_stat', { p_project_id: projectId, p_stat_name: statName })
+      .then(({ error }) => { if (error) console.warn('[Analytics] total_views:', error.message) })
+      .catch((e) => console.warn('[Analytics] total_views:', e))
+    return
+  }
   trackStat(projectId, statName)
 }
 

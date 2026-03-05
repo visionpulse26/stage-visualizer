@@ -8,7 +8,7 @@
 
 import { supabase } from './supabaseClient'
 
-const FLUSH_INTERVAL_MS = 2000
+const FLUSH_INTERVAL_MS = 800
 const FLUSH_MAX_ITEMS = 10
 const DEBOUNCE_MS = 400
 

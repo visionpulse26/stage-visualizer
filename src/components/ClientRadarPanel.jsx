@@ -45,6 +45,13 @@ export default function ClientRadarPanel({ publishedId }) {
     loadStats()
   }, [loadStats])
 
+  // Auto-refresh so Admin sees metric updates without clicking Refresh
+  useEffect(() => {
+    if (!publishedId) return
+    const iv = setInterval(loadStats, 15000)
+    return () => clearInterval(iv)
+  }, [publishedId, loadStats])
+
   useEffect(() => {
     const channel = supabase.channel(REALTIME_CHANNEL_NAME)
     channel
@@ -191,11 +198,14 @@ function TopCharts({ clipPopularity, cameraPopularity, screenshotHotspots }) {
   const clips = topEntries(clipPopularity)
   const cameras = topEntries(cameraPopularity)
   const hotspots = topEntries(screenshotHotspots)
-  if (clips.length === 0 && cameras.length === 0 && hotspots.length === 0) return null
+  const hasData = clips.length > 0 || cameras.length > 0 || hotspots.length > 0
   return (
     <>
       <div className="h-px mt-3" style={{ background: `${ACCENT}20` }} />
       <p className="text-[9px] uppercase tracking-widest text-white/40 mt-2 mb-1.5">Top Charts</p>
+      {!hasData && (
+        <p className="text-[10px] text-white/30 italic py-1">No interactions yet</p>
+      )}
       <div className="space-y-2 text-[10px]">
         {clips.length > 0 && (
           <div>
