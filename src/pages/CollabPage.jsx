@@ -534,7 +534,7 @@ function CollabPage() {
     a.download = `Stage_Collab_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName, versionStatus, logUserEvent])
+  }, [projectId, projectName, versionStatus, incrementStat])
 
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {

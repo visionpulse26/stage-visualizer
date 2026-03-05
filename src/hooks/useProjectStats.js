@@ -20,7 +20,6 @@ export function useProjectStats(projectId, pageLabel = 'client') {
 
   useEffect(() => {
     if (!projectId) return
-    hasIncrementedViewRef.current = false
     const sessionId = getOrCreateSessionId()
     const pageVisited = `${pageLabel}/${projectId}`
     leavePresenceRef.current = subscribePresence(sessionId, pageVisited)
