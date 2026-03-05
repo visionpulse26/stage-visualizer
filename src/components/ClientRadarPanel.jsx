@@ -151,6 +151,9 @@ export default function ClientRadarPanel({ publishedId }) {
               <p className="text-[10px] text-white/35">Loading…</p>
             ) : (
               <>
+                <p className="text-[9px] text-white/25 mb-1.5">
+                  Open <a href={`/view/${publishedId}`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/50" style={{ color: ACCENT }}>View link</a> in another tab to generate metrics.
+                </p>
                 <div className="space-y-1.5 text-[11px]">
                   <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />
                   <MetricRow icon="📸" label="Screenshots Taken" value={stats.total_screenshots} />

@@ -69,6 +69,8 @@ function UIPanel({
   projectName, onProjectNameChange,
   versionStatus, onVersionStatusChange,
   onOpenDashboard,
+  onCloneAsNewRound,  // optional
+  cloneToast,         // optional: "Project cloned successfully..."
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
   hdriPreset, onHdriPresetChange,
   hdriLoading,
@@ -869,6 +871,20 @@ function UIPanel({
                 <span>🗂️ Manage Published Projects</span>
               </button>
 
+              {/* Clone as New Round — visible when project is published */}
+              {publishedId && onCloneAsNewRound && (
+                <button
+                  onClick={onCloneAsNewRound}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-xs font-medium transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                  <span>Republish as New Round</span>
+                </button>
+              )}
+
               {/* Project Name (new projects only) */}
               {!publishedId && (
                 <div className="space-y-1">
@@ -900,6 +916,13 @@ function UIPanel({
                   </span>
                 ) : publishedId ? '🔄 Re-Publish' : '🚀 TAO VẪN BỊ KHÙNG ĐỂ DÙNG'}
               </button>
+
+              {/* Clone success toast */}
+              {cloneToast && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                  <p className="text-emerald-400 text-xs font-semibold">✓ {cloneToast}</p>
+                </div>
+              )}
 
               {/* Status messages */}
               {publishStatus === 'success' && (

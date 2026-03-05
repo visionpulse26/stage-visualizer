@@ -163,3 +163,4 @@ GRANT EXECUTE ON FUNCTION increment_project_jsonb_key(UUID, TEXT, TEXT) TO authe
 GRANT EXECUTE ON FUNCTION batch_increment_project_stats(UUID, JSONB) TO anon;
 GRANT EXECUTE ON FUNCTION batch_increment_project_stats(UUID, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION clone_project(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION clone_project(UUID, TEXT) TO anon;

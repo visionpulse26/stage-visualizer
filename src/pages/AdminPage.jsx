@@ -96,6 +96,7 @@ function AdminPage() {
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
+  const [cloneToast, setCloneToast] = useState(null)
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -675,6 +676,45 @@ function AdminPage() {
     }
   }, [stageUrl, activateVideo])
 
+  // ── Clone as New Round (from Publish panel) ───────────────────────────────
+  const handleCloneAsNewRound = useCallback(async () => {
+    if (!publishedId) return
+    const name = window.prompt('Enter name for the new round:', `${projectName || 'Untitled'} - Round 2`)
+    if (!name || !name.trim()) return
+    try {
+      const { data: newId, error: rpcErr } = await supabase.rpc('clone_project', {
+        p_source_id: publishedId,
+        p_new_name: name.trim(),
+      })
+      if (rpcErr) {
+        setPublishStatus('error')
+        setPublishError(`Clone failed: ${rpcErr.message}`)
+        return
+      }
+      if (!newId) {
+        setPublishStatus('error')
+        setPublishError('Clone failed: source project not found.')
+        return
+      }
+      const { data: newProject, error: fetchErr } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', newId)
+        .single()
+      if (fetchErr || !newProject) {
+        setPublishStatus('error')
+        setPublishError('Cloned but failed to load. Refresh the list.')
+        return
+      }
+      setCloneToast('Project cloned successfully. Ready for new media assets.')
+      setTimeout(() => setCloneToast(null), 4000)
+      handleOpenProject(newProject)
+    } catch (err) {
+      setPublishStatus('error')
+      setPublishError(`Unexpected error: ${err.message}`)
+    }
+  }, [publishedId, projectName, handleOpenProject])
+
   // ── Publish ──────────────────────────────────────────────────────────────
   const canPublish = !!(stageFile || cloudStageUrl)
 
@@ -882,6 +922,8 @@ function AdminPage() {
           versionStatus={versionStatus}
           onVersionStatusChange={setVersionStatus}
           onOpenDashboard={() => setIsDashboardOpen(true)}
+          onCloneAsNewRound={handleCloneAsNewRound}
+          cloneToast={cloneToast}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
           customHdriUrl={customHdriUrl}
