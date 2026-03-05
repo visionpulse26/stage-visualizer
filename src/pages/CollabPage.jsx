@@ -472,12 +472,12 @@ function CollabPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
-    const dataUrl = captureScreenshotWithWatermark(canvas, projectName)
+    const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName])
+  }, [projectId, projectName, versionStatus])
 
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
