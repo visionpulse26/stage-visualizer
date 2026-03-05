@@ -1,12 +1,12 @@
 /**
- * Stealth analytics: session ID, visitor log, and fire-and-forget event logging.
- * Data is only readable by authenticated Admins via RLS.
+ * Stealth analytics: presence + aggregate stat increments.
+ * Stats stored on projects table; anon increments via RPC.
  */
 
 import { supabase } from './supabaseClient'
 
 const SESSION_STORAGE_KEY = 'stage_visitor_session_id'
-const REALTIME_CHANNEL_NAME = 'global_radar'
+export const REALTIME_CHANNEL_NAME = 'global_radar'
 
 /** Get or create a persistent session ID (survives reloads in same tab). */
 export function getOrCreateSessionId() {
@@ -22,35 +22,11 @@ export function getOrCreateSessionId() {
   }
 }
 
-/**
- * Log a granular event. Fire-and-forget: does not block UI or await.
- */
-export function logUserEvent(sessionId, eventType, detail = {}) {
-  if (!sessionId) return
+/** Increment a project stat. Fire-and-forget; does not block UI. */
+export function incrementProjectStat(projectId, statName) {
+  if (!projectId || !statName) return
   supabase
-    .from('interaction_events')
-    .insert({
-      session_id: sessionId,
-      event_type: eventType,
-      event_detail: typeof detail === 'object' ? detail : { value: detail },
-    })
-    .then(() => {})
-    .catch(() => {})
-}
-
-/**
- * Insert initial visitor log row. Fire-and-forget.
- */
-export function logVisitorEntry(sessionId, pageVisited) {
-  if (!sessionId) return
-  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  supabase
-    .from('visitor_logs')
-    .insert({
-      session_id: sessionId,
-      user_agent: userAgent,
-      page_visited: pageVisited,
-    })
+    .rpc('increment_project_stat', { p_project_id: projectId, p_stat_name: statName })
     .then(() => {})
     .catch(() => {})
 }
@@ -74,5 +50,3 @@ export function subscribePresence(sessionId, pageVisited) {
     channel.untrack().then(() => supabase.removeChannel(channel))
   }
 }
-
-export { REALTIME_CHANNEL_NAME }

@@ -3,6 +3,7 @@ import StageCanvas from '../components/StageCanvas'
 import UIPanel     from '../components/UIPanel'
 import TopBar      from '../components/TopBar'
 import ProjectsDashboard from '../components/ProjectsDashboard'
+import ClientRadarPanel from '../components/ClientRadarPanel'
 import GlobalFooter from '../components/GlobalFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
@@ -908,6 +909,8 @@ function AdminPage() {
 
         <TopBar role="Admin" color="violet" />
       </StageCanvas>
+
+      <ClientRadarPanel publishedId={publishedId} />
 
       {isDashboardOpen && (
         <ProjectsDashboard

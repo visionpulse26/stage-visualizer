@@ -10,7 +10,7 @@ import GlobalFooter from '../components/GlobalFooter'
 import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
-import { useVisitorTracking } from '../hooks/useVisitorTracking'
+import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -86,7 +86,7 @@ function CollabPage() {
   const playlistRef  = useRef([])
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
-  const { logUserEvent } = useVisitorTracking(`collab/${projectId || 'unknown'}`)
+  const { incrementStat } = useProjectStats(projectId, 'collab')
 
   // Track blob URLs from local uploads (Collab-only) — revoked on clear/unmount
   const localBlobUrlsRef = useRef([])
@@ -399,6 +399,7 @@ function CollabPage() {
   }, [activateVideo, validateMediaFile])
 
   const handleActivateVideo = useCallback((clip) => {
+    incrementStat('total_clip_clicks')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -406,7 +407,7 @@ function CollabPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo])
+  }, [activateVideo, incrementStat])
 
   const handleClearPlaylist = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -476,15 +477,12 @@ function CollabPage() {
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
-    logUserEvent('CAMERA_CHANGE', { presetName: preset?.name ?? 'Unknown' })
-  }, [logUserEvent])
+    incrementStat('total_camera_changes')
+  }, [incrementStat])
 
   const handleToggleAutoplay = useCallback(() => {
-    setIsAutoplayActive(prev => {
-      logUserEvent('AUTOPLAY_TOGGLED', { state: prev ? 'OFF' : 'ON' })
-      return !prev
-    })
-  }, [logUserEvent])
+    setIsAutoplayActive(prev => !prev)
+  }, [])
 
   // Autoplay loop
   useEffect(() => {
@@ -530,7 +528,7 @@ function CollabPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
-    logUserEvent('SCREENSHOT_TAKEN', { details: 'Triggered from Collab' })
+    incrementStat('total_screenshots')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`

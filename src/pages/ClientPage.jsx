@@ -9,7 +9,7 @@ import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
-import { useVisitorTracking } from '../hooks/useVisitorTracking'
+import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -68,7 +68,7 @@ function ClientPage() {
   const videoRef = useRef(null)
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
-  const { logUserEvent } = useVisitorTracking(`client/${projectId || 'unknown'}`)
+  const { incrementStat } = useProjectStats(projectId, 'client')
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
@@ -240,6 +240,7 @@ function ClientPage() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
+    incrementStat('total_clip_clicks')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -247,7 +248,7 @@ function ClientPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo])
+  }, [activateVideo, incrementStat])
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
@@ -255,25 +256,22 @@ function ClientPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
-    logUserEvent('SCREENSHOT_TAKEN', { details: 'Triggered from Client' })
+    incrementStat('total_screenshots')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Client_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName, versionStatus, logUserEvent])
+  }, [projectId, projectName, versionStatus, incrementStat])
 
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
-    logUserEvent('CAMERA_CHANGE', { presetName: preset?.name ?? 'Unknown' })
-  }, [logUserEvent])
+    incrementStat('total_camera_changes')
+  }, [incrementStat])
 
   const handleToggleAutoplay = useCallback(() => {
-    setIsAutoplayActive(prev => {
-      logUserEvent('AUTOPLAY_TOGGLED', { state: prev ? 'OFF' : 'ON' })
-      return !prev
-    })
-  }, [logUserEvent])
+    setIsAutoplayActive(prev => !prev)
+  }, [])
 
   // Autoplay loop
   useEffect(() => {

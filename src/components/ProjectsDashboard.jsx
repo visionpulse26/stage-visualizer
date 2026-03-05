@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import ClientRadarTab from './ClientRadarTab'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const IconX          = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -495,7 +494,6 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
           {[
             { id: 'projects', label: '📝 Projects' },
             { id: 'storage',  label: '🗄️ Media Storage' },
-            { id: 'radar',    label: '📡 CLIENT RADAR & LOGS' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -521,9 +519,6 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
           )}
           {activeTab === 'storage' && (
             <MediaStorageTab projectNames={projectNames} />
-          )}
-          {activeTab === 'radar' && (
-            <ClientRadarTab />
           )}
         </div>
       </div>
