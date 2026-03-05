@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
-import { RoleBadge } from './AdminPage'
+import Notch from '../components/Notch'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
@@ -27,6 +27,7 @@ function ClientPage() {
   const [isDbLoading,    setIsDbLoading]    = useState(true)
   const [projectNotFound, setProjectNotFound] = useState(false)
   const [projectName, setProjectName] = useState('LIVE STAGE')
+  const [versionStatus, setVersionStatus] = useState('')
 
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
@@ -168,6 +169,9 @@ function ClientPage() {
           }
           if (cfg.cameraFlyDurationSeconds != null) {
             setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
+          }
+          if (cfg.versionStatus != null) {
+            setVersionStatus(cfg.versionStatus)
           }
         }
       } catch {
@@ -321,7 +325,7 @@ function ClientPage() {
           onToggleAutoplay={handleToggleAutoplay}
         />
 
-        <RoleBadge role="Client View" color="blue" />
+        <Notch status={versionStatus} />
       </StageCanvas>
 
       <GlobalFooter projectName={projectName} />

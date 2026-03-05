@@ -66,6 +66,7 @@ function AdminPage() {
   const [publishStatus, setPublishStatus] = useState(null)  // 'success' | 'error' | null
   const [publishError,  setPublishError]  = useState(null)
   const [projectName,   setProjectName]   = useState('')
+  const [versionStatus, setVersionStatus] = useState('')
 
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
@@ -236,6 +237,31 @@ function AdminPage() {
       prev.map(c => c.id === clipId ? { ...c, name: newName } : c)
     )
   }, [])
+
+  const handleDeleteClip = useCallback((clipId) => {
+    setVideoPlaylist(prev => {
+      const clip = prev.find(c => c.id === clipId)
+      if (clip?.url && localBlobUrlsRef.current.includes(clip.url)) {
+        try { URL.revokeObjectURL(clip.url) } catch (_) {}
+        localBlobUrlsRef.current = localBlobUrlsRef.current.filter(u => u !== clip.url)
+      }
+      const next = prev.filter(c => c.id !== clipId)
+      if (clip?.id === activeVideoId) {
+        if (next.length > 0) {
+          const first = next[0]
+          if (first.type === 'image') {
+            setVideoElement(null); setActiveImageUrl(first.url); setActiveVideoId(first.id); setVideoLoaded(true); setIsPlaying(false)
+          } else {
+            activateVideo(first.id, first.url)
+          }
+        } else {
+          if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+          setVideoElement(null); setActiveImageUrl(null); setVideoLoaded(false); setActiveVideoId(null); setIsPlaying(false)
+        }
+      }
+      return next
+    })
+  }, [activeVideoId, activateVideo])
 
   const handlePlay       = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause      = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
@@ -526,6 +552,7 @@ function AdminPage() {
         ...cfg,
         autoplayIntervalSeconds,
         cameraFlyDurationSeconds,
+        versionStatus: versionStatus || '',
       }
       const { error } = await supabase.from('projects').update({
         camera_presets: cameraPresets,
@@ -536,7 +563,7 @@ function AdminPage() {
     } catch (err) {
       alert('Failed to save autoplay config: ' + err.message)
     }
-  }, [publishedId, cameraPresets, autoplayIntervalSeconds, cameraFlyDurationSeconds])
+  }, [publishedId, cameraPresets, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
 
   const handleDeletePreset = useCallback((id) => {
     setCameraPresets(prev => prev.filter(p => p.id !== id))
@@ -565,6 +592,7 @@ function AdminPage() {
     setGridCellSize(project.grid_cell_size ?? 1)
     setPublishedId(project.id)
     setProjectName(project.name || '')
+    setVersionStatus(project.scene_config?.versionStatus ?? '')
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
@@ -720,6 +748,8 @@ function AdminPage() {
         sunAzimuth:          sunAzimuth,
         sunElevation:        sunElevation,
         autoplayIntervalSeconds: autoplayIntervalSeconds,
+        cameraFlyDurationSeconds: cameraFlyDurationSeconds,
+        versionStatus: versionStatus || '',
       }
 
       // 5. Upsert project record
@@ -759,7 +789,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, sunIntensity, autoplayIntervalSeconds])
+      bloomThreshold, protectLed, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -802,6 +832,7 @@ function AdminPage() {
           activeVideoId={activeVideoId}
           onActivateVideo={handleActivateVideo}
           onRenameClip={handleRenameClip}
+          onDeleteClip={handleDeleteClip}
           onClearPlaylist={handleClearPlaylist}
           isPlaying={isPlaying}
           isLooping={isLooping}
@@ -836,6 +867,8 @@ function AdminPage() {
           publishedId={publishedId}
           projectName={projectName}
           onProjectNameChange={setProjectName}
+          versionStatus={versionStatus}
+          onVersionStatusChange={setVersionStatus}
           onOpenDashboard={() => setIsDashboardOpen(true)}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}

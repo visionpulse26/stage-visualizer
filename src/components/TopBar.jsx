@@ -33,10 +33,12 @@ export default function TopBar({ role, color }) {
         Sign Out
       </button>
 
-      {/* Role badge */}
-      <div className={`px-3 py-1.5 rounded-lg border text-[10px] font-semibold uppercase tracking-widest backdrop-blur-sm ${BADGE_COLORS[color]}`}>
-        {role}
-      </div>
+      {/* Role badge (hidden when role is null) */}
+      {role && (
+        <div className={`px-3 py-1.5 rounded-lg border text-[10px] font-semibold uppercase tracking-widest backdrop-blur-sm ${BADGE_COLORS[color] || BADGE_COLORS.cyan}`}>
+          {role}
+        </div>
+      )}
     </div>
   )
 }
