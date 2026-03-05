@@ -420,7 +420,7 @@ function AdminPage() {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('project_name', projectName.trim())
-    fd.append('overwrite', 'true')
+    fd.append('overwrite', 'true')  // UPSERT: overwrite existing file with same name to avoid duplicates
 
     let res
     try {
@@ -643,9 +643,9 @@ function AdminPage() {
       }
     }
 
-    // Restore full media playlist, or fall back to legacy single video_url
-    if (project.media_playlist && project.media_playlist.length > 0) {
-      const restored = project.media_playlist.map((item, i) => ({
+    // Restore full media playlist from fresh refetch (multi-admin sync), or fall back to legacy single video_url
+    if (p.media_playlist && p.media_playlist.length > 0) {
+      const restored = p.media_playlist.map((item, i) => ({
         id:       Date.now() + i,
         name:     item.name,
         url:      item.url,

@@ -212,13 +212,12 @@ function UIPanel({
             </Section>
 
             <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
-              {/* NAS only — Too:Awake private server */}
-              <div
-                <div className="space-y-2">
-                  <button
-                    onClick={handleNasVideoClick}
-                    disabled={isNasUploading}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
+              {/* NAS only — Too:Awake private server (strict, no Cloud/Link) */}
+              <div className="space-y-2" style={{ fontFamily: "'Chakra Petch', sans-serif" }}>
+                <button
+                  onClick={handleNasVideoClick}
+                  disabled={isNasUploading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
                   >
                     {isNasUploading ? (
                       <>
