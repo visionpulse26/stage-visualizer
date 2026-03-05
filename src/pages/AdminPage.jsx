@@ -3,7 +3,7 @@ import StageCanvas from '../components/StageCanvas'
 import UIPanel     from '../components/UIPanel'
 import TopBar      from '../components/TopBar'
 import ProjectsDashboard from '../components/ProjectsDashboard'
-import BrandFooter from '../components/BrandFooter'
+import GlobalFooter from '../components/GlobalFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
@@ -892,8 +892,7 @@ function AdminPage() {
         autoPlay
       />
 
-      {/* TOO:AWAKE Brand Footer */}
-      <BrandFooter />
+      <GlobalFooter projectName={projectName || 'LIVE STAGE'} />
     </div>
   )
 }

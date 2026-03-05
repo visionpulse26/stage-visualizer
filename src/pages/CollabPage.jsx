@@ -5,9 +5,10 @@ import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
-import BrandFooter from '../components/BrandFooter'
+import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
+import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -26,6 +27,7 @@ function CollabPage() {
   const [ledMaterialFound, setLedMaterialFound] = useState(false)
   const [isDbLoading,     setIsDbLoading]     = useState(true)
   const [projectNotFound, setProjectNotFound] = useState(false)
+  const [projectName, setProjectName] = useState('LIVE STAGE')
 
   // ── Sun & Grid ───────────────────────────────────────────────────────────
   const [sunAzimuth,   setSunAzimuth]   = useState(45)
@@ -263,6 +265,7 @@ function CollabPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+        setProjectName(data.name || 'LIVE STAGE')
 
         // Restore full scene_config — LITE & STABLE (no rotation)
         const cfg = data.scene_config
@@ -466,11 +469,12 @@ function CollabPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
+    const dataUrl = captureScreenshotWithWatermark(canvas, projectName)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`
-    a.href     = canvas.toDataURL('image/png')
+    a.href = dataUrl
     a.click()
-  }, [projectId])
+  }, [projectId, projectName])
 
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
@@ -595,8 +599,7 @@ function CollabPage() {
         autoPlay
       />
 
-      {/* TOO:AWAKE Brand Footer */}
-      <BrandFooter />
+      <GlobalFooter projectName={projectName} />
     </div>
   )
 }

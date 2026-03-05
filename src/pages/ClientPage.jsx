@@ -5,9 +5,10 @@ import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import ClientPanel from '../components/ClientPanel'
 import { RoleBadge } from './AdminPage'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
-import BrandFooter from '../components/BrandFooter'
+import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { supabase } from '../lib/supabaseClient'
+import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function ClientPage() {
   const { projectId } = useParams()
@@ -25,6 +26,7 @@ function ClientPage() {
   const [videoLoaded,    setVideoLoaded]    = useState(false)
   const [isDbLoading,    setIsDbLoading]    = useState(true)
   const [projectNotFound, setProjectNotFound] = useState(false)
+  const [projectName, setProjectName] = useState('LIVE STAGE')
 
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
@@ -135,6 +137,7 @@ function ClientPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+        setProjectName(data.name || 'LIVE STAGE')
 
         // Restore scene_config — consistent with Admin settings
         const cfg = data.scene_config
@@ -195,9 +198,12 @@ function ClientPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
+    const dataUrl = captureScreenshotWithWatermark(canvas, projectName)
     const a = document.createElement('a')
-    a.download = `Stage_Client_${projectId}.png`; a.href = canvas.toDataURL('image/png'); a.click()
-  }, [projectId])
+    a.download = `Stage_Client_${projectId}.png`
+    a.href = dataUrl
+    a.click()
+  }, [projectId, projectName])
 
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
@@ -318,8 +324,7 @@ function ClientPage() {
         <RoleBadge role="Client View" color="blue" />
       </StageCanvas>
 
-      {/* TOO:AWAKE Brand Footer */}
-      <BrandFooter />
+      <GlobalFooter projectName={projectName} />
     </div>
   )
 }
