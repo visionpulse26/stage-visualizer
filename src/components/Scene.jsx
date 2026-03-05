@@ -64,9 +64,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
   }, [videoElement])
 
-  // ── Image texture with disposal ─────────────────────────────────────────────
+  // ── Image texture with explicit disposal (prevents GPU memory leak on swap) ──
   const imageTexture = useMemo(() => {
-    // DISPOSE previous texture
     if (imageTextureRef.current) {
       imageTextureRef.current.dispose()
       imageTextureRef.current = null
@@ -101,12 +100,16 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
   }, [activeTexture])
 
-  // ── CLEANUP on unmount ──────────────────────────────────────────────────────
+  // ── CLEANUP on unmount — explicit texture & material disposal ─────────────
   useEffect(() => {
     return () => {
       if (videoTextureRef.current) videoTextureRef.current.dispose()
       if (imageTextureRef.current) imageTextureRef.current.dispose()
-      prevLedMaterialsRef.current.forEach(m => m?.dispose?.())
+      prevLedMaterialsRef.current.forEach((m) => {
+        if (m?.map) m.map.dispose?.()
+        if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
+        m?.dispose?.()
+      })
     }
   }, [])
 
@@ -161,8 +164,11 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   useEffect(() => {
     if (!clonedScene) return
 
-    // DISPOSE previous LED materials
-    prevLedMaterialsRef.current.forEach(m => m?.dispose?.())
+    prevLedMaterialsRef.current.forEach((m) => {
+      if (m?.map) m.map.dispose?.()
+      if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
+      m?.dispose?.()
+    })
     prevLedMaterialsRef.current = []
     ledMaterialsRef.current = []
     

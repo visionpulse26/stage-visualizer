@@ -8,6 +8,7 @@ import Notch from '../components/Notch'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
+import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -22,11 +23,7 @@ function ClientPage() {
     loaded: stageLoaded,
     reset: resetStageLoading,
   } = useStageLoading({
-    onLoadComplete: () => {
-      // Revoke GLB blob only — HDRI blob is revoked separately in onHdriLoadComplete
-      // (HDRI may still be loading when GLB finishes; early revoke breaks HDRI load)
-      if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
-    },
+    // No blob revoke here — model blob is tracked by useBlobUrlCache, revoked on project change/unmount
   })
 
   const [modelUrl,       setModelUrl]       = useState(null)
@@ -69,27 +66,21 @@ function ClientPage() {
 
   const videoRef = useRef(null)
   const modelBlobRef = useRef(null)
+  const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
-
-  const revokeBlob = useCallback((url) => {
-    if (url && typeof url === 'string' && url.startsWith('blob:')) {
-      try { URL.revokeObjectURL(url) } catch (_) {}
-    }
-  }, [])
 
   useEffect(() => {
     return () => {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
-      revokeBlob(modelBlobRef.current)
     }
-  }, [revokeBlob])
+  }, [])
 
   useEffect(() => {
     resetStageLoading()
   }, [projectId, resetStageLoading])
 
-  // ── Shared video activation helper (revokes blob URL after load for IP protection) ──
+  // ── Shared video activation helper — blob URLs kept in cache until project change/unmount ──
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     const v = document.createElement('video')
@@ -100,7 +91,7 @@ function ClientPage() {
     v.playsInline = true
     v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
-      revokeBlob(url)
+      // Do NOT revoke blob here — keeps URL valid when switching back to this clip
       v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v)
@@ -109,13 +100,14 @@ function ClientPage() {
       setIsPlaying(true)
     })
     v.load()
-  }, [revokeBlob])
+  }, [])
 
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
 
     async function fetchProject() {
+      revokeAllBlobs()
       setIsDbLoading(true)
       setProjectNotFound(false)
 
@@ -140,6 +132,7 @@ function ClientPage() {
         if (modelSrc && isRemote(modelSrc)) {
           try {
             const blobUrl = await fetchAsBlobUrl(modelSrc)
+            addBlob(blobUrl)
             modelBlobRef.current = blobUrl
             setModelUrl(blobUrl)
           } catch {
@@ -155,7 +148,11 @@ function ClientPage() {
             const item = items[i]
             let url = item.url
             if (isRemote(url)) {
-              try { url = await fetchAsBlobUrl(url) } catch {}
+              try {
+                const blobUrl = await fetchAsBlobUrl(url)
+                addBlob(blobUrl)
+                url = blobUrl
+              } catch {}
             }
             restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
           }
@@ -237,7 +234,7 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
@@ -356,7 +353,6 @@ function ClientPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
-        onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}

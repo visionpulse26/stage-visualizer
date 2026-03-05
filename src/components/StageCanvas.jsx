@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useCallback } from 'react'
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -64,6 +64,26 @@ function EnvIntensityController({ intensity }) {
 
 // LITE & STABLE: All rotation logic removed to prevent GPU crashes.
 // Using simple LiteHdriEnvironment with aggressive cleanup.
+
+// ── WebGL context loss handler — shows fallback UI when GPU context is lost ───
+function WebGLContextLossHandler({ onContextLost, onContextRestored }) {
+  const { gl } = useThree()
+  useEffect(() => {
+    const canvas = gl.domElement
+    const handleLost = (e) => {
+      e.preventDefault()
+      onContextLost?.()
+    }
+    const handleRestored = () => onContextRestored?.()
+    canvas.addEventListener('webglcontextlost', handleLost)
+    canvas.addEventListener('webglcontextrestored', handleRestored)
+    return () => {
+      canvas.removeEventListener('webglcontextlost', handleLost)
+      canvas.removeEventListener('webglcontextrestored', handleRestored)
+    }
+  }, [gl, onContextLost, onContextRestored])
+  return null
+}
 
 // ── First-frame reporter — registers "firstframe" with LoadingManager so onLoad waits for GPU render ─
 function FirstFrameReporter({ loadingManager }) {
@@ -381,6 +401,10 @@ function StageCanvas({
 }) {
   const internalPresetRef = useRef(null)
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
+  const [contextLost, setContextLost] = useState(false)
+  const handleContextLost = useCallback(() => setContextLost(true), [])
+  const handleContextRestored = useCallback(() => setContextLost(false), [])
+
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom     = bloomStrength      ?? 0.3
   const resolvedEnvInt    = envIntensity       ?? 1
@@ -395,6 +419,34 @@ function StageCanvas({
 
   return (
     <div className="w-full h-full relative bg-[#0a0a0c]">
+      {contextLost && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0a0a0c]"
+          style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+        >
+          <div className="flex flex-col items-center gap-4 text-center px-6">
+            <p
+              className="text-2xl sm:text-3xl font-bold tracking-widest animate-pulse"
+              style={{ color: '#FF5F1F' }}
+            >
+              SYSTEM REBOOTING...
+            </p>
+            <p className="text-white/50 text-sm">
+              WebGL context lost. Attempting recovery...
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-6 py-2.5 rounded-xl border font-medium transition-all hover:bg-[#FF5F1F]/20"
+              style={{
+                color: '#FF5F1F',
+                borderColor: '#FF5F1F',
+              }}
+            >
+              RELOAD PAGE
+            </button>
+          </div>
+        </div>
+      )}
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50 }}
         gl={{
@@ -406,6 +458,10 @@ function StageCanvas({
         }}
         shadows
       >
+        <WebGLContextLossHandler
+          onContextLost={handleContextLost}
+          onContextRestored={handleContextRestored}
+        />
         {/* ACES filmic tone mapping — hardcoded for cinema quality */}
         <ToneMappingController />
 

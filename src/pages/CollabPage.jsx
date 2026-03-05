@@ -9,6 +9,7 @@ import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
 import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
+import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -23,10 +24,7 @@ function CollabPage() {
     loaded: stageLoaded,
     reset: resetStageLoading,
   } = useStageLoading({
-    onLoadComplete: () => {
-      // Revoke GLB blob only — HDRI blob is revoked separately in onHdriLoadComplete
-      if (modelBlobRef.current) { revokeBlob(modelBlobRef.current); modelBlobRef.current = null }
-    },
+    // No blob revoke — model blob in useBlobUrlCache, revoked on project change/unmount
   })
 
   const [modelUrl,        setModelUrl]        = useState(null)
@@ -86,27 +84,21 @@ function CollabPage() {
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
   const modelBlobRef = useRef(null)
+  const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
 
-  // Track blob URLs created locally so we can revoke them on unmount (memory safety)
+  // Track blob URLs from local uploads (Collab-only) — revoked on clear/unmount
   const localBlobUrlsRef = useRef([])
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
-
-  const revokeBlob = useCallback((url) => {
-    if (url && typeof url === 'string' && url.startsWith('blob:')) {
-      try { URL.revokeObjectURL(url) } catch (_) {}
-    }
-  }, [])
 
   useEffect(() => { playlistRef.current = videoPlaylist }, [videoPlaylist])
 
   useEffect(() => { resetStageLoading() }, [projectId, resetStageLoading])
 
-  // ── Cleanup on unmount — revoke only locally-created blob URLs ───────────
+  // ── Cleanup on unmount — useBlobUrlCache handles project blobs; revoke local blobs ──
   useEffect(() => {
     return () => {
       localBlobUrlsRef.current.forEach(url => { try { URL.revokeObjectURL(url) } catch (_) {} })
-      revokeBlob(modelBlobRef.current)
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
@@ -214,7 +206,7 @@ function CollabPage() {
     syncedImageUrlRef.current = null
   }, [localCameraStream])
 
-  // ── Video helpers (revoke blob after load for IP protection) ───────────────
+  // ── Video activation — blob URLs kept in cache until project change/unmount ──
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     const v = document.createElement('video')
@@ -225,7 +217,6 @@ function CollabPage() {
     v.playsInline = true
     v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
-      revokeBlob(url)
       v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v)
@@ -235,7 +226,7 @@ function CollabPage() {
       setIsLooping(true)
     })
     v.load()
-  }, [revokeBlob])
+  }, [])
 
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
@@ -265,6 +256,7 @@ function CollabPage() {
         if (modelSrc && isRemote(modelSrc)) {
           try {
             const blobUrl = await fetchAsBlobUrl(modelSrc)
+            addBlob(blobUrl)
             modelBlobRef.current = blobUrl
             setModelUrl(blobUrl)
           } catch {
@@ -302,7 +294,11 @@ function CollabPage() {
         } else if (data.video_url) {
           let vidUrl = data.video_url
           if (isRemote(vidUrl)) {
-            try { vidUrl = await fetchAsBlobUrl(vidUrl) } catch {}
+            try {
+              const blobUrl = await fetchAsBlobUrl(vidUrl)
+              addBlob(blobUrl)
+              vidUrl = blobUrl
+            } catch {}
           }
           const id = Date.now()
           clipCountRef.current = 1
@@ -355,7 +351,7 @@ function CollabPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
@@ -574,7 +570,6 @@ function CollabPage() {
         onHdriLoading={setHdriLoading}
         onHdriLoadError={handleHdriLoadError}
         onHdriClearRequest={handleClearAllHdri}
-        onImageTextureLoaded={() => revokeBlob(activeImageUrl)}
         envIntensity={envIntensity}
         bgBlur={bgBlur}
         showHdriBackground={showHdriBackground}
