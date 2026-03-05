@@ -5,6 +5,7 @@ import {
   incrementProjectJsonbKey,
   subscribePresence,
 } from '../lib/analyticsTracker'
+import { flushNow } from '../lib/trackingService'
 
 /**
  * Aggregate stats tracking for Client/Collab pages.
@@ -28,7 +29,10 @@ export function useProjectStats(projectId, pageLabel = 'client') {
     const pageVisited = `${pageLabel}/${projectId}`
     leavePresenceRef.current = subscribePresence(sessionId, pageVisited)
     incrementProjectStat(projectId, 'total_views')
+    const onUnload = () => { flushNow() }
+    window.addEventListener('beforeunload', onUnload)
     return () => {
+      window.removeEventListener('beforeunload', onUnload)
       if (leavePresenceRef.current) leavePresenceRef.current()
     }
   }, [projectId, pageLabel])

@@ -113,9 +113,53 @@ BEGIN
 END;
 $$;
 
--- 6. Grants
+-- 6. RPC: Batch increment (reduces round-trips; use from TrackingService)
+-- Payload: { p_project_id, p_ops: [{ type: 'stat'|'jsonb', stat_name?, column?, key? }] }
+CREATE OR REPLACE FUNCTION batch_increment_project_stats(p_project_id UUID, p_ops JSONB)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  op JSONB;
+  i INT;
+  target_col TEXT;
+  p_key TEXT;
+  current_val INTEGER;
+BEGIN
+  IF p_ops IS NULL OR jsonb_array_length(p_ops) = 0 THEN RETURN; END IF;
+
+  FOR i IN 0 .. jsonb_array_length(p_ops) - 1 LOOP
+    op := p_ops->i;
+
+    IF op->>'type' = 'stat' THEN
+      PERFORM increment_project_stat(p_project_id, op->>'stat_name');
+    ELSIF op->>'type' = 'jsonb' THEN
+      target_col := LOWER(TRIM(op->>'column'));
+      p_key := TRIM(op->>'key');
+      IF target_col IN ('clip_popularity','camera_popularity','screenshot_hotspots') AND p_key <> '' THEN
+        IF target_col = 'clip_popularity' THEN
+          SELECT COALESCE((clip_popularity->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+          UPDATE projects SET clip_popularity = jsonb_set(COALESCE(clip_popularity,'{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1)) WHERE id = p_project_id;
+        ELSIF target_col = 'camera_popularity' THEN
+          SELECT COALESCE((camera_popularity->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+          UPDATE projects SET camera_popularity = jsonb_set(COALESCE(camera_popularity,'{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1)) WHERE id = p_project_id;
+        ELSIF target_col = 'screenshot_hotspots' THEN
+          SELECT COALESCE((screenshot_hotspots->>p_key)::INTEGER, 0) INTO current_val FROM projects WHERE id = p_project_id;
+          UPDATE projects SET screenshot_hotspots = jsonb_set(COALESCE(screenshot_hotspots,'{}'::jsonb), ARRAY[p_key], to_jsonb(current_val + 1)) WHERE id = p_project_id;
+        END IF;
+      END IF;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+-- 7. Grants
 GRANT EXECUTE ON FUNCTION increment_project_stat(UUID, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION increment_project_stat(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION increment_project_jsonb_key(UUID, TEXT, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION increment_project_jsonb_key(UUID, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION batch_increment_project_stats(UUID, JSONB) TO anon;
+GRANT EXECUTE ON FUNCTION batch_increment_project_stats(UUID, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION clone_project(UUID, TEXT) TO authenticated;

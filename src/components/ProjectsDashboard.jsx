@@ -110,7 +110,7 @@ function ProjectsTab({ onOpenProject, onClose }) {
   }, [editingName, load])
 
   const handleClone = useCallback(async (project) => {
-    const name = window.prompt('Enter name for the cloned project:', `${project.name || 'Untitled'} - Round 2`)
+    const name = window.prompt('Enter name for the new round:', `${project.name || 'Untitled'} - Round 2`)
     if (!name || !name.trim()) return
     setCloningId(project.id); setToast(null)
     try {
@@ -150,15 +150,24 @@ function ProjectsTab({ onOpenProject, onClose }) {
     setDeletingId(project.id); setConfirmId(null); setToast(null)
 
     try {
-      // 1. Delete all storage files inside the project folder first
-      const { data: files, error: listErr } = await supabase.storage
-        .from('projects')
-        .list(project.id)
-
-      if (!listErr && files && files.length > 0) {
-        const paths = files.map(f => `${project.id}/${f.name}`)
-        await supabase.storage.from('projects').remove(paths)
+      // 1. Safe delete: only remove storage if no other project (e.g. cloned round) references it
+      const { data: canDelete, error: checkErr } = await supabase.rpc('can_safely_delete_storage', {
+        p_project_id: project.id,
+      })
+      if (checkErr) {
+        setToast({ msg: `Delete check failed: ${checkErr.message}`, type: 'error' })
+        return
       }
+      if (canDelete) {
+        const { data: files, error: listErr } = await supabase.storage
+          .from('projects')
+          .list(project.id)
+        if (!listErr && files && files.length > 0) {
+          const paths = files.map(f => `${project.id}/${f.name}`)
+          await supabase.storage.from('projects').remove(paths)
+        }
+      }
+      // If !canDelete: skip storage deletion — another project (cloned round) references these assets
 
       // 2. Delete the database row — explicitly check the error object.
       //    Supabase does NOT throw on RLS violations; it returns { error }.
@@ -240,7 +249,7 @@ function ProjectsTab({ onOpenProject, onClose }) {
               onClick={() => handleClone(p)}
               disabled={cloningId === p.id}
               className="p-1.5 rounded-lg hover:bg-white/10 text-white/25 hover:text-white/60 transition-all disabled:opacity-50"
-              title="Clone project"
+              title="Republish as New Round (reuses stage & HDRI, empty media)"
             >
               <IconClone />
             </button>

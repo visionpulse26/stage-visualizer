@@ -533,6 +533,7 @@ function CollabPage() {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
     incrementStat('total_screenshots')
+    incrementJsonb('screenshot_hotspots', currentCameraRef.current || 'Default')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`

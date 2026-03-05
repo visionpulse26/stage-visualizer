@@ -1,9 +1,11 @@
 /**
  * Stealth analytics: presence + aggregate stat increments.
  * Stats stored on projects table; anon increments via RPC.
+ * Uses TrackingService for batched, debounced updates (fixes metrics stuck at 0).
  */
 
 import { supabase } from './supabaseClient'
+import { trackStat, trackJsonb } from './trackingService'
 
 const SESSION_STORAGE_KEY = 'stage_visitor_session_id'
 export const REALTIME_CHANNEL_NAME = 'global_radar'
@@ -22,28 +24,14 @@ export function getOrCreateSessionId() {
   }
 }
 
-/** Increment integer stat (total_views, total_screenshots, etc). Fire-and-forget. */
+/** Increment integer stat. Delegates to TrackingService (batched + debounced). */
 export function incrementProjectStat(projectId, statName) {
-  if (!projectId || !statName) return
-  supabase
-    .rpc('increment_project_stat', { p_project_id: projectId, p_stat_name: statName })
-    .then(() => {})
-    .catch(() => {})
+  trackStat(projectId, statName)
 }
 
-/** Increment a key in a JSONB column (clip_popularity, camera_popularity, screenshot_hotspots). */
+/** Increment JSONB key. Delegates to TrackingService (batched + debounced). */
 export function incrementProjectJsonbKey(projectId, columnName, key) {
-  if (!projectId || !columnName || !key) return
-  const safeKey = String(key).trim()
-  if (!safeKey) return
-  supabase
-    .rpc('increment_project_jsonb_key', {
-      p_project_id: projectId,
-      p_column: columnName,
-      p_key: safeKey,
-    })
-    .then(() => {})
-    .catch(() => {})
+  trackJsonb(projectId, columnName, key)
 }
 
 /** Subscribe to presence channel; returns cleanup function. */
