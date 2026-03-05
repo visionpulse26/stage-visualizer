@@ -77,7 +77,7 @@ function ProjectsTab({ onOpenProject }) {
     setLoading(true); setError(null)
     const { data, error: err } = await supabase
       .from('projects')
-      .select('id, name, created_at, video_url, stage_url, camera_presets, grid_cell_size, scene_config')
+      .select('id, name, created_at, video_url, stage_url, camera_presets, grid_cell_size, scene_config, media_playlist')
       .order('created_at', { ascending: false })
 
     if (err) { setError(err.message); setLoading(false); return }

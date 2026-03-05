@@ -420,6 +420,7 @@ function AdminPage() {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('project_name', projectName.trim())
+    fd.append('overwrite', 'true')
 
     let res
     try {
@@ -466,7 +467,13 @@ function AdminPage() {
       const isImg = file.type.startsWith('image/')
       const name  = file.name.replace(/\.[^/.]+$/, '') || (isImg ? `NAS Image ${clipCountRef.current}` : `NAS Clip ${clipCountRef.current}`)
       const clip  = { id, name, url: json.url, type: isImg ? 'image' : 'video', external: true }
-      setVideoPlaylist(prev => [...prev, clip])
+      const updatedPlaylist = [...videoPlaylist, clip]
+      setVideoPlaylist(updatedPlaylist)
+
+      if (publishedId) {
+        const mediaForDb = updatedPlaylist.map(c => ({ name: c.name, url: c.url, type: c.type, external: c.external ?? true }))
+        await supabase.from('projects').update({ media_playlist: mediaForDb }).eq('id', publishedId)
+      }
 
       if (isImg) {
         if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -480,7 +487,7 @@ function AdminPage() {
     } finally {
       setIsNasUploading(false)
     }
-  }, [projectName, activateVideo, nasUploadFetch, validateMediaFile])
+  }, [projectName, videoPlaylist, publishedId, activateVideo, nasUploadFetch, validateMediaFile])
 
   // ── NAS upload — HDRI → Too:Awake NAS server ──────────────────────────
   const handleNasHdriUpload = useCallback(async (file) => {
@@ -570,7 +577,11 @@ function AdminPage() {
   }, [])
 
   // ── Open project from dashboard ──────────────────────────────────────────
-  const handleOpenProject = useCallback((project) => {
+  const handleOpenProject = useCallback(async (project) => {
+    // Refetch project to get latest media_playlist (multi-admin sync)
+    const { data: fresh, error } = await supabase.from('projects').select('*').eq('id', project.id).single()
+    const p = fresh && !error ? fresh : project
+
     // Revoke existing local blob URLs
     localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
     localBlobUrlsRef.current = []
@@ -579,8 +590,8 @@ function AdminPage() {
 
     // Reset all state to match the opened project
     setStageFile(null)
-    setStageUrl(project.stage_url || null)
-    setCloudStageUrl(project.stage_url || null)
+    setStageUrl(p.stage_url || null)
+    setCloudStageUrl(p.stage_url || null)
     setVideoElement(null)
     setActiveImageUrl(null)
     setVideoLoaded(false)
@@ -588,17 +599,17 @@ function AdminPage() {
     clipCountRef.current = 0
     setActiveVideoId(null)
     setIsPlaying(false)
-    setCameraPresets(project.camera_presets || [])
-    setGridCellSize(project.grid_cell_size ?? 1)
-    setPublishedId(project.id)
-    setProjectName(project.name || '')
-    setVersionStatus(project.scene_config?.versionStatus ?? '')
+    setCameraPresets(p.camera_presets || [])
+    setGridCellSize(p.grid_cell_size ?? 1)
+    setPublishedId(p.id)
+    setProjectName(p.name || '')
+    setVersionStatus(p.scene_config?.versionStatus ?? '')
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
 
     // Restore scene_config if present — all lighting values for consistency
-    const cfg = project.scene_config
+    const cfg = p.scene_config
     if (cfg) {
       // HDRI & Environment
       setHdriPreset(cfg.hdriPreset             ?? 'none')
@@ -654,12 +665,12 @@ function AdminPage() {
       } else {
         activateVideo(first.id, first.url)
       }
-    } else if (project.video_url) {
+    } else if (p.video_url) {
       const id = Date.now()
       clipCountRef.current = 1
-      const clip = { id, name: 'Cloud Video', url: project.video_url, type: 'video', external: true }
+      const clip = { id, name: 'Cloud Video', url: p.video_url, type: 'video', external: true }
       setVideoPlaylist([clip])
-      activateVideo(id, project.video_url)
+      activateVideo(id, p.video_url)
     }
   }, [stageUrl, activateVideo])
 

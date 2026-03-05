@@ -105,8 +105,6 @@ function UIPanel({
   const [editingName,      setEditingName]      = useState('')
   const renameInputRef     = useRef(null)
 
-  // ── Video tab state ──────────────────────────────────────────────────────
-  const [videoInputMode,   setVideoInputMode]   = useState('cloud')   // 'cloud' | 'link' | 'nas'
   const [externalUrlInput, setExternalUrlInput]  = useState('')
 
   // ── HDRI custom tab state ──────────────────────────────────────────────
@@ -214,74 +212,13 @@ function UIPanel({
             </Section>
 
             <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
-              {/* Video input mode tabs — 3 methods */}
-              <div className="flex gap-0.5 mb-3 bg-white/5 border border-white/10 rounded-lg p-0.5">
-                {[
-                  { id: 'cloud', icon: <IconCloud />, label: 'Cloud' },
-                  { id: 'link',  icon: <IconLink />,  label: 'Link'  },
-                  { id: 'nas',   icon: <IconServer />, label: 'NAS'  },
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setVideoInputMode(t.id)}
-                    className={`flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
-                      videoInputMode === t.id
-                        ? 'bg-violet-500/20 text-violet-300 border border-violet-500/20'
-                        : 'text-white/35 hover:text-white/60'
-                    }`}
-                  >
-                    {t.icon}{t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Cloud (Supabase) — existing local-file upload */}
-              {videoInputMode === 'cloud' && (
-                <>
-                  <button
-                    onClick={() => videoInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
-                  >
-                    <IconCloud /><span>Add Video / Image</span>
-                  </button>
-                  <input ref={videoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }} />
-                  <p className="text-[9px] text-white/25 mt-1.5 leading-snug">Saved to Supabase when you Publish.</p>
-                </>
-              )}
-
-              {/* Link — paste external URL */}
-              {videoInputMode === 'link' && (
-                <div className="space-y-2">
-                  <div className="flex gap-1">
-                    <input
-                      type="url"
-                      value={externalUrlInput}
-                      onChange={e => setExternalUrlInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddExternal()}
-                      placeholder="https://cdn.example.com/video.mp4"
-                      className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white/80 placeholder-white/20 focus:outline-none focus:border-violet-500/50"
-                    />
-                    <button
-                      onClick={handleAddExternal}
-                      disabled={!externalUrlInput.trim()}
-                      className="px-3 py-2 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-medium disabled:opacity-40 transition-all"
-                    >
-                      Add
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-amber-400/60 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
-                    URL must be CORS-enabled (Cloudinary, BunnyCDN, etc.).
-                  </p>
-                </div>
-              )}
-
-              {/* NAS — Too:Awake private server */}
-              {videoInputMode === 'nas' && (
+              {/* NAS only — Too:Awake private server */}
+              <div
                 <div className="space-y-2">
                   <button
                     onClick={handleNasVideoClick}
                     disabled={isNasUploading}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-emerald-500/25 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-white/40 hover:text-emerald-300 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
                   >
                     {isNasUploading ? (
                       <>
@@ -302,11 +239,10 @@ function UIPanel({
                       <p className="text-[9px] text-red-400/70 leading-snug break-words">{nasError}</p>
                     </div>
                   )}
-                  <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
+                  <p className="text-[9px] text-[#FF5F1F]/70 bg-[#FF5F1F]/5 border border-[#FF5F1F]/20 rounded-lg px-2.5 py-1.5 leading-snug">
                     Files are sent to your private NAS. Requires a saved project name.
                   </p>
                 </div>
-              )}
 
               {/* ── Virtual Camera (OBS / NDI) ─────────────────────────────── */}
               <div className="pt-2 border-t border-white/5 space-y-2">
@@ -950,7 +886,7 @@ function UIPanel({
 
               {/* Publish button */}
               <button
-                onClick={() => onPublish({ videoInputMode, externalVideoUrl: externalUrlInput })}
+                onClick={() => onPublish({})}
                 disabled={!canPublish || isPublishing}
                 className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${
                   canPublish && !isPublishing
