@@ -3,7 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
-import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import Scene from './Scene'
@@ -43,22 +43,27 @@ function ReflectiveFloor() {
   )
 }
 
-// ── Env intensity controller (Three.js r160 compatible via material traversal) ─
-function EnvIntensityController({ intensity }) {
+// ── Env intensity controller (Three.js r160 compatible via material traversal)
+// Skips LED_MASTER_MAT when protectLed — LED stays unlit, no HDRI wash ────────
+function EnvIntensityController({ intensity, protectLed }) {
   const { scene } = useThree()
   useEffect(() => {
     if ('environmentIntensity' in scene) {
       scene.environmentIntensity = intensity
-      return
     }
     scene.traverse(obj => {
       if (!obj.isMesh) return
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
       mats.forEach(m => {
-        if (m && m.envMapIntensity !== undefined) m.envMapIntensity = intensity
+        if (!m || m.envMapIntensity === undefined) return
+        if (protectLed && m.name === 'LED_MASTER_MAT') {
+          m.envMapIntensity = 0
+          return
+        }
+        m.envMapIntensity = intensity
       })
     })
-  }, [scene, intensity])
+  }, [scene, intensity, protectLed])
   return null
 }
 
@@ -491,7 +496,7 @@ function StageCanvas({
                 ? <Environment preset={hdriPreset} background backgroundBlurriness={resolvedBgBlur} />
                 : <Environment preset={hdriPreset} />
             )}
-            <EnvIntensityController intensity={resolvedEnvInt} />
+            <EnvIntensityController intensity={resolvedEnvInt} protectLed={protectLed ?? true} />
           </>
         )}
 
@@ -568,13 +573,21 @@ function StageCanvas({
           />
         )}
 
-        {/* Bloom — luminanceThreshold driven by admin slider */}
+        {/* Bloom + DoF — stage stays sharp, background/foreground bokeh */}
         <EffectComposer>
           <Bloom
             luminanceThreshold={resolvedThreshold}
             luminanceSmoothing={0.9}
             intensity={resolvedBloom}
           />
+          {resolvedBgBlur > 0 && (
+            <DepthOfField
+              target={[0, 1, 0]}
+              worldFocusRange={6}
+              focalLength={0.02}
+              bokehScale={2}
+            />
+          )}
         </EffectComposer>
       </Canvas>
 
