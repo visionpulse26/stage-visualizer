@@ -11,7 +11,6 @@ import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
-import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -254,7 +253,6 @@ function CollabPage() {
           return
         }
 
-        recordClientPageView(projectId)
 
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
@@ -403,7 +401,6 @@ function CollabPage() {
   }, [activateVideo, validateMediaFile])
 
   const handleActivateVideo = useCallback((clip) => {
-    recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -411,7 +408,7 @@ function CollabPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo, projectId])
+  }, [activateVideo])
 
   const handleClearPlaylist = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -481,9 +478,8 @@ function CollabPage() {
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
-    recordClientInteraction(projectId, 'camera_change', preset?.name || 'Unknown')
     currentCameraRef.current = preset?.name || null
-  }, [projectId])
+  }, [])
 
   const handleToggleAutoplay = useCallback(() => {
     setIsAutoplayActive(prev => !prev)
@@ -533,7 +529,6 @@ function CollabPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
-    recordClientInteraction(projectId, 'screenshot', currentCameraRef.current || 'Default')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`
