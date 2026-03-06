@@ -22,22 +22,41 @@ export default function ClientRadarPanel({ publishedId }) {
   const loadStats = useCallback(async () => {
     if (!publishedId) return
     setLoading(true)
-    const { data, error } = await supabase
+    const projectIdStr = String(publishedId)
+
+    // Client page views: from client_page_views table (no RPC, no projects.id type issues)
+    const { count: viewCount } = await supabase
+      .from('client_page_views')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectIdStr)
+
+    // Other stats from projects (may fail if columns missing or id type differs)
+    let extra = {}
+    const { data } = await supabase
       .from('projects')
-      .select('total_views, total_screenshots, total_camera_changes, total_clip_clicks, clip_popularity, camera_popularity, screenshot_hotspots')
+      .select('total_screenshots, total_camera_changes, total_clip_clicks, clip_popularity, camera_popularity, screenshot_hotspots')
       .eq('id', publishedId)
       .single()
-    if (!error && data) {
-      setStats({
-        total_views: data.total_views ?? 0,
+    if (data) {
+      extra = {
         total_screenshots: data.total_screenshots ?? 0,
         total_camera_changes: data.total_camera_changes ?? 0,
         total_clip_clicks: data.total_clip_clicks ?? 0,
         clip_popularity: data.clip_popularity ?? {},
         camera_popularity: data.camera_popularity ?? {},
         screenshot_hotspots: data.screenshot_hotspots ?? {},
-      })
+      }
     }
+
+    setStats((prev) => ({
+      total_views: viewCount ?? 0,
+      total_screenshots: extra.total_screenshots ?? prev.total_screenshots ?? 0,
+      total_camera_changes: extra.total_camera_changes ?? prev.total_camera_changes ?? 0,
+      total_clip_clicks: extra.total_clip_clicks ?? prev.total_clip_clicks ?? 0,
+      clip_popularity: extra.clip_popularity ?? prev.clip_popularity ?? {},
+      camera_popularity: extra.camera_popularity ?? prev.camera_popularity ?? {},
+      screenshot_hotspots: extra.screenshot_hotspots ?? prev.screenshot_hotspots ?? {},
+    }))
     setLoading(false)
   }, [publishedId])
 
@@ -145,7 +164,7 @@ export default function ClientRadarPanel({ publishedId }) {
             ) : (
               <>
                 <p className="text-[9px] text-white/25 mb-1.5">
-                  Open <a href={`/view/${publishedId}`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/50" style={{ color: ACCENT }}>View link</a> in another tab to generate metrics.
+                  Total Views = Client page loads. Open <a href={`/view/${publishedId}`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/50" style={{ color: ACCENT }}>View link</a> in another tab to add views.
                 </p>
                 <div className="space-y-1.5 text-[11px]">
                   <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />

@@ -1,11 +1,22 @@
 /**
  * Stealth analytics: presence + aggregate stat increments.
- * Stats stored on projects table; anon increments via RPC.
- * total_views sent immediately (critical); other stats batched via TrackingService.
+ * Client page views: simple INSERT into client_page_views (no RPC, works with any id type).
  */
 
 import { supabase } from './supabaseClient'
 import { trackStat, trackJsonb } from './trackingService'
+
+/** Record one client page view. Uses client_page_views table — no RPC, no projects table. */
+export function recordClientPageView(projectId) {
+  if (!projectId) return
+  const id = String(projectId).trim()
+  if (!id) return
+  supabase
+    .from('client_page_views')
+    .insert({ project_id: id, viewed_at: new Date().toISOString() })
+    .then(({ error }) => { if (error) console.warn('[Analytics] recordClientPageView:', error.message) })
+    .catch((e) => console.warn('[Analytics] recordClientPageView:', e))
+}
 
 const SESSION_STORAGE_KEY = 'stage_visitor_session_id'
 export const REALTIME_CHANNEL_NAME = 'global_radar'

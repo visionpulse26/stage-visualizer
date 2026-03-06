@@ -10,6 +10,7 @@ import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
+import { recordClientPageView } from '../lib/analyticsTracker'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -128,8 +129,8 @@ function ClientPage() {
           return
         }
 
-        // Count view only after project exists in DB (ensures increment hits a real row)
-        incrementStat('total_views')
+        // Record view in client_page_views (no RPC; works with any project id type)
+        recordClientPageView(projectId)
 
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
@@ -240,7 +241,7 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs, incrementStat])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
