@@ -79,9 +79,12 @@ AS $$
 DECLARE
   src RECORD;
   new_id UUID;
+  src_id_text TEXT;
 BEGIN
+  -- Compare as text so this works whether projects.id is UUID or TEXT
+  src_id_text := p_source_id::TEXT;
   SELECT id, stage_url, video_url, camera_presets, grid_cell_size, scene_config, name
-  INTO src FROM projects WHERE id = p_source_id LIMIT 1;
+  INTO src FROM projects WHERE id::TEXT = src_id_text LIMIT 1;
   IF NOT FOUND THEN
     RETURN NULL;
   END IF;

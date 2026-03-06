@@ -20,9 +20,10 @@ BEGIN
   pid := p_project_id::TEXT;
 
   -- Count other projects whose stage_url or customHdriUrl points into this project's folder
+  -- Use pid (text) so comparison works whether projects.id is UUID or TEXT
   SELECT COUNT(*)::INTEGER INTO ref_count
   FROM projects
-  WHERE id != p_project_id
+  WHERE COALESCE(id::TEXT, '') <> pid
     AND (
       (stage_url IS NOT NULL AND stage_url LIKE '%' || pid || '%')
       OR ((scene_config->>'customHdriUrl') IS NOT NULL
