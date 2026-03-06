@@ -24,38 +24,55 @@ export default function ClientRadarPanel({ publishedId }) {
     setLoading(true)
     const projectIdStr = String(publishedId)
 
-    // Client page views: from client_page_views table (no RPC, no projects.id type issues)
+    // Total views: from client_page_views
     const { count: viewCount } = await supabase
       .from('client_page_views')
       .select('*', { count: 'exact', head: true })
       .eq('project_id', projectIdStr)
 
-    // Other stats from projects (may fail if columns missing or id type differs)
-    let extra = {}
-    const { data } = await supabase
-      .from('projects')
-      .select('total_screenshots, total_camera_changes, total_clip_clicks, clip_popularity, camera_popularity, screenshot_hotspots')
-      .eq('id', publishedId)
-      .single()
-    if (data) {
-      extra = {
-        total_screenshots: data.total_screenshots ?? 0,
-        total_camera_changes: data.total_camera_changes ?? 0,
-        total_clip_clicks: data.total_clip_clicks ?? 0,
-        clip_popularity: data.clip_popularity ?? {},
-        camera_popularity: data.camera_popularity ?? {},
-        screenshot_hotspots: data.screenshot_hotspots ?? {},
-      }
+    // Clip plays, screenshots, camera changes: from client_interactions (no RPC)
+    const { count: clipCount } = await supabase
+      .from('client_interactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectIdStr)
+      .eq('event_type', 'clip_play')
+
+    const { count: screenshotCount } = await supabase
+      .from('client_interactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectIdStr)
+      .eq('event_type', 'screenshot')
+
+    const { count: cameraCount } = await supabase
+      .from('client_interactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectIdStr)
+      .eq('event_type', 'camera_change')
+
+    // Top charts: aggregate by event_key
+    const agg = (rows) => {
+      const out = {}
+      ;(rows || []).forEach((row) => {
+        const k = row.event_key || 'Unknown'
+        out[k] = (out[k] || 0) + 1
+      })
+      return out
     }
+    const [{ data: clipEvents }, { data: cameraEvents }, { data: screenshotEvents }] = await Promise.all([
+      supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'clip_play'),
+      supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'camera_change'),
+      supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'screenshot'),
+    ])
 
     setStats((prev) => ({
+      ...prev,
       total_views: viewCount ?? 0,
-      total_screenshots: extra.total_screenshots ?? prev.total_screenshots ?? 0,
-      total_camera_changes: extra.total_camera_changes ?? prev.total_camera_changes ?? 0,
-      total_clip_clicks: extra.total_clip_clicks ?? prev.total_clip_clicks ?? 0,
-      clip_popularity: extra.clip_popularity ?? prev.clip_popularity ?? {},
-      camera_popularity: extra.camera_popularity ?? prev.camera_popularity ?? {},
-      screenshot_hotspots: extra.screenshot_hotspots ?? prev.screenshot_hotspots ?? {},
+      total_screenshots: screenshotCount ?? 0,
+      total_camera_changes: cameraCount ?? 0,
+      total_clip_clicks: clipCount ?? 0,
+      clip_popularity: agg(clipEvents),
+      camera_popularity: agg(cameraEvents),
+      screenshot_hotspots: agg(screenshotEvents),
     }))
     setLoading(false)
   }, [publishedId])
@@ -164,7 +181,7 @@ export default function ClientRadarPanel({ publishedId }) {
             ) : (
               <>
                 <p className="text-[9px] text-white/25 mb-1.5">
-                  Total Views = Client page loads. Open <a href={`/view/${publishedId}`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/50" style={{ color: ACCENT }}>View link</a> in another tab to add views.
+                  Plays, screenshots, and camera changes update here. Click <strong>Refresh</strong> after activity.
                 </p>
                 <div className="space-y-1.5 text-[11px]">
                   <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />

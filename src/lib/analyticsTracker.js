@@ -18,6 +18,19 @@ export function recordClientPageView(projectId) {
     .catch((e) => console.warn('[Analytics] recordClientPageView:', e))
 }
 
+/** Record clip play, screenshot, or camera change. Uses client_interactions table — no RPC. */
+export function recordClientInteraction(projectId, eventType, eventKey) {
+  if (!projectId || !eventType || !eventKey) return
+  const pid = String(projectId).trim()
+  const key = String(eventKey).trim() || 'Unknown'
+  if (!pid || !['clip_play', 'screenshot', 'camera_change'].includes(eventType)) return
+  supabase
+    .from('client_interactions')
+    .insert({ project_id: pid, event_type: eventType, event_key: key })
+    .then(({ error }) => { if (error) console.warn('[Analytics] recordClientInteraction:', error.message) })
+    .catch((e) => console.warn('[Analytics] recordClientInteraction:', e))
+}
+
 const SESSION_STORAGE_KEY = 'stage_visitor_session_id'
 export const REALTIME_CHANNEL_NAME = 'global_radar'
 

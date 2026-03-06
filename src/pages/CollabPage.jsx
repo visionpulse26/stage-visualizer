@@ -11,6 +11,7 @@ import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
+import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -86,7 +87,7 @@ function CollabPage() {
   const playlistRef  = useRef([])
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
-  const { incrementStat, incrementJsonb } = useProjectStats(projectId, 'collab')
+  useProjectStats(projectId, 'collab') // presence for LIVE PULSE
   const currentCameraRef = useRef(null)
 
   // Track blob URLs from local uploads (Collab-only) — revoked on clear/unmount
@@ -253,7 +254,7 @@ function CollabPage() {
           return
         }
 
-        incrementStat('total_views')
+        recordClientPageView(projectId)
 
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
@@ -356,7 +357,7 @@ function CollabPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs, incrementStat])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
@@ -402,8 +403,7 @@ function CollabPage() {
   }, [activateVideo, validateMediaFile])
 
   const handleActivateVideo = useCallback((clip) => {
-    incrementStat('total_clip_clicks')
-    incrementJsonb('clip_popularity', clip?.name || 'Unknown')
+    recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -411,7 +411,7 @@ function CollabPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo, incrementStat, incrementJsonb])
+  }, [activateVideo, projectId])
 
   const handleClearPlaylist = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -481,10 +481,9 @@ function CollabPage() {
   // ── Camera navigation (read-only) ────────────────────────────────────────
   const handleGoToView = useCallback((preset) => {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
-    incrementStat('total_camera_changes')
-    incrementJsonb('camera_popularity', preset?.name || 'Unknown')
+    recordClientInteraction(projectId, 'camera_change', preset?.name || 'Unknown')
     currentCameraRef.current = preset?.name || null
-  }, [incrementStat, incrementJsonb])
+  }, [projectId])
 
   const handleToggleAutoplay = useCallback(() => {
     setIsAutoplayActive(prev => !prev)
@@ -534,14 +533,13 @@ function CollabPage() {
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
-    incrementStat('total_screenshots')
-    incrementJsonb('screenshot_hotspots', currentCameraRef.current || 'Default')
+    recordClientInteraction(projectId, 'screenshot', currentCameraRef.current || 'Default')
     const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
     const a = document.createElement('a')
     a.download = `Stage_Collab_${projectId}.png`
     a.href = dataUrl
     a.click()
-  }, [projectId, projectName, versionStatus, incrementStat, incrementJsonb])
+  }, [projectId, projectName, versionStatus])
 
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
