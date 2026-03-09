@@ -34,6 +34,7 @@ function ClientPage() {
   const [videoLoaded,    setVideoLoaded]    = useState(false)
   const [isDbLoading,    setIsDbLoading]    = useState(true)
   const [projectNotFound, setProjectNotFound] = useState(false)
+  const [clientLocked, setClientLocked] = useState(false)
   const [projectName, setProjectName] = useState('LIVE STAGE')
   const [versionStatus, setVersionStatus] = useState('')
 
@@ -128,6 +129,17 @@ function ClientPage() {
           setProjectNotFound(true)
           return
         }
+
+        // Client link locking: if is_client_locked, block unauthenticated users
+        if (data.is_client_locked) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) {
+            setClientLocked(true)
+            setIsDbLoading(false)
+            return
+          }
+        }
+        setClientLocked(false)
 
         // Record view in client_page_views (no RPC; works with any project id type)
         recordClientPageView(projectId)
@@ -335,6 +347,10 @@ function ClientPage() {
     return <ClientProjectNotFound projectId={projectId} />
   }
 
+  if (clientLocked) {
+    return <ClientLinkLocked projectId={projectId} />
+  }
+
   const activeClip = videoPlaylist.find(c => c.id === activeVideoId)
 
   return (
@@ -410,6 +426,32 @@ function ClientProjectNotFound({ projectId }) {
           <p className="text-white/20 text-[11px] mt-2 font-mono break-all">{projectId}</p>
         </div>
         <p className="text-xs text-white/30">Please contact the person who shared this link.</p>
+      </div>
+    </div>
+  )
+}
+
+function ClientLinkLocked({ projectId }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-[#0a0a0c]">
+      <div className="bg-black/60 border border-amber-500/20 rounded-2xl px-10 py-8 flex flex-col items-center gap-5 max-w-sm text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-2xl">
+          🔒
+        </div>
+        <div>
+          <p className="text-white/90 text-base font-semibold">Link Locked</p>
+          <p className="text-white/40 text-sm mt-1">
+            This presentation has been made private by the administrator. Access is restricted to authorized users only.
+          </p>
+          <p className="text-white/20 text-[11px] mt-2 font-mono break-all">{projectId}</p>
+        </div>
+        <p className="text-xs text-white/30">Please sign in as Admin or contact the organizer for access.</p>
+        <a
+          href="/"
+          className="mt-2 px-4 py-2 rounded-lg border border-white/20 text-white/70 hover:bg-white/5 text-sm transition-colors"
+        >
+          Sign In
+        </a>
       </div>
     </div>
   )
