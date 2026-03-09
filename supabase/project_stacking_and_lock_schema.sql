@@ -1,10 +1,13 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- PROJECT STACKING (group_id) + CLIENT LINK LOCKING (is_client_locked)
 -- Run in Supabase SQL Editor after project_stats_schema.sql
+-- If you previously got "uuid and text" FK error, run first:
+--   ALTER TABLE projects DROP COLUMN IF EXISTS group_id;
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- 1. group_id: links rounds of the same project (clone inherits source's group)
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+-- projects.id is TEXT; group_id must be TEXT to match
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
 -- 2. is_client_locked: when true, /view/:id returns 403 for unauthenticated users
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_client_locked BOOLEAN NOT NULL DEFAULT false;
 
@@ -19,7 +22,7 @@ DECLARE
   src RECORD;
   new_id UUID;
   src_id_text TEXT;
-  gid UUID;
+  gid TEXT;
 BEGIN
   src_id_text := p_source_id::TEXT;
   SELECT id, stage_url, video_url, camera_presets, grid_cell_size, scene_config, name, group_id
@@ -39,7 +42,7 @@ BEGIN
     total_views, total_screenshots, total_camera_changes, total_clip_clicks,
     clip_popularity, camera_popularity, screenshot_hotspots
   ) VALUES (
-    new_id,
+    new_id::TEXT,
     COALESCE(NULLIF(TRIM(p_new_name), ''), src.name || ' (Clone)'),
     src.stage_url,
     NULL,
