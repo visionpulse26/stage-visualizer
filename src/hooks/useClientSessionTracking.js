@@ -44,16 +44,36 @@ export function useClientSessionTracking(projectId) {
     sessionStartRef.current = Date.now()
     recordClientSessionStart(projectId, sessionId)
 
-    const onBeforeUnload = () => {
+    const flushSession = () => {
       flushClipWatch()
       const duration = (Date.now() - sessionStartRef.current) / 1000
       recordClientSessionEnd(projectId, sessionId, duration)
     }
 
-    window.addEventListener('beforeunload', onBeforeUnload)
+    const handleUnload = () => {
+      flushSession()
+    }
+
+    // Heartbeat: update duration every 30s (partial data even if unload never fires)
+    const heartbeat = setInterval(() => {
+      const duration = (Date.now() - sessionStartRef.current) / 1000
+      recordClientSessionEnd(projectId, sessionId, duration)
+    }, 30000)
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') handleUnload()
+    }
+
+    window.addEventListener('beforeunload', handleUnload)
+    window.addEventListener('pagehide', handleUnload)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload)
-      onBeforeUnload()
+      clearInterval(heartbeat)
+      window.removeEventListener('beforeunload', handleUnload)
+      window.removeEventListener('pagehide', handleUnload)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      flushSession()
     }
   }, [projectId, flushClipWatch])
 

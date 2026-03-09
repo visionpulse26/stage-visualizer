@@ -56,7 +56,7 @@ export default function ClientRadarPanel({ publishedId }) {
       supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'camera_change'),
       supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'screenshot'),
       supabase.from('client_clip_watch').select('clip_key, watch_seconds').eq('project_id', projectIdStr).then((r) => r),
-      supabase.from('client_sessions').select('duration_seconds, device_os, form_factor, screen_width, screen_height').eq('project_id', projectIdStr).not('duration_seconds', 'is', null).then((r) => r),
+      supabase.from('client_sessions').select('duration_seconds, device_os, form_factor, screen_width, screen_height').eq('project_id', projectIdStr).then((r) => r),
     ])
     const clipWatchRows = Array.isArray(clipWatchResult?.data) ? clipWatchResult.data : []
     const sessionsRows = Array.isArray(sessionsResult?.data) ? sessionsResult.data : []
@@ -72,6 +72,7 @@ export default function ClientRadarPanel({ publishedId }) {
     }
 
     const clipWatch = agg(clipWatchRows || [], 'clip_key', 'watch_seconds')
+    // Device/screen: from ALL sessions (set at insert)
     const deviceOs = agg(sessionsRows || [], 'device_os')
     const formFactor = agg(sessionsRows || [], 'form_factor')
     const screenRes = {}
@@ -83,6 +84,7 @@ export default function ClientRadarPanel({ publishedId }) {
         screenRes[k] = (screenRes[k] || 0) + 1
       }
     })
+    // Avg duration: only from sessions that have duration_seconds (PATCH on unload)
     const durations = (sessionsRows || []).map((r) => r.duration_seconds).filter((n) => n != null && n > 0)
     const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0
 
