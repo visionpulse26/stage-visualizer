@@ -54,7 +54,7 @@ function Slider({ label, value, min, max, step = 1, onChange, onChangeEnd }) {
 function UIPanel({
   onModelUpload, onVideoUpload, onExternalVideoAdd,
   videoLoaded, ledMaterialFound,
-  videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onDeleteClip, onClearPlaylist,
+  videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onDeleteClip, onReorderPlaylist, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
   // ── Virtual Camera (OBS / NDI) ──────────────────────────────────────────
   availableCameras, selectedCameraId, onCameraSelect,
@@ -310,15 +310,40 @@ function UIPanel({
                 </p>
               </div>
 
-              {/* Playlist — double-click name to rename */}
+              {/* Playlist — drag to reorder, double-click name to rename */}
               {videoPlaylist.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {videoPlaylist.map(clip => (
-                    <div key={clip.id} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
-                      clip.id === activeVideoId
-                        ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
-                        : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
-                    }`}>
+                  {videoPlaylist.map((clip, idx) => (
+                    <div
+                      key={clip.id}
+                      draggable={!!onReorderPlaylist}
+                      onDragStart={e => { if (onReorderPlaylist) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)) } }}
+                      onDragOver={e => { if (onReorderPlaylist) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('ring-1', 'ring-violet-500/40') } }}
+                      onDragLeave={e => { e.currentTarget.classList.remove('ring-1', 'ring-violet-500/40') }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        e.currentTarget.classList.remove('ring-1', 'ring-violet-500/40')
+                        if (!onReorderPlaylist) return
+                        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
+                        const toIdx = idx
+                        if (fromIdx === toIdx || isNaN(fromIdx)) return
+                        const next = [...videoPlaylist]
+                        const [removed] = next.splice(fromIdx, 1)
+                        next.splice(toIdx, 0, removed)
+                        onReorderPlaylist(next)
+                      }}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${onReorderPlaylist ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                        clip.id === activeVideoId
+                          ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
+                          : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                      }`}
+                    >
+                      {/* Drag handle */}
+                      {onReorderPlaylist && (
+                        <span className="flex-shrink-0 text-white/25 hover:text-white/50 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
+                        </span>
+                      )}
                       {/* Type icon */}
                       <span className="flex-shrink-0 text-white/30">
                         {clip.type === 'image' ? (

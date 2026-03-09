@@ -240,6 +240,14 @@ function AdminPage() {
     )
   }, [])
 
+  const handleReorderPlaylist = useCallback(async (newOrder) => {
+    setVideoPlaylist(newOrder)
+    if (publishedId && newOrder.length > 0) {
+      const mediaForDb = newOrder.map(c => ({ name: c.name, url: c.url, type: c.type, external: c.external ?? false }))
+      await supabase.from('projects').update({ media_playlist: mediaForDb }).eq('id', publishedId)
+    }
+  }, [publishedId])
+
   const handleDeleteClip = useCallback((clipId) => {
     setVideoPlaylist(prev => {
       const clip = prev.find(c => c.id === clipId)
@@ -885,6 +893,7 @@ function AdminPage() {
           onActivateVideo={handleActivateVideo}
           onRenameClip={handleRenameClip}
           onDeleteClip={handleDeleteClip}
+          onReorderPlaylist={handleReorderPlaylist}
           onClearPlaylist={handleClearPlaylist}
           isPlaying={isPlaying}
           isLooping={isLooping}
