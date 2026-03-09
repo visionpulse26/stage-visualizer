@@ -3,7 +3,7 @@
  * Client page views: simple INSERT into client_page_views (no RPC, works with any id type).
  */
 
-import { supabase } from './supabaseClient'
+import { supabase, supabaseUrl, supabaseKey } from './supabaseClient'
 import { trackStat, trackJsonb } from './trackingService'
 
 /** Record one client page view. Uses client_page_views table — no RPC, no projects table. */
@@ -16,6 +16,77 @@ export function recordClientPageView(projectId) {
     .insert({ project_id: id, viewed_at: new Date().toISOString() })
     .then(({ error }) => { if (error) console.warn('[Analytics] recordClientPageView:', error.message) })
     .catch((e) => console.warn('[Analytics] recordClientPageView:', e))
+}
+
+/** Parse device OS and form factor from userAgent. */
+export function parseDeviceContext() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const width = typeof window !== 'undefined' ? window.innerWidth : 0
+  const height = typeof window !== 'undefined' ? window.innerHeight : 0
+  let deviceOs = 'Unknown'
+  if (/Windows/i.test(ua)) deviceOs = 'Windows'
+  else if (/Mac OS X|Macintosh/i.test(ua)) deviceOs = 'macOS'
+  else if (/iPhone|iPad/i.test(ua)) deviceOs = 'iOS'
+  else if (/Android/i.test(ua)) deviceOs = 'Android'
+  else if (/Linux/i.test(ua)) deviceOs = 'Linux'
+  const formFactor = width > 0 && width < 768 ? 'Mobile' : 'Desktop'
+  return { deviceOs, formFactor, screenWidth: width, screenHeight: height }
+}
+
+/** Start a client session (device, screen). Call on page load. */
+export function recordClientSessionStart(projectId, sessionId) {
+  if (!projectId || !sessionId) return
+  const pid = String(projectId).trim()
+  if (!pid) return
+  const { deviceOs, formFactor, screenWidth, screenHeight } = parseDeviceContext()
+  supabase
+    .from('client_sessions')
+    .insert({
+      project_id: pid,
+      session_id: sessionId,
+      device_os: deviceOs,
+      form_factor: formFactor,
+      screen_width: screenWidth || null,
+      screen_height: screenHeight || null,
+    })
+    .then(({ error }) => { if (error) console.warn('[Analytics] recordClientSessionStart:', error.message) })
+    .catch((e) => console.warn('[Analytics] recordClientSessionStart:', e))
+}
+
+/** End a client session with duration. Uses Beacon API for reliable beforeunload. */
+export function recordClientSessionEnd(projectId, sessionId, durationSeconds) {
+  if (!projectId || !sessionId || typeof durationSeconds !== 'number' || durationSeconds < 0) return
+  const pid = String(projectId).trim()
+  if (!pid) return
+  const url = (supabaseUrl || '').replace(/\/$/, '') + '/rest/v1/client_sessions'
+  if (!url || !supabaseKey) return
+  const patchUrl = `${url}?project_id=eq.${encodeURIComponent(pid)}&session_id=eq.${encodeURIComponent(sessionId)}`
+  try {
+    fetch(patchUrl, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ duration_seconds: Math.round(durationSeconds) }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch (_) {}
+}
+
+/** Record clip watch segment (seconds watched). Call when user switches clip or on unload. */
+export function recordClipWatch(projectId, clipKey, watchSeconds) {
+  if (!projectId || !clipKey || typeof watchSeconds !== 'number' || watchSeconds <= 0) return
+  const pid = String(projectId).trim()
+  const key = String(clipKey).trim() || 'Unknown'
+  if (!pid) return
+  supabase
+    .from('client_clip_watch')
+    .insert({ project_id: pid, clip_key: key, watch_seconds: Math.round(watchSeconds) })
+    .then(({ error }) => { if (error) console.warn('[Analytics] recordClipWatch:', error.message) })
+    .catch((e) => console.warn('[Analytics] recordClipWatch:', e))
 }
 
 /** Record clip play, screenshot, or camera change. Uses client_interactions table — no RPC. */

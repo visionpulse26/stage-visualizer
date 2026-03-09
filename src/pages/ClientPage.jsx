@@ -11,6 +11,7 @@ import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
+import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
@@ -71,6 +72,7 @@ function ClientPage() {
   const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
   useProjectStats(projectId, 'client') // presence for LIVE PULSE
+  const { startClipWatch } = useClientSessionTracking(projectId)
   const currentCameraRef = useRef(null)
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
@@ -182,6 +184,7 @@ function ClientPage() {
           const restored = await loadMediaPlaylist(data.media_playlist)
           setVideoPlaylist(restored)
           const first = restored[0]
+          startClipWatch?.(first?.name || 'Unknown')
           if (first.type === 'image') {
             setActiveImageUrl(first.url)
             setActiveVideoId(first.id)
@@ -195,7 +198,9 @@ function ClientPage() {
             try { vidUrl = await fetchAsBlobUrl(vidUrl) } catch {}
           }
           const id = Date.now()
-          setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: vidUrl }])
+          const name = 'Published Video'
+          startClipWatch?.(name)
+          setVideoPlaylist([{ id, name, type: 'video', url: vidUrl }])
           activateVideo(id, vidUrl)
         }
 
@@ -253,11 +258,12 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs, startClipWatch])
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
     recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
+    startClipWatch?.(clip?.name || 'Unknown')
     if (clip.type === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(clip.url)
@@ -265,7 +271,7 @@ function ClientPage() {
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo, projectId])
+  }, [activateVideo, projectId, startClipWatch])
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
