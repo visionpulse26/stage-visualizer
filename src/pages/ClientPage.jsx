@@ -348,7 +348,7 @@ function ClientPage() {
   }
 
   if (clientLocked) {
-    return <ClientLinkLocked projectId={projectId} />
+    return <ClientLinkLocked />
   }
 
   const activeClip = videoPlaylist.find(c => c.id === activeVideoId)
@@ -431,7 +431,7 @@ function ClientProjectNotFound({ projectId }) {
   )
 }
 
-function ClientLinkLocked({ projectId }) {
+function ClientLinkLocked() {
   return (
     <div className="w-full h-full flex items-center justify-center bg-[#0a0a0c]">
       <div className="bg-black/60 border border-amber-500/20 rounded-2xl px-10 py-8 flex flex-col items-center gap-5 max-w-sm text-center">
@@ -443,15 +443,7 @@ function ClientLinkLocked({ projectId }) {
           <p className="text-white/40 text-sm mt-1">
             This presentation has been made private by the administrator. Access is restricted to authorized users only.
           </p>
-          <p className="text-white/20 text-[11px] mt-2 font-mono break-all">{projectId}</p>
         </div>
-        <p className="text-xs text-white/30">Please sign in as Admin or contact the organizer for access.</p>
-        <a
-          href="/"
-          className="mt-2 px-4 py-2 rounded-lg border border-white/20 text-white/70 hover:bg-white/5 text-sm transition-colors"
-        >
-          Sign In
-        </a>
       </div>
     </div>
   )
