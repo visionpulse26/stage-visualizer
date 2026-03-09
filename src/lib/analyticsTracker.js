@@ -18,17 +18,42 @@ export function recordClientPageView(projectId) {
     .catch((e) => console.warn('[Analytics] recordClientPageView:', e))
 }
 
-/** Parse device OS and form factor from userAgent. */
+/**
+ * Robust OS detection. Returns one of: "iOS", "Android", "macOS", "Windows", "Other".
+ * Fixes "Desktop Safari on iPhone/iPad" bug: when iOS requests desktop site, UA reports
+ * as Mac. If UA says "Mac" but maxTouchPoints > 0, it is iOS/iPadOS, not macOS.
+ * Prioritizes mobile (iOS/Android) before desktop.
+ */
+export function detectPlatform() {
+  if (typeof navigator === 'undefined') return 'Other'
+  const ua = navigator.userAgent || ''
+  const maxTouchPoints = navigator.maxTouchPoints ?? 0
+
+  // 1. Explicit iPhone/iPad (unmasked)
+  if (/iPhone|iPod/i.test(ua)) return 'iOS'
+  if (/iPad/i.test(ua)) return 'iOS'
+
+  // 2. Mac-like UA with touch → iOS (iPad/iPhone requesting desktop site)
+  if ((/Macintosh|Mac OS X/i.test(ua) || /Mac Intel/i.test(ua)) && maxTouchPoints > 0) {
+    return 'iOS'
+  }
+
+  // 3. Android (mobile)
+  if (/Android/i.test(ua)) return 'Android'
+
+  // 4. Desktop OS
+  if (/Windows/i.test(ua)) return 'Windows'
+  if (/Macintosh|Mac OS X|Mac Intel/i.test(ua)) return 'macOS'
+
+  // 5. Linux and others
+  return 'Other'
+}
+
+/** Parse device context for session logging. Uses robust platform detection. */
 export function parseDeviceContext() {
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const width = typeof window !== 'undefined' ? window.innerWidth : 0
   const height = typeof window !== 'undefined' ? window.innerHeight : 0
-  let deviceOs = 'Unknown'
-  if (/Windows/i.test(ua)) deviceOs = 'Windows'
-  else if (/Mac OS X|Macintosh/i.test(ua)) deviceOs = 'macOS'
-  else if (/iPhone|iPad/i.test(ua)) deviceOs = 'iOS'
-  else if (/Android/i.test(ua)) deviceOs = 'Android'
-  else if (/Linux/i.test(ua)) deviceOs = 'Linux'
+  const deviceOs = detectPlatform()
   const formFactor = width > 0 && width < 768 ? 'Mobile' : 'Desktop'
   return { deviceOs, formFactor, screenWidth: width, screenHeight: height }
 }

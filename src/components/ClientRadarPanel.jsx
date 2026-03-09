@@ -232,7 +232,7 @@ export default function ClientRadarPanel({ publishedId }) {
                 <CameraTab cameraPopularity={stats.camera_popularity} screenshotHotspots={stats.screenshot_hotspots} />
               )}
               {activeTab === 'devices' && (
-                <DevicesTab deviceOs={stats.device_os} formFactor={stats.form_factor} screenResolutions={stats.screen_resolutions} />
+                <DevicesTab deviceOs={stats.device_os} screenResolutions={stats.screen_resolutions} />
               )}
             </>
           )
@@ -420,33 +420,31 @@ function CameraTab({ cameraPopularity, screenshotHotspots }) {
   )
 }
 
-function DevicesTab({ deviceOs, formFactor, screenResolutions }) {
-  const os = topEntries(deviceOs, 5)
-  const ff = topEntries(formFactor, 3)
+const PLATFORM_ORDER = ['Windows', 'macOS', 'iOS', 'Android', 'Other']
+
+function DevicesTab({ deviceOs, screenResolutions }) {
+  const osRaw = topEntries(deviceOs, 10)
+  const os = [...osRaw].sort((a, b) => {
+    const ia = PLATFORM_ORDER.indexOf(a.key)
+    const ib = PLATFORM_ORDER.indexOf(b.key)
+    if (ia >= 0 && ib >= 0) return ia - ib
+    if (ia >= 0) return -1
+    if (ib >= 0) return 1
+    return b.value - a.value
+  })
   const res = topEntries(screenResolutions, 5)
   const maxOs = Math.max(...os.map((o) => o.value), 1)
-  const maxFf = Math.max(...ff.map((f) => f.value), 1)
   const maxRes = Math.max(...res.map((r) => r.value), 1)
 
   return (
     <div className="space-y-5">
-      <SectionTitle>Device OS</SectionTitle>
+      <SectionTitle>Platform</SectionTitle>
       {os.length === 0 ? (
-        <p className="text-sm text-white/35 italic">No device data yet</p>
+        <p className="text-sm text-white/35 italic">No platform data yet</p>
       ) : (
         <div className="space-y-3">
           {os.map(({ key, value }) => (
             <BarRow key={key} label={key} value={value} max={maxOs} />
-          ))}
-        </div>
-      )}
-      <SectionTitle>Form Factor</SectionTitle>
-      {ff.length === 0 ? (
-        <p className="text-sm text-white/35 italic">No data yet</p>
-      ) : (
-        <div className="space-y-3">
-          {ff.map(({ key, value }) => (
-            <BarRow key={key} label={key} value={value} max={maxFf} />
           ))}
         </div>
       )}
