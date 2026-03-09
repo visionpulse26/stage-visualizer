@@ -7,6 +7,7 @@ const ACCENT = '#FF5F1F'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'session', label: 'Session' },
   { id: 'media', label: 'Media' },
   { id: 'camera', label: 'Camera' },
   { id: 'devices', label: 'Devices' },
@@ -25,7 +26,10 @@ export default function ClientRadarPanel({ publishedId }) {
     camera_popularity: {},
     screenshot_hotspots: {},
     clip_watch_seconds: {},
-    session_duration_avg: 0,
+    session_min_seconds: null,
+    session_avg_seconds: null,
+    session_max_seconds: null,
+    session_count: 0,
     device_os: {},
     form_factor: {},
     screen_resolutions: {},
@@ -47,6 +51,7 @@ export default function ClientRadarPanel({ publishedId }) {
       { data: screenshotEvents },
       clipWatchResult,
       sessionsResult,
+      sessionStatsResult,
     ] = await Promise.all([
       supabase.from('client_page_views').select('*', { count: 'exact', head: true }).eq('project_id', projectIdStr),
       supabase.from('client_interactions').select('*', { count: 'exact', head: true }).eq('project_id', projectIdStr).eq('event_type', 'clip_play'),
@@ -57,6 +62,7 @@ export default function ClientRadarPanel({ publishedId }) {
       supabase.from('client_interactions').select('event_key').eq('project_id', projectIdStr).eq('event_type', 'screenshot'),
       supabase.from('client_clip_watch').select('clip_key, watch_seconds').eq('project_id', projectIdStr).then((r) => r),
       supabase.from('client_sessions').select('duration_seconds, device_os, form_factor, screen_width, screen_height').eq('project_id', projectIdStr).then((r) => r),
+      supabase.rpc('get_project_session_stats', { p_project_id: projectIdStr }).then((r) => r),
     ])
     const clipWatchRows = Array.isArray(clipWatchResult?.data) ? clipWatchResult.data : []
     const sessionsRows = Array.isArray(sessionsResult?.data) ? sessionsResult.data : []
@@ -84,9 +90,7 @@ export default function ClientRadarPanel({ publishedId }) {
         screenRes[k] = (screenRes[k] || 0) + 1
       }
     })
-    // Avg duration: only from sessions that have duration_seconds (PATCH on unload)
-    const durations = (sessionsRows || []).map((r) => r.duration_seconds).filter((n) => n != null && n > 0)
-    const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0
+    const sessionRow = Array.isArray(sessionStatsResult?.data) && sessionStatsResult.data[0] ? sessionStatsResult.data[0] : null
 
     setStats((prev) => ({
       ...prev,
@@ -98,7 +102,10 @@ export default function ClientRadarPanel({ publishedId }) {
       camera_popularity: agg(cameraEvents),
       screenshot_hotspots: agg(screenshotEvents),
       clip_watch_seconds: clipWatch,
-      session_duration_avg: Math.round(avgDuration),
+      session_min_seconds: sessionRow?.min_seconds ?? null,
+      session_avg_seconds: sessionRow?.avg_seconds ?? null,
+      session_max_seconds: sessionRow?.max_seconds ?? null,
+      session_count: sessionRow?.session_count ?? 0,
       device_os: deviceOs,
       form_factor: formFactor,
       screen_resolutions: screenRes,
@@ -215,6 +222,9 @@ export default function ClientRadarPanel({ publishedId }) {
               {activeTab === 'overview' && (
                 <OverviewTab stats={stats} onRefresh={loadStats} loading={loading} />
               )}
+              {activeTab === 'session' && (
+                <SessionTab stats={stats} />
+              )}
               {activeTab === 'media' && (
                 <MediaTab clipPopularity={stats.clip_popularity} clipWatchSeconds={stats.clip_watch_seconds} />
               )}
@@ -253,11 +263,94 @@ function OverviewTab({ stats, onRefresh, loading }) {
       </p>
       <div className="space-y-3">
         <MetricRow icon="👁️" label="Total Views" value={stats.total_views} />
-        <MetricRow icon="⏱️" label="Avg Session (sec)" value={stats.session_duration_avg || '—'} />
         <MetricRow icon="📸" label="Screenshots Taken" value={stats.total_screenshots} />
         <MetricRow icon="🎥" label="Camera Angles Explored" value={stats.total_camera_changes} />
         <MetricRow icon="🎬" label="Media Clips Played" value={stats.total_clip_clicks} />
       </div>
+    </div>
+  )
+}
+
+/** Human-readable duration: 125 -> "02m 05s", 3665 -> "1h 01m" */
+function formatDuration(seconds) {
+  if (seconds == null || seconds < 0 || !Number.isFinite(seconds)) return '—'
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  if (m < 60) return sec > 0 ? `${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  const min = m % 60
+  return min > 0 ? `${h}h ${String(min).padStart(2, '0')}m` : `${h}h`
+}
+
+function SessionTab({ stats }) {
+  const min = stats.session_min_seconds
+  const avg = stats.session_avg_seconds
+  const max = stats.session_max_seconds
+  const count = stats.session_count ?? 0
+  const hasData = count > 0 && (min != null || avg != null || max != null)
+
+  const range = (max != null && min != null && max > min) ? max - min : (max ?? min ?? 1)
+  const avgPct = (avg != null && min != null && max != null && range > 0)
+    ? ((avg - min) / range) * 100
+    : 50
+
+  return (
+    <div className="space-y-5">
+      <SectionTitle>Session duration (sessions ≤ 4h, outliers excluded)</SectionTitle>
+      {!hasData ? (
+        <p className="text-sm text-white/35 italic">No session duration data yet. Data appears after visitors leave or after the 30s heartbeat.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <StatCard label="Shortest" seconds={min} />
+            <StatCard label="Average" seconds={avg} highlight />
+            <StatCard label="Longest" seconds={max} />
+          </div>
+          {(min != null && max != null && avg != null && max > min) && (
+            <div className="space-y-2">
+              <p className="text-xs text-white/40">Average within range</p>
+              <div className="relative h-3 rounded-full bg-white/10 overflow-visible">
+                <div className="absolute inset-0 rounded-full bg-white/5" />
+                <div
+                  className="absolute top-0 bottom-0 rounded-full transition-all duration-300"
+                  style={{ left: 0, width: `${avgPct}%`, background: `${ACCENT}40` }}
+                />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-2 h-4 rounded-sm border-2 border-white shadow-md"
+                  style={{ left: `calc(${avgPct}% - 4px)`, background: ACCENT }}
+                  title={`Average: ${formatDuration(avg)}`}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-white/40">
+                <span>{formatDuration(min)}</span>
+                <span>{formatDuration(max)}</span>
+              </div>
+            </div>
+          )}
+          {count > 0 && (
+            <p className="text-xs text-white/40">{count} session{count !== 1 ? 's' : ''} included</p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function StatCard({ label, seconds, highlight }) {
+  return (
+    <div
+      className={`rounded-xl border p-3 text-center ${highlight ? 'border-opacity-50' : ''}`}
+      style={{
+        background: highlight ? `${ACCENT}15` : 'rgba(255,255,255,0.04)',
+        borderColor: highlight ? ACCENT : 'rgba(255,255,255,0.08)',
+      }}
+    >
+      <p className="text-[10px] uppercase tracking-wider text-white/50 mb-1">{label}</p>
+      <p className="text-base font-bold tabular-nums" style={{ color: ACCENT }}>
+        {formatDuration(seconds)}
+      </p>
     </div>
   )
 }
