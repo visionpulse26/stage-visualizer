@@ -1,7 +1,9 @@
 /**
  * Client session & clip watch tracking.
- * - Session: start on mount, flush duration on beforeunload (Beacon/fetch keepalive)
- * - Clip watch: stopwatch per clip, flush on clip change or unload
+ * - Session: start on mount, flush duration via visibilitychange (keepalive fetch) + heartbeat.
+ * - Uses visibilitychange (not just beforeunload) so tab switches send reliably.
+ * - Heartbeat at 5s (first) then every 30s — short sessions get data before throttling.
+ * - Duration in SECONDS (matches backend duration_seconds).
  */
 
 import { useEffect, useRef, useCallback } from 'react'
@@ -12,9 +14,13 @@ import {
   recordClipWatch,
 } from '../lib/analyticsTracker'
 
+const HEARTBEAT_INTERVAL_MS = 30000
+const FIRST_HEARTBEAT_MS = 5000
+
 export function useClientSessionTracking(projectId) {
   const sessionStartRef = useRef(null)
   const clipWatchRef = useRef({ clipKey: null, startAt: 0 })
+  const flushedRef = useRef(false)
 
   const flushClipWatch = useCallback(() => {
     if (!projectId) return
@@ -42,24 +48,34 @@ export function useClientSessionTracking(projectId) {
     if (!projectId) return
     const sessionId = getOrCreateSessionId()
     sessionStartRef.current = Date.now()
+    flushedRef.current = false
     recordClientSessionStart(projectId, sessionId)
 
     const flushSession = () => {
+      if (flushedRef.current) return
+      flushedRef.current = true
       flushClipWatch()
-      const duration = (Date.now() - sessionStartRef.current) / 1000
-      recordClientSessionEnd(projectId, sessionId, duration)
+      const durationSec = (Date.now() - sessionStartRef.current) / 1000
+      recordClientSessionEnd(projectId, sessionId, durationSec)
     }
 
     const handleUnload = () => {
       flushSession()
     }
 
-    // Heartbeat: update duration every 30s (partial data even if unload never fires)
-    const heartbeat = setInterval(() => {
-      const duration = (Date.now() - sessionStartRef.current) / 1000
-      recordClientSessionEnd(projectId, sessionId, duration)
-    }, 30000)
+    // First heartbeat at 5s (catches short visits before tab throttling)
+    const firstHb = setTimeout(() => {
+      const durationSec = (Date.now() - sessionStartRef.current) / 1000
+      recordClientSessionEnd(projectId, sessionId, durationSec)
+    }, FIRST_HEARTBEAT_MS)
 
+    // Then every 30s (background tabs may throttle; visibilitychange covers tab switch)
+    const heartbeat = setInterval(() => {
+      const durationSec = (Date.now() - sessionStartRef.current) / 1000
+      recordClientSessionEnd(projectId, sessionId, durationSec)
+    }, HEARTBEAT_INTERVAL_MS)
+
+    // Critical: visibilitychange fires on tab switch — more reliable than beforeunload alone
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') handleUnload()
     }
@@ -69,6 +85,7 @@ export function useClientSessionTracking(projectId) {
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      clearTimeout(firstHb)
       clearInterval(heartbeat)
       window.removeEventListener('beforeunload', handleUnload)
       window.removeEventListener('pagehide', handleUnload)

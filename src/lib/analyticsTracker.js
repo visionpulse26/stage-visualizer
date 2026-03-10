@@ -78,24 +78,40 @@ export function recordClientSessionStart(projectId, sessionId) {
     .catch((e) => console.warn('[Analytics] recordClientSessionStart:', e))
 }
 
-/** End a client session with duration. Uses Beacon API for reliable beforeunload. */
+/**
+ * End a client session with duration. Uses fetch + keepalive for reliable delivery
+ * on visibilitychange/beforeunload. UPSERT ensures the row exists even if the
+ * initial INSERT (recordClientSessionStart) hasn't completed when the user leaves quickly.
+ * Duration is in SECONDS (matches backend duration_seconds).
+ */
 export function recordClientSessionEnd(projectId, sessionId, durationSeconds) {
   if (!projectId || !sessionId || typeof durationSeconds !== 'number' || durationSeconds < 0) return
   const pid = String(projectId).trim()
   if (!pid) return
   const url = (supabaseUrl || '').replace(/\/$/, '') + '/rest/v1/client_sessions'
   if (!url || !supabaseKey) return
-  const patchUrl = `${url}?project_id=eq.${encodeURIComponent(pid)}&session_id=eq.${encodeURIComponent(sessionId)}`
+  const durationSec = Math.round(durationSeconds)
+  const { deviceOs, formFactor, screenWidth, screenHeight } = parseDeviceContext()
+  const payload = {
+    project_id: pid,
+    session_id: sessionId,
+    duration_seconds: durationSec,
+    device_os: deviceOs || null,
+    form_factor: formFactor || null,
+    screen_width: screenWidth || null,
+    screen_height: screenHeight || null,
+  }
+  const upsertUrl = `${url}?on_conflict=project_id,session_id`
   try {
-    fetch(patchUrl, {
-      method: 'PATCH',
+    fetch(upsertUrl, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'return=minimal',
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
       },
-      body: JSON.stringify({ duration_seconds: Math.round(durationSeconds) }),
+      body: JSON.stringify(payload),
       keepalive: true,
     }).catch(() => {})
   } catch (_) {}
