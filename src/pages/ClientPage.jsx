@@ -13,7 +13,7 @@ import { useProjectStats } from '../hooks/useProjectStats'
 import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
 import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
-import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
+import { fetchAsBlobUrl, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function ClientPage() {
@@ -148,11 +148,11 @@ function ClientPage() {
 
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
-        // Asset masking: fetch remote URLs as blobs to avoid exposing raw URLs
+        // Asset masking + caching: fetch remote URLs as blobs; cache heavy 3D assets
         const modelSrc = data.stage_url
         if (modelSrc && isRemote(modelSrc)) {
           try {
-            const blobUrl = await fetchAsBlobUrl(modelSrc)
+            const blobUrl = await fetchAsBlobUrlWithCache(modelSrc)
             addBlob(blobUrl)
             modelBlobRef.current = blobUrl
             setModelUrl(blobUrl)

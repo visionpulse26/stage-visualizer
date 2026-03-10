@@ -1,7 +1,19 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import * as THREE from 'three'
+
+// Draco decoder: gstatic CDN (reliable, no bundling). Alternative: copy decoder files to public/draco/ and use '/draco/'
+const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/'
+
+function createGltfLoaderWithDraco(loadingManager) {
+  const loader = new GLTFLoader(loadingManager)
+  const draco = new DRACOLoader()
+  draco.setDecoderPath(DRACO_DECODER_PATH)
+  loader.setDRACOLoader(draco)
+  return loader
+}
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const EMISSIVE_TARGET    = 1.5
@@ -282,24 +294,32 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   )
 }
 
+// Pre-configured loader with Draco for useLoader (Suspense path)
+const gltfLoaderWithDraco = createGltfLoaderWithDraco()
+
 function ModelWithUrl({ url, ...rest }) {
-  const gltf = useLoader(GLTFLoader, url)
+  const gltf = useLoader(gltfLoaderWithDraco, url)
   return <ModelContent gltf={gltf} {...rest} />
 }
 
 function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest }) {
   const [gltf, setGltf] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   useEffect(() => {
     if (!url || !loadingManager) return
-    const loader = new GLTFLoader()
-    loader.manager = loadingManager
+    setLoadError(null)
+    const loader = createGltfLoaderWithDraco(loadingManager)
     loader.load(
       url,
       (g) => setGltf(g),
       undefined,
-      () => setGltf(null)
+      (err) => {
+        setGltf(null)
+        setLoadError(err instanceof Error ? err : new Error(err?.message || 'Failed to load model'))
+      }
     )
   }, [url, loadingManager])
+  if (loadError) throw loadError
   if (!gltf) return null
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }

@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -452,6 +453,7 @@ function StageCanvas({
           </div>
         </div>
       )}
+      <StageErrorBoundary>
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50 }}
         gl={{
@@ -590,6 +592,7 @@ function StageCanvas({
           )}
         </EffectComposer>
       </Canvas>
+      </StageErrorBoundary>
 
       {children}
     </div>

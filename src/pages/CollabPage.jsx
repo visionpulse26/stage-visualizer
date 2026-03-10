@@ -12,7 +12,7 @@ import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
-import { fetchAsBlobUrl } from '../utils/secureAssetLoader'
+import { fetchAsBlobUrl, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function CollabPage() {
@@ -259,7 +259,7 @@ function CollabPage() {
         const modelSrc = data.stage_url
         if (modelSrc && isRemote(modelSrc)) {
           try {
-            const blobUrl = await fetchAsBlobUrl(modelSrc)
+            const blobUrl = await fetchAsBlobUrlWithCache(modelSrc)
             addBlob(blobUrl)
             modelBlobRef.current = blobUrl
             setModelUrl(blobUrl)
