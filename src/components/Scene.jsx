@@ -294,11 +294,15 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   )
 }
 
-// Pre-configured loader with Draco for useLoader (Suspense path)
-const gltfLoaderWithDraco = createGltfLoaderWithDraco()
+// Extensions callback: configure Draco on the loader instance (useLoader expects a constructor, not an instance)
+function dracoExtensions(loader) {
+  const draco = new DRACOLoader()
+  draco.setDecoderPath(DRACO_DECODER_PATH)
+  loader.setDRACOLoader(draco)
+}
 
 function ModelWithUrl({ url, ...rest }) {
-  const gltf = useLoader(gltfLoaderWithDraco, url)
+  const gltf = useLoader(GLTFLoader, url, dracoExtensions)
   return <ModelContent gltf={gltf} {...rest} />
 }
 
