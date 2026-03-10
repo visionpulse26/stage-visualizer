@@ -13,7 +13,7 @@ import { useProjectStats } from '../hooks/useProjectStats'
 import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
 import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
-import { fetchAsBlobUrl, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function ClientPage() {
@@ -170,7 +170,7 @@ function ClientPage() {
             let url = item.url
             if (isRemote(url)) {
               try {
-                const blobUrl = await fetchAsBlobUrl(url)
+                const blobUrl = await fetchAsBlobUrlWithCache(url)
                 addBlob(blobUrl)
                 url = blobUrl
               } catch {}
@@ -195,7 +195,11 @@ function ClientPage() {
         } else if (data.video_url) {
           let vidUrl = data.video_url
           if (isRemote(vidUrl)) {
-            try { vidUrl = await fetchAsBlobUrl(vidUrl) } catch {}
+            try {
+              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
+              addBlob(blobUrl)
+              vidUrl = blobUrl
+            } catch {}
           }
           const id = Date.now()
           const name = 'Published Video'
@@ -229,12 +233,17 @@ function ClientPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
-            // Extract extension (strip query string: file.hdr?q=1 -> hdr)
             const basePath = hdriSrc.split('?')[0] || hdriSrc
             const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
             setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
-            // Use direct URL — same as AdminPage. Blob conversion caused CORS/fetch errors on Client.
-            setCustomHdriUrl(hdriSrc)
+            // Obfuscation: fetch via blob so raw URL never reaches DOM/loaders
+            if (isRemote(hdriSrc)) {
+              fetchAsBlobUrlWithCache(hdriSrc).then((blobUrl) => {
+                if (!cancelled) { addBlob(blobUrl); setCustomHdriUrl(blobUrl) }
+              }).catch(() => { if (!cancelled) setCustomHdriUrl(hdriSrc) })
+            } else {
+              setCustomHdriUrl(hdriSrc)
+            }
           } else {
             setHdriFileExt('hdr')
             setCustomHdriUrl(null)

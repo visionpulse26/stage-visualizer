@@ -12,7 +12,7 @@ import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
-import { fetchAsBlobUrl, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 
 function CollabPage() {
@@ -276,7 +276,11 @@ function CollabPage() {
             const item = items[i]
             let url = item.url
             if (isRemote(url)) {
-              try { url = await fetchAsBlobUrl(url) } catch {}
+              try {
+                const blobUrl = await fetchAsBlobUrlWithCache(url)
+                addBlob(blobUrl)
+                url = blobUrl
+              } catch {}
             }
             restored.push({ id: Date.now() + i, name: item.name, url, type: item.type, external: true })
           }
@@ -299,7 +303,7 @@ function CollabPage() {
           let vidUrl = data.video_url
           if (isRemote(vidUrl)) {
             try {
-              const blobUrl = await fetchAsBlobUrl(vidUrl)
+              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
               addBlob(blobUrl)
               vidUrl = blobUrl
             } catch {}
@@ -327,12 +331,16 @@ function CollabPage() {
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
-            // Extract extension (strip query string: file.hdr?q=1 -> hdr)
             const basePath = hdriSrc.split('?')[0] || hdriSrc
             const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
             setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
-            // Use direct URL — same as AdminPage. Blob conversion caused errors on Client/Collab.
-            setCustomHdriUrl(hdriSrc)
+            if (isRemote(hdriSrc)) {
+              fetchAsBlobUrlWithCache(hdriSrc).then((blobUrl) => {
+                if (!cancelled) { addBlob(blobUrl); setCustomHdriUrl(blobUrl) }
+              }).catch(() => { if (!cancelled) setCustomHdriUrl(hdriSrc) })
+            } else {
+              setCustomHdriUrl(hdriSrc)
+            }
           } else {
             setHdriFileExt('hdr')
             setCustomHdriUrl(null)

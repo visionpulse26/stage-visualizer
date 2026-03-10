@@ -423,8 +423,16 @@ function StageCanvas({
     ? Math.max(bloomThreshold ?? 1.2, 1.5)
     : (bloomThreshold ?? 1.2)
 
+  const blockFriction = useCallback((e) => {
+    e.preventDefault()
+  }, [])
+
   return (
-    <div className="w-full h-full relative bg-[#0a0a0c]">
+    <div
+      className="w-full h-full relative bg-[#0a0a0c]"
+      onContextMenu={blockFriction}
+      onDragStart={blockFriction}
+    >
       {contextLost && (
         <div
           className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0a0a0c]"

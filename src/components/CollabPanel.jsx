@@ -144,8 +144,15 @@ function CollabPanel({
     )
   }
 
+  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
+
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
+    <div
+      className="absolute top-4 left-4 z-10 flex flex-col gap-2"
+      style={{ width: 280 }}
+      onContextMenu={blockFriction}
+      onDragStart={blockFriction}
+    >
 
       {/* ── Sandbox Mode badge + minimize ───────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 
 /**
  * Minimal end-client panel.
@@ -36,8 +36,14 @@ function ClientPanel({
     )
   }
 
+  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
+
   return (
-    <div className="absolute top-4 left-4 w-60 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+    <div
+      className="absolute top-4 left-4 w-60 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col"
+      onContextMenu={blockFriction}
+      onDragStart={blockFriction}
+    >
 
       {/* Header */}
       <div className="bg-white/5 px-4 py-3 border-b border-white/10 flex items-center justify-between flex-shrink-0">
