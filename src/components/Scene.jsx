@@ -1,19 +1,7 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import * as THREE from 'three'
-
-// Draco decoder: gstatic CDN (reliable, no bundling). Alternative: copy decoder files to public/draco/ and use '/draco/'
-const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/'
-
-function createGltfLoaderWithDraco(loadingManager) {
-  const loader = new GLTFLoader(loadingManager)
-  const draco = new DRACOLoader()
-  draco.setDecoderPath(DRACO_DECODER_PATH)
-  loader.setDRACOLoader(draco)
-  return loader
-}
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const EMISSIVE_TARGET    = 1.5
@@ -294,15 +282,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   )
 }
 
-// Extensions callback: configure Draco on the loader instance (useLoader expects a constructor, not an instance)
-function dracoExtensions(loader) {
-  const draco = new DRACOLoader()
-  draco.setDecoderPath(DRACO_DECODER_PATH)
-  loader.setDRACOLoader(draco)
-}
-
 function ModelWithUrl({ url, ...rest }) {
-  const gltf = useLoader(GLTFLoader, url, dracoExtensions)
+  const gltf = useLoader(GLTFLoader, url)
   return <ModelContent gltf={gltf} {...rest} />
 }
 
@@ -312,7 +293,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   useEffect(() => {
     if (!url || !loadingManager) return
     setLoadError(null)
-    const loader = createGltfLoaderWithDraco(loadingManager)
+    const loader = new GLTFLoader(loadingManager)
     loader.load(
       url,
       (g) => setGltf(g),

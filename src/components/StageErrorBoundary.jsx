@@ -3,7 +3,7 @@ import { Component } from 'react'
 /**
  * Error Boundary for the 3D Canvas. Catches:
  * - WebGL initialization failures
- * - GLTF model loading errors (including Draco decompression)
+ * - GLTF model loading errors
  * - Fetch/network failures
  * Prevents blank white screens; shows a graceful fallback UI.
  */
@@ -25,13 +25,11 @@ class StageErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       const msg = this.state.error?.message || 'Unknown error'
-      const isDraco = /draco|decoder|decompress/i.test(msg)
       const isWebgl = /webgl|context|gpu/i.test(msg)
       const isNetwork = /fetch|network|cors|failed to load/i.test(msg)
 
       let hint = 'Try reloading the page.'
-      if (isDraco) hint = 'The 3D model may be in an unsupported format. Try a non-Draco GLB.'
-      else if (isWebgl) hint = 'WebGL may be disabled or unsupported in your browser.'
+      if (isWebgl) hint = 'WebGL may be disabled or unsupported in your browser.'
       else if (isNetwork) hint = 'Check your connection and try again.'
 
       return (
