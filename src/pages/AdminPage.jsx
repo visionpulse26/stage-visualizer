@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { fetchAndCacheAsset } from '../utils/secureAssetLoader'
 import StageCanvas from '../components/StageCanvas'
 import UIPanel     from '../components/UIPanel'
 import TopBar      from '../components/TopBar'
@@ -12,8 +13,9 @@ import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
   const [stageFile,    setStageFile]    = useState(null)
-  const [stageUrl,     setStageUrl]     = useState(null)   // local blob preview
-  const [cloudStageUrl, setCloudStageUrl] = useState(null) // already-published URL (skip re-upload)
+  const [stageUrl,     setStageUrl]     = useState(null)   // local blob preview (from file)
+  const [cloudStageUrl, setCloudStageUrl] = useState(null) // published or external URL
+  const [resolvedStageUrl, setResolvedStageUrl] = useState(null) // cached blob URL for external
 
   // ── Video / Image ────────────────────────────────────────────────────────
   const [videoElement,   setVideoElement]   = useState(null)
@@ -98,11 +100,44 @@ function AdminPage() {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
   const [cloneToast, setCloneToast] = useState(null)
 
+  // ── Resolve external stage URL through cache for 3D preview ─────────────────
+  const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
+  useEffect(() => {
+    if (!cloudStageUrl || stageUrl) return
+    if (!isRemote(cloudStageUrl)) return
+    let cancelled = false
+    setResolvedStageUrl(null)
+    fetchAndCacheAsset(cloudStageUrl)
+      .then((blobUrl) => {
+        if (!cancelled) setResolvedStageUrl(blobUrl)
+      })
+      .catch(() => { if (!cancelled) setResolvedStageUrl(null) })
+    return () => {
+      cancelled = true
+    }
+  }, [cloudStageUrl, stageUrl])
+
+  // ── Revoke resolved blob when URL changes or unmount ───────────────────────
+  const prevResolvedRef = useRef(null)
+  useEffect(() => {
+    const prev = prevResolvedRef.current
+    prevResolvedRef.current = resolvedStageUrl
+    if (prev && prev.startsWith('blob:') && prev !== resolvedStageUrl) {
+      try { URL.revokeObjectURL(prev) } catch (_) {}
+    }
+    return () => {
+      if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) {
+        try { URL.revokeObjectURL(resolvedStageUrl) } catch (_) {}
+      }
+    }
+  }, [resolvedStageUrl])
+
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
       if (stageUrl && stageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(stageUrl) } catch (_) {} }
+      if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(resolvedStageUrl) } catch (_) {} }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
       // Camera stream cleanup
       if (cameraVideoRef.current) {
@@ -538,8 +573,19 @@ function AdminPage() {
   const handleModelUpload = useCallback((file) => {
     if (!file) return
     if (stageUrl && stageUrl.startsWith('blob:')) URL.revokeObjectURL(stageUrl)
+    if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) URL.revokeObjectURL(resolvedStageUrl)
     const url = URL.createObjectURL(file)
-    setStageFile(file); setStageUrl(url); setCloudStageUrl(null)
+    setStageFile(file); setStageUrl(url); setCloudStageUrl(null); setResolvedStageUrl(null)
+  }, [stageUrl, resolvedStageUrl])
+
+  // ── External stage URL (R2, CDN) — store URL, resolve for preview via cache ─
+  const handleExternalStageUrl = useCallback((url) => {
+    if (!url?.trim()) return
+    if (stageUrl && stageUrl.startsWith('blob:')) URL.revokeObjectURL(stageUrl)
+    setStageFile(null)
+    setStageUrl(null)
+    setCloudStageUrl(url.trim())
+    setResolvedStageUrl(null)
   }, [stageUrl])
 
   // ── Camera preset helpers ────────────────────────────────────────────────
@@ -600,7 +646,8 @@ function AdminPage() {
 
     // Reset all state to match the opened project
     setStageFile(null)
-    setStageUrl(p.stage_url || null)
+    setStageUrl(null)
+    setResolvedStageUrl(null)
     setCloudStageUrl(p.stage_url || null)
     setVideoElement(null)
     setActiveImageUrl(null)
@@ -858,7 +905,7 @@ function AdminPage() {
   return (
     <div className="w-full h-full relative">
       <StageCanvas
-        modelUrl={stageUrl || cloudStageUrl}
+        modelUrl={stageUrl || resolvedStageUrl || cloudStageUrl}
         videoElement={videoElement}
         activeImageUrl={activeImageUrl}
         onLedMaterialStatus={setLedMaterialFound}
@@ -884,6 +931,7 @@ function AdminPage() {
       >
         <UIPanel
           onModelUpload={handleModelUpload}
+          onExternalStageUrl={handleExternalStageUrl}
           onVideoUpload={handleVideoUpload}
           onExternalVideoAdd={handleExternalVideoAdd}
           videoLoaded={videoLoaded}

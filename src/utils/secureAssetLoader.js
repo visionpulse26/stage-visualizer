@@ -16,6 +16,43 @@ async function openCache() {
 }
 
 /**
+ * Fetches a URL with cache-first strategy. Returns blob object URL.
+ * Caller MUST call URL.revokeObjectURL() when done to avoid memory leaks.
+ *
+ * Flow: Check cache → return blob URL if hit. Else fetch, store in cache, return blob URL.
+ *
+ * @param {string} url - HTTP/HTTPS URL (returns as-is if already blob:)
+ * @returns {Promise<string>} Object URL (blob:...)
+ * @throws {Error} On failed fetch
+ */
+export async function fetchAndCacheAsset(url) {
+  if (!url || url.startsWith('blob:')) return url
+  const cache = await openCache()
+  if (cache) {
+    try {
+      const cached = await cache.match(url)
+      if (cached) {
+        const blob = await cached.blob()
+        return URL.createObjectURL(blob)
+      }
+    } catch (_) {
+      /* cache miss or error — fall through to network */
+    }
+  }
+  const res = await fetch(url, { mode: 'cors' })
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+  const blob = await res.blob()
+  if (cache) {
+    try {
+      await cache.put(url, new Response(blob))
+    } catch (_) {
+      /* cache write failed — non-fatal */
+    }
+  }
+  return URL.createObjectURL(blob)
+}
+
+/**
  * Fetches a URL as a Blob and returns an object URL. No caching.
  * @param {string} url - HTTP/HTTPS URL (ignored if already blob:)
  * @returns {Promise<string>} Object URL (blob:...)
@@ -29,43 +66,9 @@ export async function fetchAsBlobUrl(url) {
 }
 
 /**
- * Fetches a URL as a Blob with cache-first strategy. Returns object URL.
+ * Alias for fetchAndCacheAsset. Fetches URL with cache-first, returns blob URL.
  * Caller must revoke the URL when done.
- *
- * Flow: Check cache → return blob URL from cache if hit. Otherwise fetch,
- * store in cache, return blob URL.
- *
  * @param {string} url - HTTP/HTTPS URL (ignored if already blob:)
  * @returns {Promise<string>} Object URL (blob:...)
  */
-export async function fetchAsBlobUrlWithCache(url) {
-  if (!url || url.startsWith('blob:')) return url
-
-  const cache = await openCache()
-  if (cache) {
-    try {
-      const cached = await cache.match(url)
-      if (cached) {
-        const blob = await cached.blob()
-        return URL.createObjectURL(blob)
-      }
-    } catch (_) {
-      /* cache miss or error — fall through to network */
-    }
-  }
-
-  const res = await fetch(url, { mode: 'cors' })
-  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-
-  const blob = await res.blob()
-
-  if (cache) {
-    try {
-      await cache.put(url, new Response(blob))
-    } catch (_) {
-      /* cache write failed — non-fatal */
-    }
-  }
-
-  return URL.createObjectURL(blob)
-}
+export const fetchAsBlobUrlWithCache = fetchAndCacheAsset

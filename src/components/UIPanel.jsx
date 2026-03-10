@@ -52,7 +52,7 @@ function Slider({ label, value, min, max, step = 1, onChange, onChangeEnd }) {
 
 // ── Main UIPanel ──────────────────────────────────────────────────────────────
 function UIPanel({
-  onModelUpload, onVideoUpload, onExternalVideoAdd,
+  onModelUpload, onExternalStageUrl, onVideoUpload, onExternalVideoAdd,
   videoLoaded, ledMaterialFound,
   videoPlaylist, activeVideoId, onActivateVideo, onRenameClip, onDeleteClip, onReorderPlaylist, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
@@ -108,6 +108,7 @@ function UIPanel({
   const renameInputRef     = useRef(null)
 
   const [externalUrlInput, setExternalUrlInput]  = useState('')
+  const [externalStageUrlInput, setExternalStageUrlInput] = useState('')
 
   // ── HDRI custom tab state ──────────────────────────────────────────────
   const [hdriInputMode,    setHdriInputMode]    = useState('cloud')   // 'cloud' | 'link' | 'nas'
@@ -204,13 +205,36 @@ function UIPanel({
         {activeSection === 'media' && (
           <>
             <Section icon={<IconUpload />} title="Stage Model">
-              <button
-                onClick={() => modelInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
-              >
-                <IconUpload /><span>Choose .glb / .gltf file</span>
-              </button>
-              <input ref={modelInputRef} type="file" accept=".glb,.gltf" className="hidden" onChange={e => onModelUpload(e.target.files?.[0])} />
+              <div className="space-y-2">
+                <button
+                  onClick={() => modelInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-violet-500/40 hover:bg-violet-500/5 text-white/40 hover:text-violet-300 text-xs font-medium transition-all"
+                >
+                  <IconUpload /><span>Choose .glb / .gltf file</span>
+                </button>
+                <input ref={modelInputRef} type="file" accept=".glb,.gltf" className="hidden" onChange={e => onModelUpload(e.target.files?.[0])} />
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-white/30 flex-shrink-0">or</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={externalStageUrlInput}
+                    onChange={e => setExternalStageUrlInput(e.target.value)}
+                    placeholder="Paste external link (e.g. R2, CDN)"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-[11px] text-white/80 placeholder-white/25 focus:outline-none focus:border-violet-500/50"
+                    onKeyDown={e => e.key === 'Enter' && (externalStageUrlInput.trim() && onExternalStageUrl?.(externalStageUrlInput.trim()) && setExternalStageUrlInput(''))}
+                  />
+                  <button
+                    onClick={() => { if (externalStageUrlInput.trim()) { onExternalStageUrl?.(externalStageUrlInput.trim()); setExternalStageUrlInput('') } }}
+                    disabled={!externalStageUrlInput?.trim()}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-violet-500/30 hover:border-violet-500/50 hover:bg-violet-500/10 text-violet-300 text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <IconLink /><span>Use</span>
+                  </button>
+                </div>
+              </div>
             </Section>
 
             <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
