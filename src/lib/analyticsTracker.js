@@ -79,37 +79,35 @@ export function recordClientSessionStart(projectId, sessionId) {
 }
 
 /**
- * End a client session with duration. Uses fetch + keepalive for reliable delivery
- * on visibilitychange/beforeunload. UPSERT ensures the row exists even if the
- * initial INSERT (recordClientSessionStart) hasn't completed when the user leaves quickly.
- * Duration is in SECONDS (matches backend duration_seconds).
+ * End a client session with duration. Uses RPC (SECURITY DEFINER) to bypass RLS.
+ * fetch + keepalive for reliable delivery on visibilitychange/beforeunload.
+ * Duration in SECONDS (matches backend duration_seconds).
  */
 export function recordClientSessionEnd(projectId, sessionId, durationSeconds) {
   if (!projectId || !sessionId || typeof durationSeconds !== 'number' || durationSeconds < 0) return
   const pid = String(projectId).trim()
   if (!pid) return
-  const url = (supabaseUrl || '').replace(/\/$/, '') + '/rest/v1/client_sessions'
+  const url = (supabaseUrl || '').replace(/\/$/, '') + '/rest/v1/rpc/upsert_client_session'
   if (!url || !supabaseKey) return
   const durationSec = Math.round(durationSeconds)
   const { deviceOs, formFactor, screenWidth, screenHeight } = parseDeviceContext()
   const payload = {
-    project_id: pid,
-    session_id: sessionId,
-    duration_seconds: durationSec,
-    device_os: deviceOs || null,
-    form_factor: formFactor || null,
-    screen_width: screenWidth || null,
-    screen_height: screenHeight || null,
+    p_project_id: pid,
+    p_session_id: sessionId,
+    p_duration_seconds: durationSec,
+    p_device_os: deviceOs || null,
+    p_form_factor: formFactor || null,
+    p_screen_width: screenWidth || null,
+    p_screen_height: screenHeight || null,
   }
-  const upsertUrl = `${url}?on_conflict=project_id,session_id`
   try {
-    fetch(upsertUrl, {
+    fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'resolution=merge-duplicates,return=minimal',
+        'Prefer': 'return=minimal',
       },
       body: JSON.stringify(payload),
       keepalive: true,
