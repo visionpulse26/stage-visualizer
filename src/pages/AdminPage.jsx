@@ -9,6 +9,7 @@ import GlobalFooter from '../components/GlobalFooter'
 import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
+import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -92,9 +93,10 @@ function AdminPage() {
   // ── HDRI cloud upload ─────────────────────────────────────────────────────
   const [isUploadingHdri, setIsUploadingHdri] = useState(false)
 
-  // ── NAS upload ──────────────────────────────────────────────────────────
-  const [isNasUploading, setIsNasUploading] = useState(false)
-  const [nasError,       setNasError]       = useState(null)
+  // ── R2 direct upload (replaces NAS) ─────────────────────────────────────
+  const [isR2Uploading, setIsR2Uploading] = useState(false)
+  const [r2UploadProgress, setR2UploadProgress] = useState(null) // 0–100 or null
+  const [r2Error, setR2Error] = useState(null)
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
@@ -454,64 +456,34 @@ function AdminPage() {
     alert(`HDRI load failed: ${errorMsg}\nSwitching to environment OFF.`)
   }, [])
 
-  // ── Shared NAS fetch with timeout + robust error handling ───────────────
-  const nasUploadFetch = useCallback(async (file, label) => {
-    const NAS_URL = 'https://visual.tooawake.online/upload.php'
-    const TIMEOUT = 120_000 // 2 minutes for large files
-
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT)
-
-    const fd = new FormData()
-    fd.append('file', file)
-    fd.append('project_name', projectName.trim())
-    fd.append('overwrite', 'true')  // UPSERT: overwrite existing file with same name to avoid duplicates
-
-    let res
-    try {
-      res = await fetch(NAS_URL, { method: 'POST', body: fd, signal: controller.signal })
-    } catch (netErr) {
-      if (netErr.name === 'AbortError') throw new Error(`Upload timed out after ${TIMEOUT / 1000}s — is the NAS server online?`)
-      throw new Error(`Network error — cannot reach NAS server (${netErr.message}). Check if https://visual.tooawake.online is reachable and CORS is enabled.`)
-    } finally {
-      clearTimeout(timer)
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      throw new Error(`NAS returned HTTP ${res.status}: ${body.slice(0, 200) || 'empty response'}`)
-    }
-
-    const contentType = res.headers.get('content-type') || ''
-    if (!contentType.includes('application/json')) {
-      const body = await res.text().catch(() => '')
-      throw new Error(`NAS returned non-JSON (${contentType}). Body: ${body.slice(0, 200)}`)
-    }
-
-    const json = await res.json()
-    if (!json.success) throw new Error(json.error || json.message || `NAS ${label} failed — server returned success:false`)
-    if (!json.url)     throw new Error(`NAS ${label} succeeded but returned no URL`)
-    return json
-  }, [projectName])
-
-  // ── NAS upload — video / image → Too:Awake NAS server ───────────────────
-  const handleNasUpload = useCallback(async (file) => {
+  // ── R2 direct upload — video / image ────────────────────────────────────
+  const handleR2MediaUpload = useCallback(async (file) => {
     if (!file) return
-    // VALIDATION: Block unsupported formats before upload
     if (!validateMediaFile(file)) return
     if (!projectName.trim()) {
-      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      alert('Please enter a project name before uploading.')
       return
     }
-    setIsNasUploading(true); setNasError(null)
+    setIsR2Uploading(true); setR2Error(null); setR2UploadProgress(0)
     try {
-      const json = await nasUploadFetch(file, 'media upload')
+      const { putUrl, publicUrl } = await getPresignedUploadUrl({
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        projectId: publishedId || undefined,
+        type: 'media',
+      })
+      const finalUrl = await uploadFileToPresignedUrl(
+        putUrl,
+        file,
+        publicUrl,
+        (percent) => setR2UploadProgress(percent)
+      )
 
       clipCountRef.current += 1
-      const id    = Date.now()
+      const id = Date.now()
       const isImg = file.type.startsWith('image/')
-      const name  = file.name.replace(/\.[^/.]+$/, '') || (isImg ? `NAS Image ${clipCountRef.current}` : `NAS Clip ${clipCountRef.current}`)
-      const clip  = { id, name, url: json.url, type: isImg ? 'image' : 'video', external: true }
+      const name = file.name.replace(/\.[^/.]+$/, '') || (isImg ? `R2 Image ${clipCountRef.current}` : `R2 Clip ${clipCountRef.current}`)
+      const clip = { id, name, url: finalUrl, type: isImg ? 'image' : 'video', external: true }
       const updatedPlaylist = [...videoPlaylist, clip]
       setVideoPlaylist(updatedPlaylist)
 
@@ -522,41 +494,52 @@ function AdminPage() {
 
       if (isImg) {
         if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
-        setVideoElement(null); setActiveImageUrl(json.url)
+        setVideoElement(null); setActiveImageUrl(finalUrl)
         setActiveVideoId(id); setVideoLoaded(true); setIsPlaying(false)
       } else {
-        setActiveImageUrl(null); activateVideo(id, json.url)
+        setActiveImageUrl(null); activateVideo(id, finalUrl)
       }
     } catch (err) {
-      setNasError(err.message)
+      setR2Error(getUploadErrorMessage(err))
     } finally {
-      setIsNasUploading(false)
+      setIsR2Uploading(false); setR2UploadProgress(null)
     }
-  }, [projectName, videoPlaylist, publishedId, activateVideo, nasUploadFetch, validateMediaFile])
+  }, [projectName, publishedId, videoPlaylist, activateVideo, validateMediaFile])
 
-  // ── NAS upload — HDRI → Too:Awake NAS server ──────────────────────────
-  const handleNasHdriUpload = useCallback(async (file) => {
+  // ── R2 direct upload — HDRI ────────────────────────────────────────────
+  const handleR2HdriUpload = useCallback(async (file) => {
     if (!file) return
     if (!projectName.trim()) {
-      alert('Vui lòng đặt tên và Save Project trước khi up lên NAS!')
+      alert('Please enter a project name before uploading.')
       return
     }
-    setIsNasUploading(true); setNasError(null)
+    setIsR2Uploading(true); setR2Error(null); setR2UploadProgress(0)
     try {
-      const json = await nasUploadFetch(file, 'HDRI upload')
+      const { putUrl, publicUrl } = await getPresignedUploadUrl({
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        projectId: publishedId || undefined,
+        type: 'hdri',
+      })
+      const finalUrl = await uploadFileToPresignedUrl(
+        putUrl,
+        file,
+        publicUrl,
+        (percent) => setR2UploadProgress(percent)
+      )
 
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
-      setCustomHdriUrl(json.url)
+      setCustomHdriUrl(finalUrl)
       setHdriFile(null)
       setHdriPreset('none')
     } catch (err) {
-      setNasError(err.message)
+      setR2Error(getUploadErrorMessage(err))
     } finally {
-      setIsNasUploading(false)
+      setIsR2Uploading(false); setR2UploadProgress(null)
     }
-  }, [projectName, customHdriUrl, nasUploadFetch])
+  }, [projectName, publishedId, customHdriUrl])
 
   // ── External HDRI URL — paste a direct link to an .hdr / .exr file ─────
   const handleExternalHdriUrl = useCallback((url) => {
@@ -992,12 +975,13 @@ function AdminPage() {
           onClearHdri={handleClearHdri}
           onClearAllHdri={handleClearAllHdri}
           canUploadHdriToCloud={!!(hdriFile && publishedId)}
-          onNasUpload={handleNasUpload}
-          onNasHdriUpload={handleNasHdriUpload}
+          onR2MediaUpload={handleR2MediaUpload}
+          onR2HdriUpload={handleR2HdriUpload}
           onExternalHdriUrl={handleExternalHdriUrl}
-          isNasUploading={isNasUploading}
-          nasError={nasError}
-          onDismissNasError={() => setNasError(null)}
+          isR2Uploading={isR2Uploading}
+          r2UploadProgress={r2UploadProgress}
+          r2Error={r2Error}
+          onDismissR2Error={() => setR2Error(null)}
           envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
           showHdriBackground={showHdriBackground}   onShowHdriBackgroundToggle={() => setShowHdriBackground(v => !v)}

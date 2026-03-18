@@ -81,12 +81,13 @@ function UIPanel({
   isUploadingHdri, onUploadHdriToCloud, onClearHdri,
   onClearAllHdri,         // ★ NEW: Clear All HDRI button (aggressive cleanup)
   canUploadHdriToCloud,   // true only when hdriFile + publishedId both exist
-  // ── NAS / External HDRI ─────────────────────────────────────────────────
-  onNasUpload,            // (file) => upload video/image to NAS
-  onNasHdriUpload,        // (file) => upload HDRI to NAS
+  // ── R2 / External HDRI ───────────────────────────────────────────────────
+  onR2MediaUpload,        // (file) => upload video/image to R2
+  onR2HdriUpload,         // (file) => upload HDRI to R2
   onExternalHdriUrl,      // (url)  => set external HDRI URL
-  isNasUploading,
-  nasError, onDismissNasError,
+  isR2Uploading,
+  r2UploadProgress,       // 0–100 or null
+  r2Error, onDismissR2Error,
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -238,34 +239,38 @@ function UIPanel({
             </Section>
 
             <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
-              {/* NAS only — Too:Awake private server (strict, no Cloud/Link) */}
               <div className="space-y-2" style={{ fontFamily: "'Chakra Petch', sans-serif" }}>
                 <button
                   onClick={handleNasVideoClick}
-                  disabled={isNasUploading}
+                  disabled={isR2Uploading}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
                   >
-                    {isNasUploading ? (
+                    {isR2Uploading ? (
                       <>
                         <span className="w-4 h-4 rounded-full border-2 border-emerald-300/30 border-t-emerald-300 animate-spin" />
-                        Uploading to NAS…
+                        {r2UploadProgress != null ? `Uploading… ${r2UploadProgress}%` : 'Uploading…'}
                       </>
                     ) : (
-                      <><IconServer /><span>Upload to Too:Awake NAS</span></>
+                      <><IconServer /><span>Upload to Cloud (R2)</span></>
                     )}
                   </button>
-                  <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasUpload(f); e.target.value = '' }} />
-                  {nasError && (
+                  {isR2Uploading && r2UploadProgress != null && (
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${r2UploadProgress}%` }} />
+                    </div>
+                  )}
+                  <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2MediaUpload?.(f); e.target.value = '' }} />
+                  {r2Error && (
                     <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-[10px] font-semibold text-red-400">NAS Upload Failed</p>
-                        <button onClick={onDismissNasError} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
+                        <p className="text-[10px] font-semibold text-red-400">Upload Failed</p>
+                        <button onClick={onDismissR2Error} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
                       </div>
-                      <p className="text-[9px] text-red-400/70 leading-snug break-words">{nasError}</p>
+                      <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
                     </div>
                   )}
                   <p className="text-[9px] text-[#FF5F1F]/70 bg-[#FF5F1F]/5 border border-[#FF5F1F]/20 rounded-lg px-2.5 py-1.5 leading-snug">
-                    Files are sent to your private NAS. Requires a saved project name.
+                    Files upload directly to Cloud (R2). Requires a saved project name.
                   </p>
                 </div>
 
@@ -586,7 +591,7 @@ function UIPanel({
                     {[
                       { id: 'cloud', icon: <IconCloud />, label: 'Cloud' },
                       { id: 'link',  icon: <IconLink />,  label: 'Link'  },
-                      { id: 'nas',   icon: <IconServer />, label: 'NAS'  },
+                      { id: 'nas',   icon: <IconServer />, label: 'R2'  },
                     ].map(t => (
                       <button
                         key={t.id}
@@ -648,35 +653,40 @@ function UIPanel({
                     </div>
                   )}
 
-                  {/* NAS — upload to Too:Awake server */}
+                  {/* R2 — upload .hdr / .exr to Cloud */}
                   {hdriInputMode === 'nas' && (
                     <div className="space-y-2">
                       <button
                         onClick={handleNasHdriClick}
-                        disabled={isNasUploading}
+                        disabled={isR2Uploading}
                         className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-emerald-500/25 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-white/40 hover:text-emerald-300 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
                       >
-                        {isNasUploading ? (
+                        {isR2Uploading ? (
                           <>
                             <span className="w-4 h-4 rounded-full border-2 border-emerald-300/30 border-t-emerald-300 animate-spin" />
-                            Uploading to NAS…
+                            {r2UploadProgress != null ? `Uploading… ${r2UploadProgress}%` : 'Uploading…'}
                           </>
                         ) : (
-                          <><IconServer /><span>Upload .hdr / .exr to NAS</span></>
+                          <><IconServer /><span>Upload .hdr / .exr to Cloud (R2)</span></>
                         )}
                       </button>
-                      <input ref={nasHdriInputRef} type="file" accept=".hdr,.exr" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onNasHdriUpload(f); e.target.value = '' }} />
-                      {nasError && (
+                      {isR2Uploading && r2UploadProgress != null && (
+                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${r2UploadProgress}%` }} />
+                        </div>
+                      )}
+                      <input ref={nasHdriInputRef} type="file" accept=".hdr,.exr" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2HdriUpload?.(f); e.target.value = '' }} />
+                      {r2Error && (
                         <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="text-[10px] font-semibold text-red-400">NAS Upload Failed</p>
-                            <button onClick={onDismissNasError} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
+                            <p className="text-[10px] font-semibold text-red-400">Upload Failed</p>
+                            <button onClick={onDismissR2Error} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
                           </div>
-                          <p className="text-[9px] text-red-400/70 leading-snug break-words">{nasError}</p>
+                          <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
                         </div>
                       )}
                       <p className="text-[9px] text-emerald-400/50 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2.5 py-1.5 leading-snug">
-                        HDRI sent to your private NAS. Requires a saved project name.
+                        HDRI uploads directly to Cloud (R2). Requires a saved project name.
                       </p>
                     </div>
                   )}
