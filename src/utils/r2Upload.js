@@ -17,9 +17,12 @@ const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP
 export async function getPresignedUploadUrl(opts) {
   const { filename, contentType, projectId, type = 'media' } = opts
   const url = `${API_BASE}/api/get-upload-url`
+  const token = import.meta.env.VITE_UPLOAD_SECRET
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['x-upload-token'] = token
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ filename, contentType, projectId: projectId || null, type }),
   })
   const data = await res.json().catch(() => ({}))
@@ -83,7 +86,12 @@ export function getUploadErrorMessage(err) {
   if (/403|Forbidden/i.test(msg)) return 'Upload forbidden (403). Check R2 bucket policy and CORS.'
   if (/CORS|cors|blocked/i.test(msg)) return 'Request blocked (CORS). Ensure R2 and API allow your origin.'
   if (/Network error|Failed to fetch/i.test(msg)) return 'Network error. Check your connection and that the API is reachable.'
-  if (/Misconfiguration|credentials not set/i.test(msg)) return 'Server misconfiguration: R2 credentials not set.'
+  if (/Unauthorized|^401$|HTTP 401/i.test(msg)) {
+    return 'Upload unauthorized. Ensure VITE_UPLOAD_SECRET matches server UPLOAD_SECRET.'
+  }
+  if (/configuration error|contact support/i.test(msg)) {
+    return 'Server configuration error. Please try again later or contact support.'
+  }
   if (/aborted/i.test(msg)) return 'Upload was cancelled.'
   return msg
 }

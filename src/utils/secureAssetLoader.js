@@ -4,6 +4,8 @@
  *
  * Caching: Uses Cache API for heavy 3D assets and HDRI. Cache-first for
  * instant loads on repeat visits; network fallback triggers progress UI.
+ *
+ * R2: bucket CORS must allow this app origin (GET). See r2-cors.example.json.
  */
 
 const CACHE_NAME = 'stage-visualizer-assets'

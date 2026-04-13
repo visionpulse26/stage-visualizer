@@ -1,13 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
 /**
  * IP Protection: Deterrents for Client and Collab pages.
- * Disables right-click, blocks dev tools shortcuts, and adds debugger trap.
- * Note: Determined users can bypass these; they deter casual inspection.
+ * Disables right-click and blocks common DevTools / view-source shortcuts.
+ * Note: Determined users can bypass these; they deter casual inspection only.
  */
 export function useSecurityLockdown() {
-  const trapRef = useRef(null)
-
   useEffect(() => {
     const preventContextMenu = (e) => e.preventDefault()
 
@@ -23,15 +21,9 @@ export function useSecurityLockdown() {
     document.addEventListener('contextmenu', preventContextMenu)
     document.addEventListener('keydown', blockDevToolsShortcuts)
 
-    trapRef.current = setInterval(() => {
-      // eslint-disable-next-line no-debugger
-      debugger
-    }, 100)
-
     return () => {
       document.removeEventListener('contextmenu', preventContextMenu)
       document.removeEventListener('keydown', blockDevToolsShortcuts)
-      if (trapRef.current) clearInterval(trapRef.current)
     }
   }, [])
 }
