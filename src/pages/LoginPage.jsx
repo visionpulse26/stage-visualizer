@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
 export default function LoginPage() {
@@ -139,7 +139,12 @@ export default function LoginPage() {
 
         {/* Footer note */}
         <p className="text-center text-[10px] text-white/15 mt-6 tracking-wide">
-          Admin &amp; Collaborator access only · Client links are always public
+          Admin &amp; Collaborator access only · Client link visibility is set per project
+        </p>
+        <p className="text-center mt-2">
+          <Link to="/privacy" className="text-[10px] text-white/20 hover:text-white/35 underline underline-offset-2">
+            Privacy
+          </Link>
         </p>
       </div>
     </div>

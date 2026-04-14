@@ -60,6 +60,25 @@ Allow your app origin and `PUT` on the bucket:
 
 See `r2-cors.example.json` in the repo root for a policy you can adapt in the Cloudflare R2 bucket **Settings → CORS**.
 
+## Analytics cleanup (PRIV-02)
+
+**Endpoint:** `GET` or `POST` `/api/cleanup-analytics`
+
+Deletes rows older than **90 days** (override with `RETENTION_DAYS`, max 365) from:
+
+`client_sessions` (`started_at`), `client_clip_watch`, `client_interactions`, `client_page_views` (`viewed_at`).
+
+**Auth:** must be a Vercel Cron invocation (`x-vercel-cron: 1`) **or** `Authorization: Bearer <CRON_SECRET>` when `CRON_SECRET` is set in the project (manual runs and secured cron).
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SUPABASE_URL` | Yes* | Same value as `VITE_SUPABASE_URL` if you do not set this separately. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key from Supabase (never expose to the client). |
+| `CRON_SECRET` | Recommended | Random string; Vercel injects `Authorization: Bearer …` on scheduled cron when this is set. |
+| `RETENTION_DAYS` | No | Default `90`. |
+
+Cron is declared in `vercel.json` (daily 03:00 UTC). On Supabase Pro you can instead use `pg_cron`; see `supabase/priv_02_cleanup_analytics.sql`.
+
 ## Vercel
 
 The `api/` folder is deployed as serverless functions. Ensure env vars above are set in Vercel → Settings → Environment Variables.

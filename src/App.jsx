@@ -4,6 +4,7 @@ import LoginPage  from './pages/LoginPage'
 import AdminPage  from './pages/AdminPage'
 import CollabPage from './pages/CollabPage'
 import ClientPage from './pages/ClientPage'
+import PrivacyPage from './pages/PrivacyPage'
 
 function App() {
   return (
@@ -11,6 +12,8 @@ function App() {
       <Routes>
         {/* Public: Landing / Login */}
         <Route path="/" element={<LoginPage />} />
+
+        <Route path="/privacy" element={<PrivacyPage />} />
 
         {/* Protected: Admin — requires active Supabase session */}
         <Route

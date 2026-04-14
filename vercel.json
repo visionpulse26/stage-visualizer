@@ -38,5 +38,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cleanup-analytics",
+      "schedule": "0 3 * * *"
+    }
   ]
 }
