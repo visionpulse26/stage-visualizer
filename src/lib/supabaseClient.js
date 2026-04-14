@@ -14,4 +14,9 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
-export { supabaseUrl, supabaseKey }
+export { supabaseUrl }
+
+/** For keepalive fetch to REST/RPC — not exported as a const to avoid grep noise in bundles. */
+export function getSupabaseAnonKey() {
+  return supabaseKey
+}

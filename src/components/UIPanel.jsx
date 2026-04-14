@@ -74,6 +74,7 @@ function UIPanel({
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
   hdriPreset, onHdriPresetChange,
   hdriLoading,
+  hdriError,
   customHdriUrl,
   onCustomHdriUpload,
   // HDRI status flags
@@ -489,6 +490,14 @@ function UIPanel({
             {/* HDRI Environment */}
             <Section icon={<IconGlobe />} title="Environment (HDRI)">
               <div className="space-y-3">
+                {hdriError && (
+                  <div
+                    role="status"
+                    className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100/90 leading-snug"
+                  >
+                    {hdriError}
+                  </div>
+                )}
                 {/* HDRI Preset Dropdown — locked during loading */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">

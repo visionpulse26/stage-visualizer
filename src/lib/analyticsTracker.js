@@ -3,7 +3,7 @@
  * Client page views: simple INSERT into client_page_views (no RPC, works with any id type).
  */
 
-import { supabase, supabaseUrl, supabaseKey } from './supabaseClient'
+import { supabase, supabaseUrl, getSupabaseAnonKey } from './supabaseClient'
 import { trackStat, trackJsonb } from './trackingService'
 
 /** Record one client page view. Uses client_page_views table — no RPC, no projects table. */
@@ -88,6 +88,7 @@ export function recordClientSessionEnd(projectId, sessionId, durationSeconds) {
   const pid = String(projectId).trim()
   if (!pid) return
   const url = (supabaseUrl || '').replace(/\/$/, '') + '/rest/v1/rpc/upsert_client_session'
+  const supabaseKey = getSupabaseAnonKey()
   if (!url || !supabaseKey) return
   const durationSec = Math.round(durationSeconds)
   const { deviceOs, formFactor, screenWidth, screenHeight } = parseDeviceContext()

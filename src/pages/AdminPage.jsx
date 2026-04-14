@@ -78,7 +78,9 @@ function AdminPage() {
   const [hdriFileExt,   setHdriFileExt]   = useState('hdr')   // 'hdr' | 'exr'
   const [customHdriUrl, setCustomHdriUrl] = useState(null)
   const [hdriLoading,   setHdriLoading]   = useState(false)   // loading lock
-  
+  const [hdriError,     setHdriError]     = useState(null)    // transient inline banner (no alert())
+  const hdriErrorTimerRef = useRef(null)
+
   // HDRI presets from NAS with validation helpers
   const { presets: hdriPresets } = useHdriPresets()
   const [envIntensity,       setEnvIntensity]       = useState(1)
@@ -103,7 +105,10 @@ function AdminPage() {
   const [cloneToast, setCloneToast] = useState(null)
 
   // ── Resolve external stage URL through cache for 3D preview ─────────────────
-  const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
+  const isRemote = useCallback(
+    (u) => u && (u.startsWith('http://') || u.startsWith('https://')),
+    []
+  )
   useEffect(() => {
     if (!cloudStageUrl || stageUrl) return
     if (!isRemote(cloudStageUrl)) return
@@ -117,7 +122,7 @@ function AdminPage() {
     return () => {
       cancelled = true
     }
-  }, [cloudStageUrl, stageUrl])
+  }, [cloudStageUrl, stageUrl, isRemote])
 
   // ── Revoke resolved blob when URL changes or unmount ───────────────────────
   const prevResolvedRef = useRef(null)
@@ -133,6 +138,12 @@ function AdminPage() {
       }
     }
   }, [resolvedStageUrl])
+
+  useEffect(() => {
+    return () => {
+      if (hdriErrorTimerRef.current) clearTimeout(hdriErrorTimerRef.current)
+    }
+  }, [])
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -450,11 +461,19 @@ function AdminPage() {
     setHdriLoading(false)
   }, [customHdriUrl])
 
-  // Handle HDRI load errors — auto-clear to prevent stuck UI
-  const handleHdriLoadError = useCallback((errorMsg) => {
+  // Handle HDRI load errors — auto-clear to prevent stuck UI (non-blocking banner)
+  const handleHdriLoadError = useCallback((_errorMsg) => {
+    if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
+    }
+    setCustomHdriUrl(null)
+    setHdriPreset('none')
+    setHdriFile(null)
     setHdriLoading(false)
-    alert(`HDRI load failed: ${errorMsg}\nSwitching to environment OFF.`)
-  }, [])
+    setHdriError('HDRI failed to load — environment cleared.')
+    if (hdriErrorTimerRef.current) clearTimeout(hdriErrorTimerRef.current)
+    hdriErrorTimerRef.current = setTimeout(() => setHdriError(null), 5000)
+  }, [customHdriUrl])
 
   // ── R2 direct upload — video / image ────────────────────────────────────
   const handleR2MediaUpload = useCallback(async (file) => {
@@ -668,10 +687,26 @@ function AdminPage() {
       if (cfg.sunAzimuth != null)    setSunAzimuth(cfg.sunAzimuth)
       if (cfg.sunElevation != null)  setSunElevation(cfg.sunElevation)
 
-      // HDRI URL
+      // HDRI URL — resolve remote URLs via blob cache (same idea as ClientPage)
       if (cfg.customHdriUrl) {
-        setCustomHdriUrl(cfg.customHdriUrl)
+        const hdriSrc = cfg.customHdriUrl
+        const basePath = hdriSrc.split('?')[0] || hdriSrc
+        const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
+        setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
+        if (isRemote(hdriSrc)) {
+          fetchAndCacheAsset(hdriSrc)
+            .then((blobUrl) => {
+              localBlobUrlsRef.current.push(blobUrl)
+              setCustomHdriUrl(blobUrl)
+            })
+            .catch(() => {
+              setCustomHdriUrl(hdriSrc)
+            })
+        } else {
+          setCustomHdriUrl(hdriSrc)
+        }
       } else {
+        setHdriFileExt('hdr')
         setCustomHdriUrl(null)
       }
 
@@ -712,7 +747,7 @@ function AdminPage() {
       setVideoPlaylist([clip])
       activateVideo(id, p.video_url)
     }
-  }, [stageUrl, activateVideo])
+  }, [stageUrl, activateVideo, isRemote])
 
   // ── Clone as New Round (from Publish panel) ───────────────────────────────
   const handleCloneAsNewRound = useCallback(async () => {
@@ -966,6 +1001,7 @@ function AdminPage() {
           cloneToast={cloneToast}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
+          hdriError={hdriError}
           customHdriUrl={customHdriUrl}
           onCustomHdriUpload={handleCustomHdriUpload}
           hasLocalHdri={hasLocalHdri}
