@@ -43,7 +43,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
   // ── Video texture with disposal ─────────────────────────────────────────────
   const videoTexture = useMemo(() => {
-    // DISPOSE previous texture
     if (videoTextureRef.current) {
       videoTextureRef.current.dispose()
       videoTextureRef.current = null
@@ -64,38 +63,100 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
   }, [videoElement])
 
-  // ── Image texture with explicit disposal (prevents GPU memory leak on swap) ──
-  const imageTexture = useMemo(() => {
-    if (imageTextureRef.current) {
-      imageTextureRef.current.dispose()
-      imageTextureRef.current = null
+  // ── Image texture — single load, blob URL revoked after GPU upload ──────────
+  // Replaces THREE.TextureLoader (which made a separate internal XHR visible in
+  // the DevTools Network tab) + a second img.src load for color sampling.
+  // Now: one Image load → texture + color sample → blob URL revoked immediately.
+  const [imageTexture, setImageTexture] = useState(null)
+
+  useEffect(() => {
+    // Clear texture when url is removed
+    if (!activeImageUrl) {
+      if (imageTextureRef.current) {
+        imageTextureRef.current.dispose()
+        imageTextureRef.current = null
+      }
+      setImageTexture(null)
+      return
     }
-    if (!activeImageUrl) return null
-    try {
-      const t = new THREE.TextureLoader().load(
-        activeImageUrl,
-        () => onImageLoadedRef.current?.(),
-        undefined,
-        () => {}
-      )
-      t.colorSpace = THREE.SRGBColorSpace
-      t.flipY      = false
-      t.wrapS      = THREE.ClampToEdgeWrapping
-      t.wrapT      = THREE.ClampToEdgeWrapping
-      imageTextureRef.current = t
-      return t
-    } catch {
-      return null
+
+    let cancelled = false
+    let revoked   = false
+
+    const safeRevoke = () => {
+      if (!revoked) {
+        try { URL.revokeObjectURL(activeImageUrl) } catch (_) {}
+        revoked = true
+      }
+    }
+
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+
+    img.onload = () => {
+      if (cancelled) { safeRevoke(); return }
+
+      // 1. Dispose previous texture
+      if (imageTextureRef.current) {
+        imageTextureRef.current.dispose()
+        imageTextureRef.current = null
+      }
+
+      // 2. Build Three.js texture directly from the loaded HTMLImageElement.
+      //    new THREE.Texture(img) + needsUpdate uploads pixels to the GPU without
+      //    making an additional XHR — the blob URL is only consumed once here.
+      try {
+        const t = new THREE.Texture(img)
+        t.colorSpace  = THREE.SRGBColorSpace
+        t.flipY       = false
+        t.wrapS       = THREE.ClampToEdgeWrapping
+        t.wrapT       = THREE.ClampToEdgeWrapping
+        t.needsUpdate = true
+        imageTextureRef.current = t
+        setImageTexture(t)
+        onImageLoadedRef.current?.()
+      } catch (_) {}
+
+      // 3. Color sampling — reuse the already-decoded image, no extra network hit
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = 8
+        canvas.height = 8
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        ctx.drawImage(img, 0, 0, 8, 8)
+        const data = ctx.getImageData(0, 0, 8, 8).data
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++ }
+        r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
+        const boost = 255 / Math.max(r, g, b, 1)
+        setLedColor(`rgb(${Math.min(255, r * boost)},${Math.min(255, g * boost)},${Math.min(255, b * boost)})`)
+      } catch (_) {}
+
+      // 4. Revoke blob URL — data is now on the GPU, URL no longer needed.
+      //    This removes the blob entry from the DevTools Network preview tab.
+      safeRevoke()
+    }
+
+    img.onerror = () => { safeRevoke() }
+
+    img.src = activeImageUrl
+
+    return () => {
+      cancelled = true
+      img.onload  = null
+      img.onerror = null
+      // Revoke if the image hadn't finished loading when url changed
+      safeRevoke()
     }
   }, [activeImageUrl])
 
   const activeTexture = videoTexture || imageTexture
 
-  // Reset fade counter on texture change
+  // Reset emissive fade counter on texture change
   const prevTextureRef = useRef(null)
   useEffect(() => {
     if (activeTexture && activeTexture !== prevTextureRef.current) {
-      prevTextureRef.current    = activeTexture
+      prevTextureRef.current     = activeTexture
       emissiveCurrentRef.current = 0
     }
   }, [activeTexture])
@@ -119,7 +180,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     if (!videoElement) { setLedColor('#ffffff'); return }
 
     const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = 16
+    canvas.width  = 16
+    canvas.height = 16
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
     const sample = () => {
@@ -128,37 +190,16 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
         ctx.drawImage(videoElement, 0, 0, 16, 16)
         const data = ctx.getImageData(0, 0, 16, 16).data
         let r = 0, g = 0, b = 0, n = 0
-        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++ }
+        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++ }
         r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
         const boost = 255 / Math.max(r, g, b, 1)
-        setLedColor(`rgb(${Math.min(255,r*boost)},${Math.min(255,g*boost)},${Math.min(255,b*boost)})`)
+        setLedColor(`rgb(${Math.min(255, r * boost)},${Math.min(255, g * boost)},${Math.min(255, b * boost)})`)
       } catch (_) {}
     }
 
     colorSampleRef.current = setInterval(sample, 800)
     return () => clearInterval(colorSampleRef.current)
   }, [videoElement])
-
-  useEffect(() => {
-    if (!activeImageUrl) return
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = canvas.height = 8
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })
-        ctx.drawImage(img, 0, 0, 8, 8)
-        const data = ctx.getImageData(0, 0, 8, 8).data
-        let r = 0, g = 0, b = 0, n = 0
-        for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++ }
-        r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
-        const boost = 255 / Math.max(r, g, b, 1)
-        setLedColor(`rgb(${Math.min(255,r*boost)},${Math.min(255,g*boost)},${Math.min(255,b*boost)})`)
-      } catch (_) {}
-    }
-    img.src = activeImageUrl
-  }, [activeImageUrl])
 
   // ── Material pass — LED + stage ───────────────────────────────────────────
   useEffect(() => {
@@ -171,7 +212,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     })
     prevLedMaterialsRef.current = []
     ledMaterialsRef.current = []
-    
+
     let found = false
     const newLedPositions = []
 
@@ -179,7 +220,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       if (!child.isMesh) return
       child.castShadow    = true
       child.receiveShadow = true
-      child.frustumCulled = true // FRUSTUM CULLING: enabled by default
+      child.frustumCulled = true
 
       const mats = Array.isArray(child.material) ? child.material : [child.material]
       mats.forEach((mat, i) => {
@@ -217,18 +258,13 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                 ledMaterialsRef.current.push(ledMat)
               }
             } else {
-              // ERROR BOUNDARY: No texture = black fallback
-              ledMat = new THREE.MeshBasicMaterial({
-                color: 0x000000,
-                side: THREE.DoubleSide,
-              })
+              ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
             }
             ledMat.name = LED_MATERIAL_NAME
             prevLedMaterialsRef.current.push(ledMat)
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
           } catch {
-            // Material creation failed - use black fallback
             ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
             ledMat.name = LED_MATERIAL_NAME
             if (Array.isArray(child.material)) child.material[i] = ledMat
@@ -259,12 +295,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
-    // Keep video texture current (VideoTexture handles its own loop, but we ensure needsUpdate)
     if (videoTextureRef.current && videoElement && !videoElement.paused) {
       videoTextureRef.current.needsUpdate = true
     }
-
-    // FIX 4 — lerp emissiveIntensity 0 → EMISSIVE_TARGET over EMISSIVE_FADE_SECS
     if (ledMaterialsRef.current.length > 0) {
       const step = (EMISSIVE_TARGET / EMISSIVE_FADE_SECS) * delta
       emissiveCurrentRef.current = Math.min(emissiveCurrentRef.current + step, EMISSIVE_TARGET)
@@ -275,8 +308,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   return (
     <>
       <primitive object={clonedScene} />
-      {/* LedLights only fire when sunIntensity > 0 — prevents residual light
-          when the user zeroes out all light controls */}
       <LedLights positions={ledPositions} color={ledColor} active={!!activeTexture && sunIntensity > 0} />
     </>
   )
