@@ -60,6 +60,13 @@ function ClientPage() {
   const [bloomStrength,      setBloomStrength]      = useState(0.3)
   const [bloomThreshold,     setBloomThreshold]     = useState(1.2)
   const [protectLed,         setProtectLed]         = useState(true)
+  const [transparentLedConfig, setTransparentLedConfig] = useState({
+    enabled: true,
+    gridDensity: 36,
+    barThickness: 0.08,
+    glow: 1.4,
+    opacity: 0.95,
+  })
   // ★ Sun lighting - loaded from scene_config for consistency
   const [sunPosition,        setSunPosition]        = useState([10.6, 10.6, 7.5])
   const [sunIntensity,       setSunIntensity]       = useState(1)
@@ -211,6 +218,13 @@ function ClientPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
         setProjectName(data.name || 'LIVE STAGE')
+        setTransparentLedConfig({
+          enabled: true,
+          gridDensity: 36,
+          barThickness: 0.08,
+          glow: 1.4,
+          opacity: 0.95,
+        })
 
         // Restore scene_config — consistent with Admin settings
         const cfg = data.scene_config
@@ -223,6 +237,10 @@ function ClientPage() {
           setBloomStrength(cfg.bloomStrength       ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold     ?? 1.2)
           setProtectLed(cfg.protectLed             ?? true)
+          setTransparentLedConfig(prev => ({
+            ...prev,
+            ...(cfg.transparentLedConfig || cfg.transparentLed || {}),
+          }))
 
           if (cfg.sunPosition && Array.isArray(cfg.sunPosition)) {
             setSunPosition(cfg.sunPosition)
@@ -401,6 +419,7 @@ function ClientPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        transparentLedConfig={transparentLedConfig}
       >
         <ClientPanel
           cameraPresets={cameraPresets}

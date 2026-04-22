@@ -55,6 +55,13 @@ function CollabPage() {
   const [bloomStrength,      setBloomStrength]      = useState(0.3)
   const [bloomThreshold,     setBloomThreshold]     = useState(1.2)
   const [protectLed,         setProtectLed]         = useState(true)
+  const [transparentLedConfig, setTransparentLedConfig] = useState({
+    enabled: true,
+    gridDensity: 36,
+    barThickness: 0.08,
+    glow: 1.4,
+    opacity: 0.95,
+  })
 
   // ── Camera ───────────────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
@@ -317,6 +324,13 @@ function CollabPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
         setProjectName(data.name || 'LIVE STAGE')
+        setTransparentLedConfig({
+          enabled: true,
+          gridDensity: 36,
+          barThickness: 0.08,
+          glow: 1.4,
+          opacity: 0.95,
+        })
 
         // Restore full scene_config — LITE & STABLE (no rotation)
         const cfg = data.scene_config
@@ -328,6 +342,10 @@ function CollabPage() {
           setBloomStrength(cfg.bloomStrength        ?? 0.3)
           setBloomThreshold(cfg.bloomThreshold      ?? 1.2)
           setProtectLed(cfg.protectLed              ?? true)
+          setTransparentLedConfig(prev => ({
+            ...prev,
+            ...(cfg.transparentLedConfig || cfg.transparentLed || {}),
+          }))
 
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl
@@ -589,6 +607,7 @@ function CollabPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        transparentLedConfig={transparentLedConfig}
       >
         <CollabPanel
           // ── Media ────────────────────────────────────────────────────────

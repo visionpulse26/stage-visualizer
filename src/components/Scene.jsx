@@ -4,8 +4,189 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
+const TRANSPARENT_LED_MATERIAL_NAME = 'LED_TRANSPARENT_MAT'
 const EMISSIVE_TARGET    = 1.5
 const EMISSIVE_FADE_SECS = 0.5
+
+const DEFAULT_TRANSPARENT_LED = {
+  enabled: true,
+  gridDensity: 36,
+  barThickness: 0.08,
+  glow: 1.4,
+  opacity: 0.95,
+}
+
+const DEFAULT_STAGE_MATERIAL = {
+  color: '#5a5d62',
+  roughness: 0.72,
+  metalness: 0.08,
+  envMapIntensity: 0.75,
+}
+
+const STAGE_MATERIAL_PRESETS = [
+  {
+    id: 'truss-weathered',
+    patterns: ['TRUSS_RUST', 'RUST_TRUSS', 'TRUSS_STEEL', 'TRUSS_IRON', 'OXIDE', 'CORRODED'],
+    settings: {
+      color: '#74675d',
+      roughness: 0.74,
+      metalness: 0.52,
+      envMapIntensity: 0.95,
+      clearcoat: 0.08,
+      clearcoatRoughness: 0.9,
+    },
+  },
+  {
+    id: 'truss-aluminum',
+    patterns: ['TRUSS', 'ALUMINUM', 'ALUMINIUM', 'ALU', 'RIGGING', 'PIPE', 'TUBE'],
+    settings: {
+      color: '#949aa1',
+      roughness: 0.34,
+      metalness: 0.96,
+      envMapIntensity: 1.4,
+      clearcoat: 0.22,
+      clearcoatRoughness: 0.42,
+    },
+  },
+  {
+    id: 'stage-floor-black',
+    patterns: ['STAGE_FLOOR', 'FLOOR_BLACK', 'BLACK_FLOOR', 'RUNWAY', 'CATWALK', 'DECK', 'STEP', 'STAIR', 'PLATFORM'],
+    settings: {
+      color: '#111214',
+      roughness: 0.9,
+      metalness: 0.02,
+      envMapIntensity: 0.3,
+      clearcoat: 0,
+    },
+  },
+  {
+    id: 'mask-panel-black',
+    patterns: ['FORMAT', 'FASCIA', 'MASK', 'CLADDING', 'COVER', 'CASING', 'SHROUD', 'SKIRT', 'PANEL_BLACK', 'TRIM_BLACK'],
+    settings: {
+      color: '#151619',
+      roughness: 0.8,
+      metalness: 0.03,
+      envMapIntensity: 0.4,
+      clearcoat: 0.02,
+      clearcoatRoughness: 0.95,
+    },
+  },
+  {
+    id: 'frame-black',
+    patterns: ['FRAME', 'BRACKET', 'STRUCT', 'SUPPORT', 'BEAM', 'BAR', 'RAIL'],
+    settings: {
+      color: '#2d3136',
+      roughness: 0.58,
+      metalness: 0.78,
+      envMapIntensity: 1.0,
+      clearcoat: 0.08,
+      clearcoatRoughness: 0.7,
+    },
+  },
+]
+
+const transparentLedVertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const transparentLedFragmentShader = `
+  uniform sampler2D uMap;
+  uniform bool uHasMap;
+  uniform float uGridDensity;
+  uniform float uBarThickness;
+  uniform float uGlow;
+  uniform float uOpacity;
+  varying vec2 vUv;
+
+  void main() {
+    vec2 gridUv = vUv * max(uGridDensity, 1.0);
+    vec2 cell = fract(gridUv);
+    float lineDistance = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
+    float aa = max(fwidth(lineDistance), 0.001);
+    float lineMask = 1.0 - smoothstep(uBarThickness, uBarThickness + aa, lineDistance);
+
+    vec4 texel = uHasMap ? texture2D(uMap, vUv) : vec4(0.08, 0.08, 0.08, 1.0);
+    float alpha = lineMask * texel.a * uOpacity;
+    if (alpha < 0.01) discard;
+
+    gl_FragColor = vec4(texel.rgb * uGlow, alpha);
+  }
+`
+
+function getLedSurfaceType(...names) {
+  const normalized = names.filter(Boolean)
+  if (normalized.some(name => name === LED_MATERIAL_NAME)) return 'solid'
+  if (normalized.some(name => name === TRANSPARENT_LED_MATERIAL_NAME)) return 'transparent-grid'
+  if (normalized.some(name => name.startsWith('LED_GRID_'))) return 'transparent-grid'
+  return null
+}
+
+function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+  const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uMap: { value: texture || new THREE.Texture() },
+      uHasMap: { value: !!texture },
+      uGridDensity: { value: Math.max(1, Number(cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensity) },
+      uBarThickness: { value: Math.max(0.01, Math.min(0.24, Number(cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThickness)) },
+      uGlow: { value: Math.max(0, Number(cfg.glow) || DEFAULT_TRANSPARENT_LED.glow) },
+      uOpacity: { value: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)) },
+    },
+    vertexShader: transparentLedVertexShader,
+    fragmentShader: transparentLedFragmentShader,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  })
+  material.name = TRANSPARENT_LED_MATERIAL_NAME
+  return material
+}
+
+function normalizeMaterialTokens(...names) {
+  return names
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+}
+
+function resolveStageMaterialPreset(...names) {
+  const tokens = normalizeMaterialTokens(...names)
+  if (!tokens) return { id: 'default', settings: DEFAULT_STAGE_MATERIAL }
+
+  for (const preset of STAGE_MATERIAL_PRESETS) {
+    if (preset.patterns.some(pattern => tokens.includes(pattern))) {
+      return preset
+    }
+  }
+
+  return { id: 'default', settings: DEFAULT_STAGE_MATERIAL }
+}
+
+function applyStageMaterialPreset(material, presetSettings, envIntensity) {
+  if (!material || (!material.isMeshStandardMaterial && !material.isMeshPhysicalMaterial)) return
+
+  const settings = { ...DEFAULT_STAGE_MATERIAL, ...(presetSettings || {}) }
+  const baseEnv = Math.max(0, envIntensity ?? 1)
+
+  material.color?.set?.(settings.color)
+  material.roughness = settings.roughness
+  material.metalness = settings.metalness
+  material.envMapIntensity = settings.envMapIntensity * baseEnv
+
+  if ('clearcoat' in material) material.clearcoat = settings.clearcoat ?? 0
+  if ('clearcoatRoughness' in material) material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
+  if ('sheen' in material) material.sheen = settings.sheen ?? 0
+  if ('sheenRoughness' in material) material.sheenRoughness = settings.sheenRoughness ?? 1
+
+  material.needsUpdate = true
+}
 
 // ── LED screen light sources ──────────────────────────────────────────────────
 function LedLights({ positions, color, active }) {
@@ -26,7 +207,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, onImageTextureLoaded }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -226,7 +407,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       mats.forEach((mat, i) => {
         if (!mat) return
 
-        if (mat.name === LED_MATERIAL_NAME) {
+        const ledSurfaceType = getLedSurfaceType(mat.name, child.name)
+
+        if (ledSurfaceType) {
           found = true
 
           child.updateWorldMatrix(true, false)
@@ -236,7 +419,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
           let ledMat
           try {
-            if (activeTexture) {
+            if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
+              ledMat = createTransparentLedMaterial(activeTexture, transparentLedConfig)
+            } else if (activeTexture) {
               if (protectLed) {
                 ledMat = new THREE.MeshBasicMaterial({
                   map:        activeTexture,
@@ -260,23 +445,25 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
             } else {
               ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
             }
-            ledMat.name = LED_MATERIAL_NAME
+            ledMat.name = ledSurfaceType === 'transparent-grid' ? TRANSPARENT_LED_MATERIAL_NAME : LED_MATERIAL_NAME
             prevLedMaterialsRef.current.push(ledMat)
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
           } catch {
             ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
-            ledMat.name = LED_MATERIAL_NAME
+            ledMat.name = ledSurfaceType === 'transparent-grid' ? TRANSPARENT_LED_MATERIAL_NAME : LED_MATERIAL_NAME
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
           }
 
         } else {
+          const preset = resolveStageMaterialPreset(mat.name, child.name)
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-            mat.roughness       = Math.min(mat.roughness ?? 1, 0.25)
-            mat.metalness       = Math.max(mat.metalness ?? 0, 0.45)
-            mat.envMapIntensity = envIntensity ?? 1
-            mat.needsUpdate     = true
+            const stageMat = mat.clone()
+            applyStageMaterialPreset(stageMat, preset.settings, envIntensity)
+            prevLedMaterialsRef.current.push(stageMat)
+            if (Array.isArray(child.material)) child.material[i] = stageMat
+            else child.material = stageMat
           }
         }
       })
@@ -291,7 +478,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     clonedScene.position.sub(center)
     clonedScene.position.y += size.y / 2
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity])
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
@@ -340,7 +527,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, loadingManager, onImageTextureLoaded }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -348,6 +535,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
     protectLed,
     sunIntensity,
     envIntensity,
+    transparentLedConfig,
   }
   return (
     <group>

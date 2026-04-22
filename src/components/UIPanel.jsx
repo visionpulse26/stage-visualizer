@@ -96,6 +96,7 @@ function UIPanel({
   // ── Visual integrity ──────────────────────────────────────────────────────
   bloomThreshold, onBloomThresholdChange,
   protectLed, onProtectLedToggle,
+  transparentLedConfig, onTransparentLedConfigChange,
 }) {
   const modelInputRef      = useRef(null)
   const videoInputRef      = useRef(null)
@@ -170,6 +171,17 @@ function UIPanel({
     }
     nasHdriInputRef.current?.click()
   }, [projectName])
+
+  const updateTransparentLed = useCallback((patch) => {
+    onTransparentLedConfigChange?.({
+      enabled: transparentLedConfig?.enabled ?? true,
+      gridDensity: transparentLedConfig?.gridDensity ?? 36,
+      barThickness: transparentLedConfig?.barThickness ?? 0.08,
+      glow: transparentLedConfig?.glow ?? 1.4,
+      opacity: transparentLedConfig?.opacity ?? 0.95,
+      ...patch,
+    })
+  }, [onTransparentLedConfigChange, transparentLedConfig])
 
   const sections = [
     { id: 'media',   label: 'Media',    icon: <IconVideo /> },
@@ -829,6 +841,55 @@ function UIPanel({
                 />
                 <p className="text-[9px] text-white/25 leading-snug">
                   Raise Bloom Threshold to reduce glow intensity. Protect LED Colors keeps screen content pixel-perfect.
+                </p>
+              </div>
+            </Section>
+
+            <Section icon={<IconGrid />} title="Transparent LED">
+              <div className="space-y-3">
+                <button
+                  onClick={() => updateTransparentLed({ enabled: !(transparentLedConfig?.enabled ?? true) })}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                    (transparentLedConfig?.enabled ?? true)
+                      ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                      : 'bg-white/5 border-white/10 text-white/40 hover:text-white/60 hover:bg-white/8'
+                  }`}
+                >
+                  <IconGrid />
+                  <div className="flex-1 text-left">
+                    <p className="text-xs font-semibold leading-tight">Transparent Grid Mode</p>
+                    <p className="text-[9px] opacity-60 mt-0.5 leading-tight">
+                      {(transparentLedConfig?.enabled ?? true) ? 'ON for LED_TRANSPARENT_MAT / LED_GRID_*' : 'OFF uses solid fallback'}
+                    </p>
+                  </div>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${(transparentLedConfig?.enabled ?? true) ? 'bg-cyan-300' : 'bg-white/20'}`} />
+                </button>
+                <Slider
+                  label="Grid Density"
+                  value={transparentLedConfig?.gridDensity ?? 36}
+                  min={8} max={120} step={1}
+                  onChange={value => updateTransparentLed({ gridDensity: value })}
+                />
+                <Slider
+                  label="Bar Thickness"
+                  value={transparentLedConfig?.barThickness ?? 0.08}
+                  min={0.01} max={0.24} step={0.01}
+                  onChange={value => updateTransparentLed({ barThickness: value })}
+                />
+                <Slider
+                  label="LED Glow"
+                  value={transparentLedConfig?.glow ?? 1.4}
+                  min={0.2} max={4} step={0.05}
+                  onChange={value => updateTransparentLed({ glow: value })}
+                />
+                <Slider
+                  label="Grid Opacity"
+                  value={transparentLedConfig?.opacity ?? 0.95}
+                  min={0.1} max={1} step={0.05}
+                  onChange={value => updateTransparentLed({ opacity: value })}
+                />
+                <p className="text-[9px] text-white/25 leading-snug">
+                  In the GLB, name the transparent LED mesh or material LED_TRANSPARENT_MAT or LED_GRID_STAR. The shader keeps the mesh shape and punches holes through the UV grid.
                 </p>
               </div>
             </Section>

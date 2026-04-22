@@ -3,7 +3,7 @@ import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment } from '@react-three/drei'
+import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment, ContactShadows } from '@react-three/drei'
 import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
@@ -29,16 +29,16 @@ function ReflectiveFloor() {
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]} receiveShadow>
       <planeGeometry args={[200, 200]} />
       <MeshReflectorMaterial
-        blur={[300, 100]}
+        blur={[180, 64]}
         resolution={1024}
-        mixBlur={1}
-        mixStrength={40}
-        roughness={1}
-        depthScale={1.2}
+        mixBlur={0.65}
+        mixStrength={14}
+        roughness={0.95}
+        depthScale={0.8}
         minDepthThreshold={0.4}
         maxDepthThreshold={1.4}
-        color="#101010"
-        metalness={0.5}
+        color="#090909"
+        metalness={0.12}
       />
     </mesh>
   )
@@ -402,6 +402,7 @@ function StageCanvas({
   bloomStrength,
   bloomThreshold,
   protectLed,
+  transparentLedConfig,
   showHdriBackground,
   children,
 }) {
@@ -412,6 +413,7 @@ function StageCanvas({
   const handleContextRestored = useCallback(() => setContextLost(false), [])
 
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
+  const environmentPreset = hasEnv ? hdriPreset : 'studio'
   const resolvedBloom     = bloomStrength      ?? 0.3
   const resolvedEnvInt    = envIntensity       ?? 1
   const resolvedBgBlur    = bgBlur             ?? 0
@@ -487,7 +489,7 @@ function StageCanvas({
         {/* HDRI Environment — LITE & STABLE version
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
             hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
-        {hasEnv && (
+        {(hasEnv || environmentPreset) && (
           <>
             {customHdriUrl ? (
               <LiteHdriEnvironment
@@ -503,8 +505,8 @@ function StageCanvas({
               />
             ) : (
               resolvedShowBg
-                ? <Environment preset={hdriPreset} background backgroundBlurriness={resolvedBgBlur} />
-                : <Environment preset={hdriPreset} />
+                ? <Environment preset={environmentPreset} background backgroundBlurriness={resolvedBgBlur} />
+                : <Environment preset={environmentPreset} />
             )}
             <EnvIntensityController intensity={resolvedEnvInt} protectLed={protectLed ?? true} />
           </>
@@ -513,7 +515,10 @@ function StageCanvas({
         {/* Lighting
             ambientLight scales with sunIntensity so dragging sun to 0 kills
             all ambient fill as well — no residual glow when everything is off. */}
-        <ambientLight intensity={sunIntensity * 0.15} />
+        <ambientLight intensity={sunIntensity * 0.18} />
+        <hemisphereLight
+          args={['#dbe5f3', '#050506', sunIntensity * 0.42]}
+        />
         <directionalLight
           position={sunPosition}
           intensity={sunIntensity}
@@ -524,6 +529,16 @@ function StageCanvas({
           shadow-camera-right={20}
           shadow-camera-top={20}
           shadow-camera-bottom={-20}
+        />
+        <directionalLight
+          position={[-10, 8, -6]}
+          intensity={sunIntensity * 0.28}
+          color="#b9c8ff"
+        />
+        <directionalLight
+          position={[8, 6, -12]}
+          intensity={sunIntensity * 0.18}
+          color="#ffe4bf"
         />
 
         {/* Placeholder cube — only shown before a model is loaded */}
@@ -536,6 +551,15 @@ function StageCanvas({
 
         {/* Reflective floor */}
         <ReflectiveFloor />
+        <ContactShadows
+          position={[0, -0.055, 0]}
+          opacity={0.38}
+          scale={90}
+          blur={1.8}
+          far={24}
+          resolution={1024}
+          frames={1}
+        />
 
         {/* Infinite grid */}
         <Grid
@@ -562,6 +586,7 @@ function StageCanvas({
               protectLed={protectLed ?? true}
               sunIntensity={sunIntensity ?? 1}
               envIntensity={envIntensity ?? 1}
+              transparentLedConfig={transparentLedConfig}
               loadingManager={loadingManager}
               onImageTextureLoaded={onImageTextureLoaded}
             />

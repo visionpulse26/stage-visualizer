@@ -91,6 +91,13 @@ function AdminPage() {
   // ── Visual integrity — bloom threshold, LED color protection ─────────────
   const [bloomThreshold, setBloomThreshold] = useState(1.2)
   const [protectLed,     setProtectLed]     = useState(true)
+  const [transparentLedConfig, setTransparentLedConfig] = useState({
+    enabled: true,
+    gridDensity: 36,
+    barThickness: 0.08,
+    glow: 1.4,
+    opacity: 0.95,
+  })
 
   // ── HDRI cloud upload ─────────────────────────────────────────────────────
   const [isUploadingHdri, setIsUploadingHdri] = useState(false)
@@ -666,6 +673,13 @@ function AdminPage() {
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
+    setTransparentLedConfig({
+      enabled: true,
+      gridDensity: 36,
+      barThickness: 0.08,
+      glow: 1.4,
+      opacity: 0.95,
+    })
 
     // Restore scene_config if present — all lighting values for consistency
     const cfg = p.scene_config
@@ -680,6 +694,10 @@ function AdminPage() {
       setBloomStrength(cfg.bloomStrength       ?? 0.3)
       setBloomThreshold(cfg.bloomThreshold     ?? 1.2)
       setProtectLed(cfg.protectLed             ?? true)
+      setTransparentLedConfig(prev => ({
+        ...prev,
+        ...(cfg.transparentLedConfig || cfg.transparentLed || {}),
+      }))
       setHdriFile(null)
 
       // ★ Sun lighting - MUST load these for consistency with Client/Collab
@@ -867,6 +885,7 @@ function AdminPage() {
         bloomStrength:       bloomStrength,
         bloomThreshold:      bloomThreshold,
         protectLed:          protectLed,
+        transparentLedConfig: transparentLedConfig,
         // ★ Sun lighting - save all values for Client/Collab consistency
         sunPosition:         [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)],
         sunIntensity:        sunIntensity,
@@ -914,7 +933,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
+      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -946,6 +965,7 @@ function AdminPage() {
         bloomStrength={bloomStrength}
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
+        transparentLedConfig={transparentLedConfig}
       >
         <UIPanel
           onModelUpload={handleModelUpload}
@@ -1024,6 +1044,8 @@ function AdminPage() {
           bloomStrength={bloomStrength}    onBloomStrengthChange={setBloomStrength}
           bloomThreshold={bloomThreshold}  onBloomThresholdChange={setBloomThreshold}
           protectLed={protectLed}          onProtectLedToggle={() => setProtectLed(v => !v)}
+          transparentLedConfig={transparentLedConfig}
+          onTransparentLedConfigChange={setTransparentLedConfig}
         />
 
         <TopBar role="Admin" color="violet" />
