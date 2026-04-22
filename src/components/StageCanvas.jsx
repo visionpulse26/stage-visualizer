@@ -115,7 +115,7 @@ function ToneMappingController() {
   const { gl } = useThree()
   useEffect(() => {
     gl.toneMapping         = THREE.ACESFilmicToneMapping
-    gl.toneMappingExposure = 0.8
+    gl.toneMappingExposure = 0.62
   }, [gl])
   return null
 }
@@ -541,7 +541,7 @@ function StageCanvas({
           alpha:                 false,
           preserveDrawingBuffer: true,
           toneMapping:           THREE.ACESFilmicToneMapping,
-          toneMappingExposure:   0.8,   // FIX 3 — clamp HDR highlights
+          toneMappingExposure:   0.62,
         }}
         shadows
       >
@@ -608,6 +608,8 @@ function StageCanvas({
           shadow-camera-right={35}
           shadow-camera-top={35}
           shadow-camera-bottom={-35}
+          shadow-bias={-0.0006}
+          shadow-normalBias={0.045}
         />
         <directionalLight
           position={[-10, 8, -6]}

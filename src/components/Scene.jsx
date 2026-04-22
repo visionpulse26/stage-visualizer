@@ -254,21 +254,23 @@ function applyBlackSurfaceCorrection(material, presetId, envIntensity) {
   const baseEnv = Math.max(0, envIntensity ?? 1)
 
   if (presetId === 'stage-floor-black') {
+    material.color?.multiplyScalar?.(0.72)
     material.metalness = Math.min(material.metalness ?? 0, 0.02)
-    material.roughness = Math.max(material.roughness ?? 0.9, 0.92)
-    material.envMapIntensity = 0.05 * baseEnv
-    material.userData.envIntensityScale = 0.05
+    material.roughness = Math.max(material.roughness ?? 0.9, 0.95)
+    material.envMapIntensity = 0.02 * baseEnv
+    material.userData.envIntensityScale = 0.02
     material.side = THREE.FrontSide
-    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.22)
+    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.12)
     if ('clearcoat' in material) material.clearcoat = 0
     if ('clearcoatRoughness' in material) material.clearcoatRoughness = 1
   } else if (presetId === 'mask-panel-black') {
+    material.color?.multiplyScalar?.(0.78)
     material.metalness = Math.min(material.metalness ?? 0, 0.03)
-    material.roughness = Math.max(material.roughness ?? 0.75, 0.82)
-    material.envMapIntensity = 0.08 * baseEnv
-    material.userData.envIntensityScale = 0.08
+    material.roughness = Math.max(material.roughness ?? 0.75, 0.9)
+    material.envMapIntensity = 0.04 * baseEnv
+    material.userData.envIntensityScale = 0.04
     material.side = THREE.FrontSide
-    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.28)
+    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.16)
     if ('clearcoat' in material) material.clearcoat = 0
     if ('clearcoatRoughness' in material) material.clearcoatRoughness = 1
   }
