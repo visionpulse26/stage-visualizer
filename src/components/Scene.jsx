@@ -245,59 +245,49 @@ function getDuplicateStagePolicy(entry, ledEntries) {
   if (!sharesOrigin || maxOverlap < 0.9) return null
 
   const isNullMesh = /\bNULL\b/.test(entry.tokens)
-  const isCoverMesh = /\bCOVER\b/.test(entry.tokens)
-  const isDarkShell = entry.preset.id === 'mask-panel-black' || entry.preset.id === 'default'
+  const isBackMesh = /\bBACK\b/.test(entry.tokens)
+  const isUnnamedDarkShell = entry.preset.id === 'default'
 
   if (isNullMesh && maxOverlap > 0.985) return 'hide'
-  if ((isCoverMesh || isDarkShell) && maxOverlap > 0.92) return 'non-occluding'
+  if ((isBackMesh || isUnnamedDarkShell) && maxOverlap > 0.92) return 'non-occluding'
   return null
 }
 
-function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity) {
-  const material = new THREE.MeshPhysicalMaterial()
+function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity, presetId = 'default') {
+  const material = sourceMaterial?.clone?.() || new THREE.MeshStandardMaterial()
   const settings = { ...DEFAULT_STAGE_MATERIAL, ...(presetSettings || {}) }
   const baseEnv = Math.max(0, envIntensity ?? 1)
 
   material.name = sourceMaterial?.name || 'STAGE_MAT'
-  material.map = sourceMaterial?.map || null
-  material.normalMap = sourceMaterial?.normalMap || null
-  material.roughnessMap = sourceMaterial?.roughnessMap || null
-  material.metalnessMap = sourceMaterial?.metalnessMap || null
-  material.aoMap = sourceMaterial?.aoMap || null
-  material.bumpMap = sourceMaterial?.bumpMap || null
-  material.alphaMap = sourceMaterial?.alphaMap || null
-  material.emissiveMap = sourceMaterial?.emissiveMap || null
-  material.normalScale = sourceMaterial?.normalScale?.clone?.() || new THREE.Vector2(1, 1)
-  material.bumpScale = sourceMaterial?.bumpScale ?? 1
-  material.aoMapIntensity = sourceMaterial?.aoMapIntensity ?? 1
 
   // Force stable opaque PBR defaults for stage surfaces imported from DCC tools.
   material.transparent = false
   material.opacity = 1
   material.alphaTest = 0
-  material.transmission = 0
-  material.thickness = 0
-  material.ior = 1.45
-  material.side = sourceMaterial?.side ?? THREE.FrontSide
+  if ('transmission' in material) material.transmission = 0
+  if ('thickness' in material) material.thickness = 0
+  if ('ior' in material) material.ior = 1.45
+  material.side = presetId === 'stage-floor-black' ? THREE.FrontSide : (sourceMaterial?.side ?? THREE.FrontSide)
   material.depthWrite = true
   material.depthTest = true
   material.toneMapped = true
   material.polygonOffset = true
   material.polygonOffsetFactor = 1
   material.polygonOffsetUnits = 1
+  material.flatShading = false
 
   material.color.set(sourceMaterial?.map ? '#ffffff' : settings.color)
   material.roughness = sourceMaterial?.roughnessMap ? 1 : settings.roughness
   material.metalness = sourceMaterial?.metalnessMap ? 1 : settings.metalness
   material.envMapIntensity = settings.envMapIntensity * baseEnv
   material.userData.envIntensityScale = settings.envMapIntensity
-  material.clearcoat = settings.clearcoat ?? 0
-  material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
-  material.sheen = 0
-  material.sheenRoughness = 1
-  material.specularIntensity = settings.specularIntensity ?? 1
-  material.reflectivity = 0.5
-  material.emissive.set('#000000')
+  if ('clearcoat' in material) material.clearcoat = settings.clearcoat ?? 0
+  if ('clearcoatRoughness' in material) material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
+  if ('sheen' in material) material.sheen = 0
+  if ('sheenRoughness' in material) material.sheenRoughness = 1
+  if ('specularIntensity' in material) material.specularIntensity = settings.specularIntensity ?? 1
+  if ('reflectivity' in material) material.reflectivity = 0.5
+  material.emissive?.set?.('#000000')
 
   material.needsUpdate = true
   return material
@@ -550,12 +540,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
         return
       }
 
-      if (preset.id === 'stage-floor-black' && child.geometry?.attributes?.normal) {
-        child.geometry.computeVertexNormals?.()
-        child.geometry.normalizeNormals?.()
-        child.geometry.attributes.normal.needsUpdate = true
-      }
-
       mats.forEach((mat, i) => {
         if (!mat) return
 
@@ -626,7 +610,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
         } else {
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-            const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity)
+            const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity, preset.id)
             prevLedMaterialsRef.current.push(stageMat)
             if (duplicatePolicy === 'non-occluding') {
               stageMat.depthWrite = false

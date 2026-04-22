@@ -871,25 +871,25 @@ function UIPanel({
                 <Slider
                   label="Grid Density X"
                   value={transparentLedConfig?.gridDensityX ?? transparentLedConfig?.gridDensity ?? 36}
-                  min={8} max={160} step={1}
+                  min={8} max={2048} step={1}
                   onChange={value => updateTransparentLed({ gridDensityX: value, gridDensity: value })}
                 />
                 <Slider
                   label="Grid Density Y"
                   value={transparentLedConfig?.gridDensityY ?? transparentLedConfig?.gridDensity ?? 36}
-                  min={8} max={160} step={1}
+                  min={8} max={2048} step={1}
                   onChange={value => updateTransparentLed({ gridDensityY: value })}
                 />
                 <Slider
                   label="Bar Thickness X"
                   value={transparentLedConfig?.barThicknessX ?? transparentLedConfig?.barThickness ?? 0.08}
-                  min={0.01} max={0.24} step={0.01}
+                  min={0.01} max={0.49} step={0.01}
                   onChange={value => updateTransparentLed({ barThicknessX: value, barThickness: value })}
                 />
                 <Slider
                   label="Bar Thickness Y"
                   value={transparentLedConfig?.barThicknessY ?? transparentLedConfig?.barThickness ?? 0.08}
-                  min={0.01} max={0.24} step={0.01}
+                  min={0.01} max={0.49} step={0.01}
                   onChange={value => updateTransparentLed({ barThicknessY: value })}
                 />
                 <Slider

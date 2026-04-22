@@ -594,9 +594,9 @@ function StageCanvas({
         {/* Lighting
             ambientLight scales with sunIntensity so dragging sun to 0 kills
             all ambient fill as well — no residual glow when everything is off. */}
-        <ambientLight intensity={sunIntensity * 0.18} />
+        <ambientLight intensity={sunIntensity * 0.08} />
         <hemisphereLight
-          args={['#dbe5f3', '#050506', sunIntensity * 0.42]}
+          args={['#dbe5f3', '#040405', sunIntensity * 0.18]}
         />
         <directionalLight
           position={sunPosition}
@@ -611,12 +611,12 @@ function StageCanvas({
         />
         <directionalLight
           position={[-10, 8, -6]}
-          intensity={sunIntensity * 0.28}
+          intensity={sunIntensity * 0.16}
           color="#b9c8ff"
         />
         <directionalLight
           position={[8, 6, -12]}
-          intensity={sunIntensity * 0.18}
+          intensity={sunIntensity * 0.12}
           color="#ffe4bf"
         />
 
