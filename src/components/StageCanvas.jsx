@@ -399,6 +399,38 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef, flyDura
   return null
 }
 
+function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
+  const framedUrlRef = useRef(null)
+
+  useEffect(() => {
+    if (!modelUrl) {
+      framedUrlRef.current = null
+      return
+    }
+    const controls = cameraControlsRef?.current
+    if (!controls || !modelMetrics || framedUrlRef.current === modelUrl) return
+
+    const { center, size, radius } = modelMetrics
+    const maxDim = Math.max(size?.x || 0, size?.y || 0, size?.z || 0, 1)
+    const distance = Math.max(radius * 1.8, maxDim * 1.35, 8)
+    const yLift = Math.max(size?.y || 0, 2) * 0.35
+
+    controls.setLookAt(
+      center.x + distance,
+      center.y + yLift + distance * 0.32,
+      center.z + distance,
+      center.x,
+      center.y + Math.max((size?.y || 0) * 0.18, 0.8),
+      center.z,
+      true
+    )
+
+    framedUrlRef.current = modelUrl
+  }, [cameraControlsRef, modelMetrics, modelUrl])
+
+  return null
+}
+
 /**
  * Reusable 3D canvas shared across Admin, Collab, and Client views.
  * Accepts scene_config props so all roles see the identical environment.
@@ -438,6 +470,7 @@ function StageCanvas({
   const internalPresetRef = useRef(null)
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
 
@@ -456,6 +489,10 @@ function StageCanvas({
   const blockFriction = useCallback((e) => {
     e.preventDefault()
   }, [])
+
+  useEffect(() => {
+    setModelMetrics(null)
+  }, [modelUrl])
 
   return (
     <div
@@ -626,6 +663,7 @@ function StageCanvas({
               transparentLedConfig={transparentLedConfig}
               loadingManager={loadingManager}
               onImageTextureLoaded={onImageTextureLoaded}
+              onModelMetrics={setModelMetrics}
             />
           )}
         </Suspense>
@@ -636,6 +674,14 @@ function StageCanvas({
           smoothTime={0.5}
           dollySpeed={0.5}
         />
+
+        {cameraControlsRef && (
+          <CameraAutoFrame
+            cameraControlsRef={cameraControlsRef}
+            modelMetrics={modelMetrics}
+            modelUrl={modelUrl}
+          />
+        )}
 
         {cameraControlsRef && (
           <CameraSmoothFlyController

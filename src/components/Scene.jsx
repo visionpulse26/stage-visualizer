@@ -207,7 +207,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -483,7 +483,18 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     clonedScene.position.y += size.y / 2
     clonedScene.updateMatrixWorld(true)
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig])
+    const normalizedBox = new THREE.Box3().setFromObject(clonedScene)
+    const normalizedSize = normalizedBox.getSize(new THREE.Vector3())
+    const normalizedCenter = normalizedBox.getCenter(new THREE.Vector3())
+    const radius = normalizedSize.length() * 0.5
+    onModelMetrics?.({
+      box: normalizedBox.clone(),
+      center: normalizedCenter.clone(),
+      size: normalizedSize.clone(),
+      radius,
+    })
+
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
@@ -532,7 +543,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -541,6 +552,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
     sunIntensity,
     envIntensity,
     transparentLedConfig,
+    onModelMetrics,
   }
   return (
     <group>
