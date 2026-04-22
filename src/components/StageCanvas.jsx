@@ -400,6 +400,7 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef, flyDura
 }
 
 function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
+  const { camera } = useThree()
   const framedUrlRef = useRef(null)
 
   useEffect(() => {
@@ -414,6 +415,9 @@ function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
     const maxDim = Math.max(size?.x || 0, size?.y || 0, size?.z || 0, 1)
     const distance = Math.max(radius * 1.8, maxDim * 1.35, 8)
     const yLift = Math.max(size?.y || 0, 2) * 0.35
+    camera.near = Math.max(0.12, Math.min(2, radius / 180 || 0.12))
+    camera.far = Math.max(250, radius * 10, maxDim * 12)
+    camera.updateProjectionMatrix()
 
     controls.setLookAt(
       center.x + distance,
@@ -426,7 +430,7 @@ function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
     )
 
     framedUrlRef.current = modelUrl
-  }, [cameraControlsRef, modelMetrics, modelUrl])
+  }, [camera, cameraControlsRef, modelMetrics, modelUrl])
 
   return null
 }

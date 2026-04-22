@@ -188,6 +188,52 @@ function applyStageMaterialPreset(material, presetSettings, envIntensity) {
   material.needsUpdate = true
 }
 
+function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity) {
+  const material = new THREE.MeshPhysicalMaterial()
+  const settings = { ...DEFAULT_STAGE_MATERIAL, ...(presetSettings || {}) }
+  const baseEnv = Math.max(0, envIntensity ?? 1)
+
+  material.name = sourceMaterial?.name || 'STAGE_MAT'
+  material.map = sourceMaterial?.map || null
+  material.normalMap = sourceMaterial?.normalMap || null
+  material.roughnessMap = sourceMaterial?.roughnessMap || null
+  material.metalnessMap = sourceMaterial?.metalnessMap || null
+  material.aoMap = sourceMaterial?.aoMap || null
+  material.bumpMap = sourceMaterial?.bumpMap || null
+  material.alphaMap = sourceMaterial?.alphaMap || null
+  material.emissiveMap = sourceMaterial?.emissiveMap || null
+  material.normalScale = sourceMaterial?.normalScale?.clone?.() || new THREE.Vector2(1, 1)
+  material.bumpScale = sourceMaterial?.bumpScale ?? 1
+  material.aoMapIntensity = sourceMaterial?.aoMapIntensity ?? 1
+
+  // Force stable opaque PBR defaults for stage surfaces imported from DCC tools.
+  material.transparent = false
+  material.opacity = 1
+  material.alphaTest = 0
+  material.transmission = 0
+  material.thickness = 0
+  material.ior = 1.45
+  material.side = THREE.FrontSide
+  material.depthWrite = true
+  material.depthTest = true
+  material.toneMapped = true
+
+  material.color.set(sourceMaterial?.map ? '#ffffff' : settings.color)
+  material.roughness = sourceMaterial?.roughnessMap ? 1 : settings.roughness
+  material.metalness = sourceMaterial?.metalnessMap ? 1 : settings.metalness
+  material.envMapIntensity = settings.envMapIntensity * baseEnv
+  material.clearcoat = settings.clearcoat ?? 0
+  material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
+  material.sheen = 0
+  material.sheenRoughness = 1
+  material.specularIntensity = 1
+  material.reflectivity = 0.5
+  material.emissive.set('#000000')
+
+  material.needsUpdate = true
+  return material
+}
+
 // ── LED screen light sources ──────────────────────────────────────────────────
 function LedLights({ positions, color, active }) {
   if (!active || positions.length === 0) return null
@@ -463,8 +509,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
         } else {
           const preset = resolveStageMaterialPreset(mat.name, child.name)
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-            const stageMat = mat.clone()
-            applyStageMaterialPreset(stageMat, preset.settings, envIntensity)
+            const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity)
             prevLedMaterialsRef.current.push(stageMat)
             if (Array.isArray(child.material)) child.material[i] = stageMat
             else child.material = stageMat
