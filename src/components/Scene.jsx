@@ -250,6 +250,30 @@ function shouldPreserveSourceMaterial(presetId) {
   return presetId === 'stage-floor-black' || presetId === 'mask-panel-black'
 }
 
+function applyBlackSurfaceCorrection(material, presetId, envIntensity) {
+  const baseEnv = Math.max(0, envIntensity ?? 1)
+
+  if (presetId === 'stage-floor-black') {
+    material.metalness = Math.min(material.metalness ?? 0, 0.02)
+    material.roughness = Math.max(material.roughness ?? 0.9, 0.92)
+    material.envMapIntensity = 0.05 * baseEnv
+    material.userData.envIntensityScale = 0.05
+    material.side = THREE.FrontSide
+    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.22)
+    if ('clearcoat' in material) material.clearcoat = 0
+    if ('clearcoatRoughness' in material) material.clearcoatRoughness = 1
+  } else if (presetId === 'mask-panel-black') {
+    material.metalness = Math.min(material.metalness ?? 0, 0.03)
+    material.roughness = Math.max(material.roughness ?? 0.75, 0.82)
+    material.envMapIntensity = 0.08 * baseEnv
+    material.userData.envIntensityScale = 0.08
+    material.side = THREE.FrontSide
+    if ('specularIntensity' in material) material.specularIntensity = Math.min(material.specularIntensity ?? 1, 0.28)
+    if ('clearcoat' in material) material.clearcoat = 0
+    if ('clearcoatRoughness' in material) material.clearcoatRoughness = 1
+  }
+}
+
 function createPreservedStageMaterial(sourceMaterial, envIntensity, presetId = 'default') {
   const material = sourceMaterial?.clone?.() || new THREE.MeshStandardMaterial()
   const baseEnv = Math.max(0, envIntensity ?? 1)
@@ -269,6 +293,8 @@ function createPreservedStageMaterial(sourceMaterial, envIntensity, presetId = '
   material.flatShading = false
   material.envMapIntensity = sourceEnv * baseEnv
   material.userData.envIntensityScale = sourceEnv
+  if ('specularIntensity' in material) material.specularIntensity = sourceMaterial?.specularIntensity ?? 1
+  applyBlackSurfaceCorrection(material, presetId, envIntensity)
   material.needsUpdate = true
   return material
 }
