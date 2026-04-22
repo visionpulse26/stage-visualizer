@@ -246,6 +246,33 @@ function getDuplicateStagePolicy(entry, ledEntries) {
   return null
 }
 
+function shouldPreserveSourceMaterial(presetId) {
+  return presetId === 'stage-floor-black' || presetId === 'mask-panel-black'
+}
+
+function createPreservedStageMaterial(sourceMaterial, envIntensity, presetId = 'default') {
+  const material = sourceMaterial?.clone?.() || new THREE.MeshStandardMaterial()
+  const baseEnv = Math.max(0, envIntensity ?? 1)
+  const sourceEnv = sourceMaterial?.envMapIntensity ?? 1
+
+  material.name = sourceMaterial?.name || 'STAGE_MAT'
+  material.transparent = false
+  material.opacity = 1
+  material.alphaTest = 0
+  if ('transmission' in material) material.transmission = 0
+  if ('thickness' in material) material.thickness = 0
+  if ('ior' in material) material.ior = 1.45
+  material.side = presetId === 'stage-floor-black' ? THREE.FrontSide : (sourceMaterial?.side ?? THREE.FrontSide)
+  material.depthWrite = true
+  material.depthTest = true
+  material.toneMapped = true
+  material.flatShading = false
+  material.envMapIntensity = sourceEnv * baseEnv
+  material.userData.envIntensityScale = sourceEnv
+  material.needsUpdate = true
+  return material
+}
+
 function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity, presetId = 'default') {
   const material = sourceMaterial?.clone?.() || new THREE.MeshStandardMaterial()
   const settings = { ...DEFAULT_STAGE_MATERIAL, ...(presetSettings || {}) }
@@ -607,7 +634,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
         } else {
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
-            const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity, preset.id)
+            const stageMat = shouldPreserveSourceMaterial(preset.id)
+              ? createPreservedStageMaterial(mat, envIntensity, preset.id)
+              : createStableStageMaterial(mat, preset.settings, envIntensity, preset.id)
             prevLedMaterialsRef.current.push(stageMat)
             if (duplicatePolicy === 'non-occluding') {
               stageMat.depthWrite = false
