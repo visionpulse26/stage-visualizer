@@ -143,6 +143,9 @@ function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TR
     depthTest: true,
     side: THREE.DoubleSide,
     toneMapped: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   })
   material.name = TRANSPARENT_LED_MATERIAL_NAME
   return material
@@ -217,6 +220,9 @@ function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity)
   material.depthWrite = true
   material.depthTest = true
   material.toneMapped = true
+  material.polygonOffset = true
+  material.polygonOffsetFactor = 1
+  material.polygonOffsetUnits = 1
 
   material.color.set(sourceMaterial?.map ? '#ffffff' : settings.color)
   material.roughness = sourceMaterial?.roughnessMap ? 1 : settings.roughness
@@ -471,13 +477,18 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           try {
             if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
               ledMat = createTransparentLedMaterial(activeTexture, transparentLedConfig)
+              child.renderOrder = 4
             } else if (activeTexture) {
               if (protectLed) {
                 ledMat = new THREE.MeshBasicMaterial({
                   map:        activeTexture,
                   side:       THREE.DoubleSide,
                   toneMapped: false,
+                  polygonOffset: true,
+                  polygonOffsetFactor: -2,
+                  polygonOffsetUnits: -2,
                 })
+                child.renderOrder = 3
               } else {
                 ledMat = new THREE.MeshStandardMaterial({
                   color:             new THREE.Color(0, 0, 0),
@@ -489,11 +500,22 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                   metalness:         0,
                   side:              THREE.DoubleSide,
                   toneMapped:        true,
+                  polygonOffset:     true,
+                  polygonOffsetFactor: -2,
+                  polygonOffsetUnits: -2,
                 })
                 ledMaterialsRef.current.push(ledMat)
+                child.renderOrder = 3
               }
             } else {
-              ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
+              ledMat = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: -2,
+                polygonOffsetUnits: -2,
+              })
+              child.renderOrder = 3
             }
             ledMat.name = ledSurfaceType === 'transparent-grid' ? TRANSPARENT_LED_MATERIAL_NAME : LED_MATERIAL_NAME
             prevLedMaterialsRef.current.push(ledMat)
@@ -511,6 +533,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
             const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity)
             prevLedMaterialsRef.current.push(stageMat)
+            child.renderOrder = 1
             if (Array.isArray(child.material)) child.material[i] = stageMat
             else child.material = stageMat
           }
