@@ -191,6 +191,53 @@ function applyStageMaterialPreset(material, presetSettings, envIntensity) {
   material.needsUpdate = true
 }
 
+function getBoxOverlapRatio(a, b) {
+  const overlapMin = new THREE.Vector3(
+    Math.max(a.min.x, b.min.x),
+    Math.max(a.min.y, b.min.y),
+    Math.max(a.min.z, b.min.z)
+  )
+  const overlapMax = new THREE.Vector3(
+    Math.min(a.max.x, b.max.x),
+    Math.min(a.max.y, b.max.y),
+    Math.min(a.max.z, b.max.z)
+  )
+  const size = new THREE.Vector3().subVectors(overlapMax, overlapMin)
+  if (size.x <= 0 || size.y <= 0 || size.z <= 0) return 0
+  const overlapVolume = size.x * size.y * size.z
+  const aSize = new THREE.Vector3()
+  const bSize = new THREE.Vector3()
+  a.getSize(aSize)
+  b.getSize(bSize)
+  const aVolume = Math.max(aSize.x * aSize.y * aSize.z, 1e-6)
+  const bVolume = Math.max(bSize.x * bSize.y * bSize.z, 1e-6)
+  return overlapVolume / Math.min(aVolume, bVolume)
+}
+
+function getDuplicateStagePolicy(entry, ledEntries) {
+  if (!entry || entry.ledSurfaceType || ledEntries.length === 0) return null
+
+  let maxOverlap = 0
+  let sharesOrigin = false
+
+  for (const ledEntry of ledEntries) {
+    maxOverlap = Math.max(maxOverlap, getBoxOverlapRatio(entry.box, ledEntry.box))
+    if (entry.worldPosition.distanceToSquared(ledEntry.worldPosition) < 0.0001) {
+      sharesOrigin = true
+    }
+  }
+
+  if (!sharesOrigin || maxOverlap < 0.9) return null
+
+  const isNullMesh = /\bNULL\b/.test(entry.tokens)
+  const isCoverMesh = /\bCOVER\b/.test(entry.tokens)
+  const isDarkShell = entry.preset.id === 'mask-panel-black' || entry.preset.id === 'default'
+
+  if (isNullMesh && maxOverlap > 0.985) return 'hide'
+  if ((isCoverMesh || isDarkShell) && maxOverlap > 0.92) return 'non-occluding'
+  return null
+}
+
 function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity) {
   const material = new THREE.MeshPhysicalMaterial()
   const settings = { ...DEFAULT_STAGE_MATERIAL, ...(presetSettings || {}) }
@@ -216,7 +263,7 @@ function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity)
   material.transmission = 0
   material.thickness = 0
   material.ior = 1.45
-  material.side = THREE.FrontSide
+  material.side = sourceMaterial?.side ?? THREE.FrontSide
   material.depthWrite = true
   material.depthTest = true
   material.toneMapped = true
@@ -448,6 +495,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
     let found = false
     const newLedPositions = []
+    const meshEntries = []
 
     clonedScene.traverse((child) => {
       if (!child.isMesh) return
@@ -460,6 +508,32 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       child.geometry?.computeBoundingSphere?.()
 
       const mats = Array.isArray(child.material) ? child.material : [child.material]
+      child.updateWorldMatrix(true, false)
+      meshEntries.push({
+        child,
+        mats,
+        box: new THREE.Box3().setFromObject(child),
+        worldPosition: child.getWorldPosition(new THREE.Vector3()),
+        ledSurfaceType: getLedSurfaceType(...mats.map((mat) => mat?.name), child.name),
+        preset: resolveStageMaterialPreset(...mats.map((mat) => mat?.name), child.name),
+        tokens: normalizeMaterialTokens(...mats.map((mat) => mat?.name), child.name),
+      })
+    })
+
+    const ledEntries = meshEntries.filter((entry) => entry.ledSurfaceType)
+    const duplicatePolicies = new Map(
+      meshEntries
+        .map((entry) => [entry.child.uuid, getDuplicateStagePolicy(entry, ledEntries)])
+        .filter(([, policy]) => !!policy)
+    )
+
+    meshEntries.forEach(({ child, mats, preset }) => {
+      const duplicatePolicy = duplicatePolicies.get(child.uuid)
+      if (duplicatePolicy === 'hide') {
+        child.visible = false
+        return
+      }
+
       mats.forEach((mat, i) => {
         if (!mat) return
 
@@ -529,11 +603,18 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           }
 
         } else {
-          const preset = resolveStageMaterialPreset(mat.name, child.name)
           if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
             const stageMat = createStableStageMaterial(mat, preset.settings, envIntensity)
             prevLedMaterialsRef.current.push(stageMat)
-            child.renderOrder = 1
+            if (duplicatePolicy === 'non-occluding') {
+              stageMat.depthWrite = false
+              stageMat.polygonOffsetFactor = 2
+              stageMat.polygonOffsetUnits = 2
+              stageMat.side = THREE.DoubleSide
+              child.renderOrder = 2
+            } else {
+              child.renderOrder = 1
+            }
             if (Array.isArray(child.material)) child.material[i] = stageMat
             else child.material = stageMat
           }
