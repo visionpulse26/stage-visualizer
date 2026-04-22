@@ -401,7 +401,11 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       if (!child.isMesh) return
       child.castShadow    = true
       child.receiveShadow = true
-      child.frustumCulled = true
+      // Stage models from C4D/SketchUp often carry unreliable bounds after GLB export.
+      // Disabling per-mesh frustum culling avoids "rotate slightly and the stage disappears".
+      child.frustumCulled = false
+      child.geometry?.computeBoundingBox?.()
+      child.geometry?.computeBoundingSphere?.()
 
       const mats = Array.isArray(child.material) ? child.material : [child.material]
       mats.forEach((mat, i) => {
@@ -477,6 +481,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     const size   = box.getSize(new THREE.Vector3())
     clonedScene.position.sub(center)
     clonedScene.position.y += size.y / 2
+    clonedScene.updateMatrixWorld(true)
 
   }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig])
 
