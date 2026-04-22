@@ -493,7 +493,7 @@ function StageCanvas({
       )}
       <StageErrorBoundary>
       <Canvas
-        camera={{ position: [5, 5, 5], fov: 50 }}
+        camera={{ position: [5, 5, 5], fov: 50, near: 0.05, far: 2000 }}
         gl={{
           antialias:             true,
           alpha:                 false,
@@ -512,7 +512,7 @@ function StageCanvas({
 
         {/* Background — black in stealth mode, overridden by HDRI when visible */}
         <color attach="background" args={['#000000']} />
-        <fog   attach="fog"        args={['#0a0a0c', 15, 60]} />
+        <fog   attach="fog"        args={['#0a0a0c', 40, 120]} />
 
         {/* HDRI Environment — LITE & STABLE version
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
@@ -561,11 +561,11 @@ function StageCanvas({
           intensity={sunIntensity}
           castShadow
           shadow-mapSize={[2048, 2048]}
-          shadow-camera-far={50}
-          shadow-camera-left={-20}
-          shadow-camera-right={20}
-          shadow-camera-top={20}
-          shadow-camera-bottom={-20}
+          shadow-camera-far={100}
+          shadow-camera-left={-35}
+          shadow-camera-right={35}
+          shadow-camera-top={35}
+          shadow-camera-bottom={-35}
         />
         <directionalLight
           position={[-10, 8, -6]}
@@ -593,7 +593,7 @@ function StageCanvas({
           opacity={0.38}
           scale={90}
           blur={1.8}
-          far={24}
+          far={40}
           resolution={1024}
           frames={1}
         />
