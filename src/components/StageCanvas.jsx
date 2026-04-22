@@ -7,6 +7,7 @@ import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment, Con
 import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Scene from './Scene'
 
 // ── Atmospheric dust particles ────────────────────────────────────────────────
@@ -115,6 +116,34 @@ function ToneMappingController() {
     gl.toneMapping         = THREE.ACESFilmicToneMapping
     gl.toneMappingExposure = 0.8
   }, [gl])
+  return null
+}
+
+function LocalStudioEnvironment({ intensity = 1, background = false, bgBlur = 0 }) {
+  const { gl, scene } = useThree()
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const envScene = new RoomEnvironment()
+    const envMap = pmrem.fromScene(envScene, 0.04).texture
+
+    scene.environment = envMap
+    if (background) scene.background = envMap
+    if ('backgroundBlurriness' in scene) {
+      scene.backgroundBlurriness = background ? bgBlur : 0
+    }
+    if ('environmentIntensity' in scene) {
+      scene.environmentIntensity = intensity
+    }
+
+    return () => {
+      if (scene.environment === envMap) scene.environment = null
+      if (scene.background === envMap) scene.background = null
+      envMap.dispose()
+      pmrem.dispose()
+    }
+  }, [gl, scene, intensity, background, bgBlur])
+
   return null
 }
 
@@ -413,7 +442,6 @@ function StageCanvas({
   const handleContextRestored = useCallback(() => setContextLost(false), [])
 
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
-  const environmentPreset = hasEnv ? hdriPreset : 'studio'
   const resolvedBloom     = bloomStrength      ?? 0.3
   const resolvedEnvInt    = envIntensity       ?? 1
   const resolvedBgBlur    = bgBlur             ?? 0
@@ -489,7 +517,15 @@ function StageCanvas({
         {/* HDRI Environment — LITE & STABLE version
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
             hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
-        {(hasEnv || environmentPreset) && (
+        <>
+          {!hasEnv && (
+            <LocalStudioEnvironment
+              intensity={resolvedEnvInt}
+              background={resolvedShowBg}
+              bgBlur={resolvedBgBlur}
+            />
+          )}
+          {hasEnv && (
           <>
             {customHdriUrl ? (
               <LiteHdriEnvironment
@@ -505,12 +541,13 @@ function StageCanvas({
               />
             ) : (
               resolvedShowBg
-                ? <Environment preset={environmentPreset} background backgroundBlurriness={resolvedBgBlur} />
-                : <Environment preset={environmentPreset} />
+                ? <Environment preset={hdriPreset} background backgroundBlurriness={resolvedBgBlur} />
+                : <Environment preset={hdriPreset} />
             )}
             <EnvIntensityController intensity={resolvedEnvInt} protectLed={protectLed ?? true} />
           </>
-        )}
+          )}
+        </>
 
         {/* Lighting
             ambientLight scales with sunIntensity so dragging sun to 0 kills
