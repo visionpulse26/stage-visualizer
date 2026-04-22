@@ -176,7 +176,11 @@ function UIPanel({
     onTransparentLedConfigChange?.({
       enabled: transparentLedConfig?.enabled ?? true,
       gridDensity: transparentLedConfig?.gridDensity ?? 36,
+      gridDensityX: transparentLedConfig?.gridDensityX ?? transparentLedConfig?.gridDensity ?? 36,
+      gridDensityY: transparentLedConfig?.gridDensityY ?? transparentLedConfig?.gridDensity ?? 36,
       barThickness: transparentLedConfig?.barThickness ?? 0.08,
+      barThicknessX: transparentLedConfig?.barThicknessX ?? transparentLedConfig?.barThickness ?? 0.08,
+      barThicknessY: transparentLedConfig?.barThicknessY ?? transparentLedConfig?.barThickness ?? 0.08,
       glow: transparentLedConfig?.glow ?? 1.4,
       opacity: transparentLedConfig?.opacity ?? 0.95,
       ...patch,
@@ -865,16 +869,28 @@ function UIPanel({
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${(transparentLedConfig?.enabled ?? true) ? 'bg-cyan-300' : 'bg-white/20'}`} />
                 </button>
                 <Slider
-                  label="Grid Density"
-                  value={transparentLedConfig?.gridDensity ?? 36}
-                  min={8} max={120} step={1}
-                  onChange={value => updateTransparentLed({ gridDensity: value })}
+                  label="Grid Density X"
+                  value={transparentLedConfig?.gridDensityX ?? transparentLedConfig?.gridDensity ?? 36}
+                  min={8} max={160} step={1}
+                  onChange={value => updateTransparentLed({ gridDensityX: value, gridDensity: value })}
                 />
                 <Slider
-                  label="Bar Thickness"
-                  value={transparentLedConfig?.barThickness ?? 0.08}
+                  label="Grid Density Y"
+                  value={transparentLedConfig?.gridDensityY ?? transparentLedConfig?.gridDensity ?? 36}
+                  min={8} max={160} step={1}
+                  onChange={value => updateTransparentLed({ gridDensityY: value })}
+                />
+                <Slider
+                  label="Bar Thickness X"
+                  value={transparentLedConfig?.barThicknessX ?? transparentLedConfig?.barThickness ?? 0.08}
                   min={0.01} max={0.24} step={0.01}
-                  onChange={value => updateTransparentLed({ barThickness: value })}
+                  onChange={value => updateTransparentLed({ barThicknessX: value, barThickness: value })}
+                />
+                <Slider
+                  label="Bar Thickness Y"
+                  value={transparentLedConfig?.barThicknessY ?? transparentLedConfig?.barThickness ?? 0.08}
+                  min={0.01} max={0.24} step={0.01}
+                  onChange={value => updateTransparentLed({ barThicknessY: value })}
                 />
                 <Slider
                   label="LED Glow"

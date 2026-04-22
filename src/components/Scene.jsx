@@ -11,7 +11,11 @@ const EMISSIVE_FADE_SECS = 0.5
 const DEFAULT_TRANSPARENT_LED = {
   enabled: true,
   gridDensity: 36,
+  gridDensityX: 36,
+  gridDensityY: 36,
   barThickness: 0.08,
+  barThicknessX: 0.08,
+  barThicknessY: 0.08,
   glow: 1.4,
   opacity: 0.95,
 }
@@ -52,10 +56,11 @@ const STAGE_MATERIAL_PRESETS = [
     id: 'stage-floor-black',
     patterns: ['STAGE_FLOOR', 'FLOOR_BLACK', 'BLACK_FLOOR', 'RUNWAY', 'CATWALK', 'DECK', 'STEP', 'STAIR', 'PLATFORM'],
     settings: {
-      color: '#111214',
-      roughness: 0.9,
+      color: '#0b0c0f',
+      roughness: 0.96,
       metalness: 0.02,
-      envMapIntensity: 0.3,
+      envMapIntensity: 0.08,
+      specularIntensity: 0.32,
       clearcoat: 0,
     },
   },
@@ -96,18 +101,22 @@ const transparentLedVertexShader = `
 const transparentLedFragmentShader = `
   uniform sampler2D uMap;
   uniform bool uHasMap;
-  uniform float uGridDensity;
-  uniform float uBarThickness;
+  uniform vec2 uGridDensity;
+  uniform vec2 uBarThickness;
   uniform float uGlow;
   uniform float uOpacity;
   varying vec2 vUv;
 
   void main() {
-    vec2 gridUv = vUv * max(uGridDensity, 1.0);
+    vec2 gridUv = vUv * max(uGridDensity, vec2(1.0));
     vec2 cell = fract(gridUv);
-    float lineDistance = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
-    float aa = max(fwidth(lineDistance), 0.001);
-    float lineMask = 1.0 - smoothstep(uBarThickness, uBarThickness + aa, lineDistance);
+    float distX = min(cell.x, 1.0 - cell.x);
+    float distY = min(cell.y, 1.0 - cell.y);
+    float aaX = max(fwidth(distX), 0.001);
+    float aaY = max(fwidth(distY), 0.001);
+    float verticalMask = 1.0 - smoothstep(uBarThickness.x, uBarThickness.x + aaX, distX);
+    float horizontalMask = 1.0 - smoothstep(uBarThickness.y, uBarThickness.y + aaY, distY);
+    float lineMask = max(verticalMask, horizontalMask);
 
     vec4 texel = uHasMap ? texture2D(uMap, vUv) : vec4(0.08, 0.08, 0.08, 1.0);
     float alpha = lineMask * texel.a * uOpacity;
@@ -127,12 +136,16 @@ function getLedSurfaceType(...names) {
 
 function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
   const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
+  const densityX = Math.max(1, Number(cfg.gridDensityX ?? cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensityX)
+  const densityY = Math.max(1, Number(cfg.gridDensityY ?? cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensityY)
+  const thicknessX = Math.max(0.01, Math.min(0.24, Number(cfg.barThicknessX ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessX))
+  const thicknessY = Math.max(0.01, Math.min(0.24, Number(cfg.barThicknessY ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessY))
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: texture || new THREE.Texture() },
       uHasMap: { value: !!texture },
-      uGridDensity: { value: Math.max(1, Number(cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensity) },
-      uBarThickness: { value: Math.max(0.01, Math.min(0.24, Number(cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThickness)) },
+      uGridDensity: { value: new THREE.Vector2(densityX, densityY) },
+      uBarThickness: { value: new THREE.Vector2(thicknessX, thicknessY) },
       uGlow: { value: Math.max(0, Number(cfg.glow) || DEFAULT_TRANSPARENT_LED.glow) },
       uOpacity: { value: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)) },
     },
@@ -182,11 +195,13 @@ function applyStageMaterialPreset(material, presetSettings, envIntensity) {
   material.roughness = settings.roughness
   material.metalness = settings.metalness
   material.envMapIntensity = settings.envMapIntensity * baseEnv
+  material.userData.envIntensityScale = settings.envMapIntensity
 
   if ('clearcoat' in material) material.clearcoat = settings.clearcoat ?? 0
   if ('clearcoatRoughness' in material) material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
   if ('sheen' in material) material.sheen = settings.sheen ?? 0
   if ('sheenRoughness' in material) material.sheenRoughness = settings.sheenRoughness ?? 1
+  if ('specularIntensity' in material) material.specularIntensity = settings.specularIntensity ?? 1
 
   material.needsUpdate = true
 }
@@ -275,11 +290,12 @@ function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity)
   material.roughness = sourceMaterial?.roughnessMap ? 1 : settings.roughness
   material.metalness = sourceMaterial?.metalnessMap ? 1 : settings.metalness
   material.envMapIntensity = settings.envMapIntensity * baseEnv
+  material.userData.envIntensityScale = settings.envMapIntensity
   material.clearcoat = settings.clearcoat ?? 0
   material.clearcoatRoughness = settings.clearcoatRoughness ?? 0
   material.sheen = 0
   material.sheenRoughness = 1
-  material.specularIntensity = 1
+  material.specularIntensity = settings.specularIntensity ?? 1
   material.reflectivity = 0.5
   material.emissive.set('#000000')
 
@@ -532,6 +548,12 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       if (duplicatePolicy === 'hide') {
         child.visible = false
         return
+      }
+
+      if (preset.id === 'stage-floor-black' && child.geometry?.attributes?.normal) {
+        child.geometry.computeVertexNormals?.()
+        child.geometry.normalizeNormals?.()
+        child.geometry.attributes.normal.needsUpdate = true
       }
 
       mats.forEach((mat, i) => {

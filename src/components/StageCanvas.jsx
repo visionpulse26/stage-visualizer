@@ -62,7 +62,8 @@ function EnvIntensityController({ intensity, protectLed }) {
           m.envMapIntensity = 0
           return
         }
-        m.envMapIntensity = intensity
+        const scale = m.userData?.envIntensityScale ?? 1
+        m.envMapIntensity = scale * intensity
       })
     })
   }, [scene, intensity, protectLed])
@@ -627,8 +628,8 @@ function StageCanvas({
           </mesh>
         )}
 
-        {/* Reflective floor */}
-        <ReflectiveFloor />
+        {/* Reflective helper floor is only useful before a real stage model exists. */}
+        {!modelLoaded && <ReflectiveFloor />}
         <ContactShadows
           position={[0, -0.055, 0]}
           opacity={0.38}

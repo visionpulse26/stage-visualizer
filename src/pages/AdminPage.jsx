@@ -94,7 +94,11 @@ function AdminPage() {
   const [transparentLedConfig, setTransparentLedConfig] = useState({
     enabled: true,
     gridDensity: 36,
+    gridDensityX: 36,
+    gridDensityY: 36,
     barThickness: 0.08,
+    barThicknessX: 0.08,
+    barThicknessY: 0.08,
     glow: 1.4,
     opacity: 0.95,
   })
@@ -676,7 +680,11 @@ function AdminPage() {
     setTransparentLedConfig({
       enabled: true,
       gridDensity: 36,
+      gridDensityX: 36,
+      gridDensityY: 36,
       barThickness: 0.08,
+      barThicknessX: 0.08,
+      barThicknessY: 0.08,
       glow: 1.4,
       opacity: 0.95,
     })
