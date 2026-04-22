@@ -893,19 +893,13 @@ function UIPanel({
                   onChange={value => updateTransparentLed({ barThicknessY: value })}
                 />
                 <Slider
-                  label="LED Glow"
-                  value={transparentLedConfig?.glow ?? 1.4}
-                  min={0.2} max={4} step={0.05}
-                  onChange={value => updateTransparentLed({ glow: value })}
-                />
-                <Slider
                   label="Grid Opacity"
                   value={transparentLedConfig?.opacity ?? 0.95}
                   min={0.1} max={1} step={0.05}
                   onChange={value => updateTransparentLed({ opacity: value })}
                 />
                 <p className="text-[9px] text-white/25 leading-snug">
-                  In the GLB, name the transparent LED mesh or material LED_TRANSPARENT_MAT or LED_GRID_STAR. The shader keeps the mesh shape and punches holes through the UV grid.
+                  In the GLB, name the transparent LED mesh or material LED_TRANSPARENT_MAT or LED_GRID_STAR. The visual keeps its original color while the repeated alpha mask creates the see-through grid.
                 </p>
               </div>
             </Section>

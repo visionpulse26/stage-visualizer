@@ -90,42 +90,6 @@ const STAGE_MATERIAL_PRESETS = [
   },
 ]
 
-const transparentLedVertexShader = `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`
-
-const transparentLedFragmentShader = `
-  uniform sampler2D uMap;
-  uniform bool uHasMap;
-  uniform vec2 uGridDensity;
-  uniform vec2 uBarThickness;
-  uniform float uGlow;
-  uniform float uOpacity;
-  varying vec2 vUv;
-
-  void main() {
-    vec2 gridUv = vUv * max(uGridDensity, vec2(1.0));
-    vec2 cell = fract(gridUv);
-    float distX = min(cell.x, 1.0 - cell.x);
-    float distY = min(cell.y, 1.0 - cell.y);
-    float aaX = max(fwidth(distX), 0.001);
-    float aaY = max(fwidth(distY), 0.001);
-    float verticalMask = 1.0 - smoothstep(uBarThickness.x, uBarThickness.x + aaX, distX);
-    float horizontalMask = 1.0 - smoothstep(uBarThickness.y, uBarThickness.y + aaY, distY);
-    float lineMask = max(verticalMask, horizontalMask);
-
-    vec4 texel = uHasMap ? texture2D(uMap, vUv) : vec4(0.08, 0.08, 0.08, 1.0);
-    float alpha = lineMask * texel.a * uOpacity;
-    if (alpha < 0.01) discard;
-
-    gl_FragColor = vec4(texel.rgb * uGlow, alpha);
-  }
-`
-
 function getLedSurfaceType(...names) {
   const normalized = names.filter(Boolean)
   if (normalized.some(name => name === LED_MATERIAL_NAME)) return 'solid'
@@ -134,25 +98,53 @@ function getLedSurfaceType(...names) {
   return null
 }
 
-function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+function createTransparentLedMaskTexture(transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
   const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
   const densityX = Math.max(1, Number(cfg.gridDensityX ?? cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensityX)
   const densityY = Math.max(1, Number(cfg.gridDensityY ?? cfg.gridDensity) || DEFAULT_TRANSPARENT_LED.gridDensityY)
-  const thicknessX = Math.max(0.01, Math.min(0.24, Number(cfg.barThicknessX ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessX))
-  const thicknessY = Math.max(0.01, Math.min(0.24, Number(cfg.barThicknessY ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessY))
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uMap: { value: texture || new THREE.Texture() },
-      uHasMap: { value: !!texture },
-      uGridDensity: { value: new THREE.Vector2(densityX, densityY) },
-      uBarThickness: { value: new THREE.Vector2(thicknessX, thicknessY) },
-      uGlow: { value: Math.max(0, Number(cfg.glow) || DEFAULT_TRANSPARENT_LED.glow) },
-      uOpacity: { value: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)) },
-    },
-    vertexShader: transparentLedVertexShader,
-    fragmentShader: transparentLedFragmentShader,
+  const thicknessX = Math.max(0.01, Math.min(0.49, Number(cfg.barThicknessX ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessX))
+  const thicknessY = Math.max(0.01, Math.min(0.49, Number(cfg.barThicknessY ?? cfg.barThickness) || DEFAULT_TRANSPARENT_LED.barThicknessY))
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, size, size)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#ffffff'
+  const barPxX = Math.max(1, Math.round(size * thicknessX))
+  const barPxY = Math.max(1, Math.round(size * thicknessY))
+  ctx.fillRect(0, 0, barPxX, size)
+  ctx.fillRect(size - barPxX, 0, barPxX, size)
+  ctx.fillRect(0, 0, size, barPxY)
+  ctx.fillRect(0, size - barPxY, size, barPxY)
+
+  const maskTexture = new THREE.CanvasTexture(canvas)
+  maskTexture.colorSpace = THREE.NoColorSpace
+  maskTexture.wrapS = THREE.RepeatWrapping
+  maskTexture.wrapT = THREE.RepeatWrapping
+  maskTexture.repeat.set(densityX, densityY)
+  maskTexture.minFilter = THREE.LinearMipmapLinearFilter
+  maskTexture.magFilter = THREE.LinearFilter
+  maskTexture.anisotropy = 8
+  maskTexture.generateMipmaps = true
+  maskTexture.needsUpdate = true
+  maskTexture.userData.generatedTransparentMask = true
+  return maskTexture
+}
+
+function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+  const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
+  const maskTexture = createTransparentLedMaskTexture(cfg)
+  const material = new THREE.MeshBasicMaterial({
+    color: texture ? 0xffffff : 0x000000,
+    map: texture || null,
+    alphaMap: maskTexture,
     transparent: true,
-    depthWrite: false,
+    opacity: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)),
+    alphaTest: 0.08,
+    depthWrite: true,
     depthTest: true,
     side: THREE.DoubleSide,
     toneMapped: false,
@@ -161,6 +153,7 @@ function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TR
     polygonOffsetUnits: -2,
   })
   material.name = TRANSPARENT_LED_MATERIAL_NAME
+  material.userData.ownedAlphaMap = true
   return material
 }
 
@@ -455,6 +448,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       prevLedMaterialsRef.current.forEach((m) => {
         if (m?.map) m.map.dispose?.()
         if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
+        if (m?.userData?.ownedAlphaMap && m?.alphaMap) m.alphaMap.dispose?.()
         m?.dispose?.()
       })
     }
@@ -494,6 +488,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     prevLedMaterialsRef.current.forEach((m) => {
       if (m?.map) m.map.dispose?.()
       if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
+      if (m?.userData?.ownedAlphaMap && m?.alphaMap) m.alphaMap.dispose?.()
       m?.dispose?.()
     })
     prevLedMaterialsRef.current = []
@@ -551,7 +546,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           child.updateWorldMatrix(true, false)
           const box    = new THREE.Box3().setFromObject(child)
           const centre = box.getCenter(new THREE.Vector3())
-          newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
+          if (ledSurfaceType === 'solid') {
+            newLedPositions.push([centre.x, centre.y, centre.z + 0.5])
+          }
 
           let ledMat
           try {
