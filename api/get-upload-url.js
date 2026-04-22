@@ -1,7 +1,7 @@
 /**
  * Vercel Serverless: POST /api/get-upload-url
  * Returns a presigned PUT URL for direct upload to Cloudflare R2.
- * Body: { filename, contentType, projectId, type: 'media' | 'hdri' }
+ * Body: { filename, contentType, projectId, type: 'media' | 'hdri' | 'stage' }
  * Env: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL, UPLOAD_SECRET
  * Header: x-upload-token must match UPLOAD_SECRET (same value as VITE_UPLOAD_SECRET on the client).
  */
@@ -23,6 +23,9 @@ export const config = {
 function sanitizeKey(projectId, type, filename) {
   const safeProject = (projectId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_')
   const base = filename.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '.')
+  if (type === 'stage') {
+    return `${safeProject}/stage/${Date.now()}_${base}`
+  }
   if (type === 'hdri') {
     return `${safeProject}/hdri/${Date.now()}_${base}`
   }
@@ -52,8 +55,8 @@ export default async function handler(req, res) {
   if (!contentType || typeof contentType !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid contentType' })
   }
-  if (type !== 'media' && type !== 'hdri') {
-    return res.status(400).json({ error: 'type must be "media" or "hdri"' })
+  if (type !== 'media' && type !== 'hdri' && type !== 'stage') {
+    return res.status(400).json({ error: 'type must be "media", "hdri", or "stage"' })
   }
 
   const key = sanitizeKey(projectId, type, filename)

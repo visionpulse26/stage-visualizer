@@ -80,7 +80,6 @@ function ClientPage() {
   const [isPlaying,     setIsPlaying]     = useState(false)
 
   const videoRef = useRef(null)
-  const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
   useProjectStats(projectId, 'client') // presence for LIVE PULSE
   const { startClipWatch } = useClientSessionTracking(projectId)
@@ -159,20 +158,8 @@ function ClientPage() {
 
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
-        // Asset masking + caching: fetch remote URLs as blobs; cache heavy 3D assets
         const modelSrc = data.stage_url
-        if (modelSrc && isRemote(modelSrc)) {
-          try {
-            const blobUrl = await fetchAsBlobUrlWithCache(modelSrc)
-            addBlob(blobUrl)
-            modelBlobRef.current = blobUrl
-            setModelUrl(blobUrl)
-          } catch {
-            setModelUrl(modelSrc)
-          }
-        } else {
-          setModelUrl(modelSrc)
-        }
+        setModelUrl(modelSrc || null)
 
         const loadMediaPlaylist = async (items) => {
           const restored = []

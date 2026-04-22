@@ -95,7 +95,6 @@ function CollabPage() {
   const videoRef     = useRef(null)
   const clipCountRef = useRef(0)
   const playlistRef  = useRef([])
-  const modelBlobRef = useRef(null)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
   useProjectStats(projectId, 'collab') // presence for LIVE PULSE
   const currentCameraRef = useRef(null)
@@ -268,18 +267,7 @@ function CollabPage() {
         const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
 
         const modelSrc = data.stage_url
-        if (modelSrc && isRemote(modelSrc)) {
-          try {
-            const blobUrl = await fetchAsBlobUrlWithCache(modelSrc)
-            addBlob(blobUrl)
-            modelBlobRef.current = blobUrl
-            setModelUrl(blobUrl)
-          } catch {
-            setModelUrl(modelSrc)
-          }
-        } else {
-          setModelUrl(modelSrc)
-        }
+        setModelUrl(modelSrc || null)
 
         const loadMediaPlaylist = async (items) => {
           const restored = []

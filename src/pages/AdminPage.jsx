@@ -16,7 +16,6 @@ function AdminPage() {
   const [stageFile,    setStageFile]    = useState(null)
   const [stageUrl,     setStageUrl]     = useState(null)   // local blob preview (from file)
   const [cloudStageUrl, setCloudStageUrl] = useState(null) // published or external URL
-  const [resolvedStageUrl, setResolvedStageUrl] = useState(null) // cached blob URL for external
 
   // ── Video / Image ────────────────────────────────────────────────────────
   const [videoElement,   setVideoElement]   = useState(null)
@@ -120,36 +119,8 @@ function AdminPage() {
     (u) => u && (u.startsWith('http://') || u.startsWith('https://')),
     []
   )
-  useEffect(() => {
-    if (!cloudStageUrl || stageUrl) return
-    if (!isRemote(cloudStageUrl)) return
-    let cancelled = false
-    setResolvedStageUrl(null)
-    fetchAndCacheAsset(cloudStageUrl)
-      .then((blobUrl) => {
-        if (!cancelled) setResolvedStageUrl(blobUrl)
-      })
-      .catch(() => { if (!cancelled) setResolvedStageUrl(null) })
-    return () => {
-      cancelled = true
-    }
-  }, [cloudStageUrl, stageUrl, isRemote])
 
   // ── Revoke resolved blob when URL changes or unmount ───────────────────────
-  const prevResolvedRef = useRef(null)
-  useEffect(() => {
-    const prev = prevResolvedRef.current
-    prevResolvedRef.current = resolvedStageUrl
-    if (prev && prev.startsWith('blob:') && prev !== resolvedStageUrl) {
-      try { URL.revokeObjectURL(prev) } catch (_) {}
-    }
-    return () => {
-      if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) {
-        try { URL.revokeObjectURL(resolvedStageUrl) } catch (_) {}
-      }
-    }
-  }, [resolvedStageUrl])
-
   useEffect(() => {
     return () => {
       if (hdriErrorTimerRef.current) clearTimeout(hdriErrorTimerRef.current)
@@ -161,7 +132,6 @@ function AdminPage() {
     return () => {
       localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
       if (stageUrl && stageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(stageUrl) } catch (_) {} }
-      if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) { try { URL.revokeObjectURL(resolvedStageUrl) } catch (_) {} }
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
       // Camera stream cleanup
       if (cameraVideoRef.current) {
@@ -586,10 +556,9 @@ function AdminPage() {
   const handleModelUpload = useCallback((file) => {
     if (!file) return
     if (stageUrl && stageUrl.startsWith('blob:')) URL.revokeObjectURL(stageUrl)
-    if (resolvedStageUrl && resolvedStageUrl.startsWith('blob:')) URL.revokeObjectURL(resolvedStageUrl)
     const url = URL.createObjectURL(file)
-    setStageFile(file); setStageUrl(url); setCloudStageUrl(null); setResolvedStageUrl(null)
-  }, [stageUrl, resolvedStageUrl])
+    setStageFile(file); setStageUrl(url); setCloudStageUrl(null)
+  }, [stageUrl])
 
   // ── External stage URL (R2, CDN) — store URL, resolve for preview via cache ─
   const handleExternalStageUrl = useCallback((url) => {
@@ -598,7 +567,6 @@ function AdminPage() {
     setStageFile(null)
     setStageUrl(null)
     setCloudStageUrl(url.trim())
-    setResolvedStageUrl(null)
   }, [stageUrl])
 
   // ── Camera preset helpers ────────────────────────────────────────────────
@@ -660,7 +628,6 @@ function AdminPage() {
     // Reset all state to match the opened project
     setStageFile(null)
     setStageUrl(null)
-    setResolvedStageUrl(null)
     setCloudStageUrl(p.stage_url || null)
     setVideoElement(null)
     setActiveImageUrl(null)
@@ -834,11 +801,13 @@ function AdminPage() {
       // 1. Upload stage model only if a new file was chosen
       let finalStageUrl = cloudStageUrl
       if (stageFile) {
-        const stagePath = `${projectId}/stage.glb`
-        const { error: stageErr } = await supabase.storage.from('projects').upload(stagePath, stageFile, { upsert: true })
-        if (stageErr) throw new Error(`Stage upload failed: ${stageErr.message}`)
-        const { data: stagePublic } = supabase.storage.from('projects').getPublicUrl(stagePath)
-        finalStageUrl = stagePublic.publicUrl
+        const { putUrl, publicUrl } = await getPresignedUploadUrl({
+          filename: stageFile.name || 'stage.glb',
+          contentType: stageFile.type || 'model/gltf-binary',
+          projectId,
+          type: 'stage',
+        })
+        finalStageUrl = await uploadFileToPresignedUrl(putUrl, stageFile, publicUrl, null)
       }
 
       // 2. Upload ALL playlist items (videos + images) to Supabase Storage.
@@ -950,7 +919,7 @@ function AdminPage() {
   return (
     <div className="w-full h-full relative">
       <StageCanvas
-        modelUrl={stageUrl || resolvedStageUrl || cloudStageUrl}
+        modelUrl={stageUrl || cloudStageUrl}
         videoElement={videoElement}
         activeImageUrl={activeImageUrl}
         onLedMaterialStatus={setLedMaterialFound}

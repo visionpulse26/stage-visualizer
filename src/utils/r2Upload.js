@@ -11,7 +11,7 @@ const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP
 
 /**
  * Fetch presigned PUT URL from backend.
- * @param {{ filename: string, contentType: string, projectId?: string, type: 'media'|'hdri' }} opts
+ * @param {{ filename: string, contentType: string, projectId?: string, type: 'media'|'hdri'|'stage' }} opts
  * @returns {Promise<{ putUrl: string, publicUrl: string | null, key: string }>}
  */
 export async function getPresignedUploadUrl(opts) {
