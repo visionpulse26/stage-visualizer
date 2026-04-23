@@ -682,7 +682,7 @@ function AdminPage() {
 
       // HDRI URL — resolve remote URLs via blob cache (same idea as ClientPage)
       if (cfg.customHdriUrl) {
-        const hdriSrc = cfg.customHdriUrl
+        const hdriSrc = cfg.customHdriUrl.replace('visual.tooawake.online', 'visual.tooawake.mov')
         const basePath = hdriSrc.split('?')[0] || hdriSrc
         const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
         setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
