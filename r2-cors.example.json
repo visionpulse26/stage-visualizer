@@ -1,7 +1,7 @@
 [
   {
     "AllowedOrigins": [
-      "https://stage.tooawake.online",
+      "https://stage.tooawake.mov",
       "http://localhost:5173"
     ],
     "AllowedMethods": ["GET", "PUT", "HEAD"],

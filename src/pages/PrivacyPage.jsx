@@ -64,10 +64,10 @@ export default function PrivacyPage() {
             To request deletion of analytics associated with a visit or project, contact your project administrator or
             email{' '}
             <a
-              href="mailto:hello@tooawake.online"
+              href="mailto:hello@tooawake.mov"
               className="text-violet-300 hover:text-violet-200 underline underline-offset-2"
             >
-              hello@tooawake.online
+              hello@tooawake.mov
             </a>
             . We will respond as soon as reasonably practical.
           </p>

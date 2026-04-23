@@ -549,7 +549,7 @@ function UIPanel({
                       <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-xl bg-black/95 border border-[#ff5500]/30 shadow-xl backdrop-blur-xl scrollbar-thin">
                         {presetsLoading ? (
                           <div className="flex items-center justify-center gap-2 py-4 text-white/40 text-xs">
-                            <img src="https://visual.tooawake.online/logo_tooawake.png" alt="" className="h-4 animate-pulse" />
+                            <img src="https://visual.tooawake.mov/logo_tooawake.png" alt="" className="h-4 animate-pulse" />
                             Loading HDRIs…
                           </div>
                         ) : (

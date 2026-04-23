@@ -73,7 +73,7 @@ function BrandedLoadingScreen({ isLoaded, progress = 0, status = 'INITIALIZING..
         <div style={{ height: 20 }} />
 
         <img
-          src="https://visual.tooawake.online/logo_tooawake.png"
+          src="https://visual.tooawake.mov/logo_tooawake.png"
           alt="TOO:AWAKE"
           className="loading-logo-pulse"
           style={{

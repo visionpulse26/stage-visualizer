@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const NAS_HDRI_LIST_URL = 'https://visual.tooawake.online/list_hdris.php'
+const NAS_HDRI_LIST_URL = 'https://visual.tooawake.mov/list_hdris.php'
 
 const BUILTIN_PRESETS = [
   { id: 'none', label: 'Off', url: null, url_low: null },
@@ -108,8 +108,8 @@ export default function useHdriPresets() {
 
     // LEGACY FIX: Try to reconstruct URL with new base path
     if (sanitizedFilename && sanitizedFilename.match(/\.(hdr|exr)$/i)) {
-      const newUrl = `https://visual.tooawake.online/HDRIs/${sanitizedFilename}`
-      const newUrlLow = `https://visual.tooawake.online/HDRIs_low/${sanitizedFilename}`
+      const newUrl = `https://visual.tooawake.mov/HDRIs/${sanitizedFilename}`
+      const newUrlLow = `https://visual.tooawake.mov/HDRIs_low/${sanitizedFilename}`
       return { valid: true, url: newUrl, url_low: newUrlLow, reconstructed: true }
     }
 
