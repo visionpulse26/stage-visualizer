@@ -416,8 +416,8 @@ function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
     const maxDim = Math.max(size?.x || 0, size?.y || 0, size?.z || 0, 1)
     const distance = Math.max(radius * 1.8, maxDim * 1.35, 8)
     const yLift = Math.max(size?.y || 0, 2) * 0.35
-    camera.near = Math.max(0.12, Math.min(2, radius / 180 || 0.12))
-    camera.far = Math.max(250, radius * 10, maxDim * 12)
+    camera.near = Math.max(0.05, Math.min(1, radius / 300 || 0.05))
+    camera.far = Math.max(2000, radius * 40, maxDim * 35)
     camera.updateProjectionMatrix()
 
     controls.setLookAt(
@@ -535,7 +535,7 @@ function StageCanvas({
       )}
       <StageErrorBoundary>
       <Canvas
-        camera={{ position: [5, 5, 5], fov: 50, near: 0.05, far: 2000 }}
+        camera={{ position: [5, 5, 5], fov: 50, near: 0.05, far: 5000 }}
         gl={{
           antialias:             true,
           alpha:                 false,
@@ -554,7 +554,7 @@ function StageCanvas({
 
         {/* Background — black in stealth mode, overridden by HDRI when visible */}
         <color attach="background" args={['#000000']} />
-        <fog   attach="fog"        args={['#0a0a0c', 40, 120]} />
+        <fog   attach="fog"        args={['#0a0a0c', 120, 600]} />
 
         {/* HDRI Environment — LITE & STABLE version
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
