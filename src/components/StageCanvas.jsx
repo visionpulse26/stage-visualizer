@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
@@ -477,7 +477,7 @@ function StageCanvas({
   povMode = false,
   /** Standing eye height (m) — model normalized with floor at y≈0. */
   povHeightOffset = 1.7,
-  /** Called when pointer lock ends (Esc) to restore orbit controls. */
+  /** Called from the host page on Esc / Exit POV to restore orbit (not tied to pointer-lock loss). */
   onPovExitRequest,
   children,
 }) {
@@ -494,6 +494,12 @@ function StageCanvas({
   )
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
+
+  const povGeofencePadding = useMemo(() => {
+    if (!modelMetrics?.size) return 1.5
+    const xz = Math.max(modelMetrics.size.x, modelMetrics.size.z)
+    return Math.max(1.0, xz * 0.35)
+  }, [modelMetrics])
 
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom     = bloomStrength      ?? 0.3
@@ -720,7 +726,7 @@ function StageCanvas({
             enabled={povMode}
             floorY={povHeightOffset}
             geofenceBox={modelMetrics?.box ?? null}
-            onExit={onPovExitRequest}
+            geofencePadding={povGeofencePadding}
           />
         )}
 
