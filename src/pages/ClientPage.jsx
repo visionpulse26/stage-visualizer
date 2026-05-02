@@ -55,6 +55,10 @@ function ClientPage() {
   const [povMode, setPovMode] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
   const savedOrbitRef = useRef(null)
+  const povModeRef = useRef(false)
+  useEffect(() => {
+    povModeRef.current = povMode
+  }, [povMode])
 
   // ── Scene config (LITE & STABLE — consistent with Admin settings) ───────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
@@ -217,6 +221,7 @@ function ClientPage() {
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
         setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
         setPovMode(false)
+        povModeRef.current = false
         savedOrbitRef.current = null
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
@@ -329,14 +334,26 @@ function ClientPage() {
     setIsAutoplayActive(prev => !prev)
   }, [])
 
+  const exitPovMode = useCallback(async () => {
+    if (!povModeRef.current) return
+    povModeRef.current = false
+    if (document.pointerLockElement) document.exitPointerLock()
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) {
+      setPovMode(false)
+      return
+    }
+    ctrl.connect()
+    await restoreOrbitState(ctrl, savedOrbitRef.current)
+    savedOrbitRef.current = null
+    setPovMode(false)
+  }, [])
+
   const handlePovToggle = useCallback(async () => {
     const ctrl = cameraControlsRef.current
     if (!ctrl) return
     if (povMode) {
-      ctrl.connect()
-      await restoreOrbitState(ctrl, savedOrbitRef.current)
-      savedOrbitRef.current = null
-      setPovMode(false)
+      await exitPovMode()
       return
     }
     if (!modelMetrics) return
@@ -345,8 +362,9 @@ function ClientPage() {
     savedOrbitRef.current = snap
     await enterPovMode(ctrl, modelMetrics, povHeightOffset)
     ctrl.disconnect()
+    povModeRef.current = true
     setPovMode(true)
-  }, [povMode, modelMetrics, povHeightOffset])
+  }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
   useEffect(() => {
     if (!povMode) return
@@ -443,6 +461,8 @@ function ClientPage() {
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}
         povMode={povMode}
+        povHeightOffset={povHeightOffset}
+        onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
