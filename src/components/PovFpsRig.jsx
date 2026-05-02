@@ -8,7 +8,7 @@ import { PovKinematicDriver } from './pov/PovKinematicDriver'
 /**
  * Epic 1 Phase 2–3 — POV inside Rapier (floor + geofence walls) + pointer-lock overlay.
  */
-export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0 }) {
+export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, stageColliders = [] }) {
   const { gl } = useThree()
 
   const [locked, setLocked] = useState(() => document.pointerLockElement === gl.domElement)
@@ -26,7 +26,11 @@ export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0 })
     <>
       <Suspense fallback={null}>
         <Physics gravity={[0, 0, 0]} timeStep={1 / 60} interpolate={false}>
-          <PovStageColliders geofenceBox={geofenceBox} geofencePadding={geofencePadding} />
+          <PovStageColliders
+            geofenceBox={geofenceBox}
+            geofencePadding={geofencePadding}
+            stageColliders={stageColliders}
+          />
           <PovKinematicDriver
             enabled={enabled}
             floorY={floorY}

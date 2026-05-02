@@ -157,6 +157,46 @@ function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TR
   return material
 }
 
+function createPovColliderSpecs(clonedScene) {
+  const colliders = []
+  let index = 0
+
+  clonedScene.updateMatrixWorld(true)
+  clonedScene.traverse((child) => {
+    if (!child.isMesh || !child.visible) return
+
+    const mats = Array.isArray(child.material) ? child.material : [child.material]
+    const ledSurfaceType = getLedSurfaceType(...mats.map((mat) => mat?.name), child.name)
+    if (ledSurfaceType) return
+
+    const preset = resolveStageMaterialPreset(...mats.map((mat) => mat?.name), child.name)
+    if (preset.id === 'truss-weathered' || preset.id === 'truss-aluminum') return
+
+    const box = new THREE.Box3().setFromObject(child)
+    if (box.isEmpty()) return
+
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const minDim = Math.min(size.x, size.y, size.z)
+
+    if (maxDim < 0.25 || minDim < 0.02) return
+    if (size.y > 12 && Math.max(size.x, size.z) < 0.4) return
+
+    colliders.push({
+      id: `${child.uuid}-${index++}`,
+      position: [center.x, center.y, center.z],
+      halfExtents: [
+        Math.max(size.x * 0.5, 0.02),
+        Math.max(size.y * 0.5, 0.02),
+        Math.max(size.z * 0.5, 0.02),
+      ],
+    })
+  })
+
+  return colliders
+}
+
 function normalizeMaterialTokens(...names) {
   return names
     .filter(Boolean)
@@ -360,7 +400,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onPovColliders }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -696,6 +736,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     const normalizedSize = normalizedBox.getSize(new THREE.Vector3())
     const normalizedCenter = normalizedBox.getCenter(new THREE.Vector3())
     const radius = normalizedSize.length() * 0.5
+    onPovColliders?.(createPovColliderSpecs(clonedScene))
     onModelMetrics?.({
       box: normalizedBox.clone(),
       center: normalizedCenter.clone(),
@@ -703,7 +744,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       radius,
     })
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics])
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics, onPovColliders])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
@@ -752,7 +793,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onPovColliders }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -762,6 +803,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
     envIntensity,
     transparentLedConfig,
     onModelMetrics,
+    onPovColliders,
   }
   return (
     <group>

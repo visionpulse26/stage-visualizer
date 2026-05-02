@@ -503,6 +503,7 @@ function StageCanvas({
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const [povColliders, setPovColliders] = useState([])
   const handleModelMetrics = useCallback(
     (m) => {
       setModelMetrics(m)
@@ -537,6 +538,7 @@ function StageCanvas({
 
   useEffect(() => {
     setModelMetrics(null)
+    setPovColliders([])
   }, [modelUrl])
 
   return (
@@ -712,6 +714,7 @@ function StageCanvas({
               loadingManager={loadingManager}
               onImageTextureLoaded={onImageTextureLoaded}
               onModelMetrics={handleModelMetrics}
+              onPovColliders={setPovColliders}
             />
           )}
         </Suspense>
@@ -747,6 +750,7 @@ function StageCanvas({
               floorY={povHeightOffset}
               geofenceBox={modelMetrics?.box ?? null}
               geofencePadding={povGeofencePadding}
+              stageColliders={povColliders}
             />
           </Suspense>
         )}

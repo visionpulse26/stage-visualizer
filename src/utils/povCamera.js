@@ -36,18 +36,22 @@ function waitForControlsRest(controls, msFallback = 2000) {
 /**
  * Animate camera to standing "audience" eye height (model is normalized: floor ≈ y=0).
  */
-export async function enterPovMode(controls, modelMetrics, povHeightOffset) {
+export async function enterPovMode(controls, modelMetrics, povHeightOffset, { animate = true } = {}) {
   if (!controls || !modelMetrics) return
   const { center, radius } = modelMetrics
   const eyeY = povHeightOffset
   const cx = center.x
   const cz = center.z
   const camZ = cz + radius * 0.6
-  controls.setLookAt(cx, eyeY, camZ, cx, eyeY, cz, true)
-  await waitForControlsRest(controls)
+  controls.setLookAt(cx, eyeY, camZ, cx, eyeY, cz, animate)
+  if (animate) {
+    await waitForControlsRest(controls)
+  } else {
+    controls.update?.(0)
+  }
 }
 
-export async function restoreOrbitState(controls, saved) {
+export async function restoreOrbitState(controls, saved, { animate = false } = {}) {
   if (!controls || !saved) return
   const { position, target } = saved
   controls.setLookAt(
@@ -57,9 +61,13 @@ export async function restoreOrbitState(controls, saved) {
     target.x,
     target.y,
     target.z,
-    true,
+    animate,
   )
-  await waitForControlsRest(controls)
+  if (animate) {
+    await waitForControlsRest(controls)
+  } else {
+    controls.update?.(0)
+  }
 }
 
 /**
