@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import useHdriPresets from '../hooks/useHdriPresets'
+import { PovColliderManager } from './PovColliderManager'
 
 // ── Tiny icon components ──────────────────────────────────────────────────────
 const IconUpload    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
@@ -98,6 +99,8 @@ function UIPanel({
   bloomThreshold, onBloomThresholdChange,
   protectLed, onProtectLedToggle,
   transparentLedConfig, onTransparentLedConfigChange,
+  // ── POV Collider Manager ─────────────────────────────────────────────────
+  meshMetadata, povColliderConfig, onPovColliderConfigChange,
 }) {
   const modelInputRef      = useRef(null)
   const videoInputRef      = useRef(null)
@@ -501,6 +504,17 @@ function UIPanel({
                 max={2.5}
                 step={0.05}
                 onChange={onPovHeightOffsetChange}
+              />
+            </Section>
+
+            <Section icon={<IconEye />} title="POV Colliders">
+              <p className="text-[9px] text-white/25 leading-snug mb-2">
+                Set which objects block or support walking. A=auto-suggest, F=floor, B=blocker, I=ignore. Saved with publish.
+              </p>
+              <PovColliderManager
+                meshMetadata={meshMetadata}
+                povColliderConfig={povColliderConfig}
+                onConfigChange={onPovColliderConfigChange}
               />
             </Section>
           </>
