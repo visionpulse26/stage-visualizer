@@ -31,6 +31,8 @@ npm run dev
 
 4. Open http://localhost:3000 in your browser
 
+**Admin login + R2 uploads on localhost:** use `npm run dev:local` (Vercel dev + API routes) and configure `.env.local` — see [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md). Branch **`stage_beta_state`** is intended for beta / roadmap work without affecting production `main`.
+
 ## Usage
 
 1. Click **"Upload 3D Model"** to load a `.glb` or `.gltf` file
