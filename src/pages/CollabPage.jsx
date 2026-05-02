@@ -259,6 +259,8 @@ function CollabPage() {
     let cancelled = false
 
     async function fetchProject() {
+      resetPovSession()
+      revokeAllBlobs()
       setIsDbLoading(true)
       setProjectNotFound(false)
 
@@ -329,9 +331,6 @@ function CollabPage() {
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
         setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
-        setPovMode(false)
-        povModeRef.current = false
-        savedOrbitRef.current = null
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
           enabled: true,
@@ -394,7 +393,7 @@ function CollabPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs, resetPovSession])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
@@ -579,6 +578,18 @@ function CollabPage() {
     povModeRef.current = true
     setPovMode(true)
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
+
+  const resetPovSession = useCallback(() => {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock() } catch (_) {}
+    }
+    const ctrl = cameraControlsRef.current
+    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
+    savedOrbitRef.current = null
+    povExitInProgressRef.current = false
+    povModeRef.current = false
+    setPovMode(false)
+  }, [])
 
   useEffect(() => {
     if (!povMode) return
