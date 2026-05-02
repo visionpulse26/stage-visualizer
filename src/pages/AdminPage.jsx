@@ -55,6 +55,10 @@ function AdminPage() {
   const [povMode, setPovMode] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
   const savedOrbitRef = useRef(null)
+  const povModeRef = useRef(false)
+  useEffect(() => {
+    povModeRef.current = povMode
+  }, [povMode])
 
   // ── Sun position vector (must be declared before any useCallback that uses it) ──
   const sunPosition = useMemo(() => {
@@ -593,14 +597,26 @@ function AdminPage() {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
+  const exitPovMode = useCallback(async () => {
+    if (!povModeRef.current) return
+    povModeRef.current = false
+    if (document.pointerLockElement) document.exitPointerLock()
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) {
+      setPovMode(false)
+      return
+    }
+    ctrl.connect()
+    await restoreOrbitState(ctrl, savedOrbitRef.current)
+    savedOrbitRef.current = null
+    setPovMode(false)
+  }, [])
+
   const handlePovToggle = useCallback(async () => {
     const ctrl = cameraControlsRef.current
     if (!ctrl) return
     if (povMode) {
-      ctrl.connect()
-      await restoreOrbitState(ctrl, savedOrbitRef.current)
-      savedOrbitRef.current = null
-      setPovMode(false)
+      await exitPovMode()
       return
     }
     if (!modelMetrics) return
@@ -609,8 +625,9 @@ function AdminPage() {
     savedOrbitRef.current = snap
     await enterPovMode(ctrl, modelMetrics, povHeightOffset)
     ctrl.disconnect()
+    povModeRef.current = true
     setPovMode(true)
-  }, [povMode, modelMetrics, povHeightOffset])
+  }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
   const handleSaveAutoplayConfig = useCallback(async () => {
     if (!publishedId) {
@@ -668,6 +685,7 @@ function AdminPage() {
     setGridCellSize(p.grid_cell_size ?? 1)
     setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
     setPovMode(false)
+    povModeRef.current = false
     savedOrbitRef.current = null
     setPublishedId(p.id)
     setProjectName(p.name || '')
@@ -967,6 +985,8 @@ function AdminPage() {
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}
         povMode={povMode}
+        povHeightOffset={povHeightOffset}
+        onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}

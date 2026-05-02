@@ -9,6 +9,7 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Scene from './Scene'
+import { PovFpsRig } from './PovFpsRig'
 
 // ── Atmospheric dust particles ────────────────────────────────────────────────
 function AtmosphericDust() {
@@ -474,6 +475,10 @@ function StageCanvas({
   onModelMetricsChange,
   /** When true, orbit auto-frame & preset fly are paused (POV mode). */
   povMode = false,
+  /** Standing eye height (m) — model normalized with floor at y≈0. */
+  povHeightOffset = 1.7,
+  /** Called when pointer lock ends (Esc) to restore orbit controls. */
+  onPovExitRequest,
   children,
 }) {
   const internalPresetRef = useRef(null)
@@ -710,6 +715,15 @@ function StageCanvas({
             cameraControlsRef={cameraControlsRef}
             targetPresetRef={presetRef}
             flyDurationSeconds={cameraFlyDurationSeconds}
+          />
+        )}
+
+        {povMode && modelUrl && onPovExitRequest && (
+          <PovFpsRig
+            enabled={povMode}
+            floorY={povHeightOffset}
+            geofenceBox={modelMetrics?.box ?? null}
+            onExit={onPovExitRequest}
           />
         )}
 
