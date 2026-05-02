@@ -18,9 +18,6 @@ function ClientPanel({
   onScreenshot,
   isAutoplayActive,
   onToggleAutoplay,
-  povMode,
-  onPovToggle,
-  showPovControl,
 }) {
   const [isVisible, setIsVisible] = useState(true)
   const activeIsVideo = activeClip?.type !== 'image'
@@ -175,24 +172,6 @@ function ClientPanel({
                 ))}
               </div>
             </div>
-          </>
-        )}
-
-        {showPovControl && (
-          <>
-            <Divider />
-            <button
-              type="button"
-              onClick={onPovToggle}
-              className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
-                povMode
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
-                  : 'bg-white/8 hover:bg-white/12 border-white/15 text-white/80'
-              }`}
-              style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-            >
-              {povMode ? 'Exit audience POV' : 'Audience POV'}
-            </button>
           </>
         )}
 
