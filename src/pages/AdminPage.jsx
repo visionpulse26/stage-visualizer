@@ -56,6 +56,7 @@ function AdminPage() {
   const [modelMetrics, setModelMetrics] = useState(null)
   const savedOrbitRef = useRef(null)
   const povModeRef = useRef(false)
+  const povExitInProgressRef = useRef(false)
   useEffect(() => {
     povModeRef.current = povMode
   }, [povMode])
@@ -598,30 +599,42 @@ function AdminPage() {
   }, [])
 
   const exitPovMode = useCallback(async () => {
-    if (!povModeRef.current) return
-    povModeRef.current = false
-    if (document.pointerLockElement) document.exitPointerLock()
-    const ctrl = cameraControlsRef.current
-    if (!ctrl) {
+    if (!povModeRef.current || povExitInProgressRef.current) return
+    povExitInProgressRef.current = true
+    try {
+      if (document.pointerLockElement) document.exitPointerLock()
+      const ctrl = cameraControlsRef.current
+      if (ctrl) {
+        ctrl.connect()
+        await restoreOrbitState(ctrl, savedOrbitRef.current)
+      }
+    } finally {
+      povExitInProgressRef.current = false
+      savedOrbitRef.current = null
+      povModeRef.current = false
       setPovMode(false)
-      return
     }
-    ctrl.connect()
-    await restoreOrbitState(ctrl, savedOrbitRef.current)
-    savedOrbitRef.current = null
-    setPovMode(false)
   }, [])
 
   useEffect(() => {
     if (!povMode) return
     const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        exitPovMode()
-      }
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      void exitPovMode()
     }
-    window.addEventListener('keydown', onKey, { capture: true })
-    return () => window.removeEventListener('keydown', onKey, { capture: true })
+    const opts = { capture: true }
+    window.addEventListener('keydown', onKey, opts)
+    window.addEventListener('keyup', onKey, opts)
+    document.addEventListener('keydown', onKey, opts)
+    document.addEventListener('keyup', onKey, opts)
+    return () => {
+      window.removeEventListener('keydown', onKey, opts)
+      window.removeEventListener('keyup', onKey, opts)
+      document.removeEventListener('keydown', onKey, opts)
+      document.removeEventListener('keyup', onKey, opts)
+    }
   }, [povMode, exitPovMode])
 
   const handlePovToggle = useCallback(async () => {
