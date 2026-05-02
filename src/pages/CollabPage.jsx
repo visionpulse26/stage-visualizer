@@ -14,6 +14,8 @@ import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
+import { isTouchDevice } from '../utils/isTouchDevice'
+import { enterPovMode, captureOrbitState, restoreOrbitState } from '../utils/povCamera'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -43,6 +45,11 @@ function CollabPage() {
   const [sunElevation, setSunElevation] = useState(45)
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
+
+  const [povHeightOffset, setPovHeightOffset] = useState(1.7)
+  const [povMode, setPovMode] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
+  const savedOrbitRef = useRef(null)
 
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
@@ -315,6 +322,9 @@ function CollabPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+        setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
+        setPovMode(false)
+        savedOrbitRef.current = null
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
           enabled: true,
@@ -507,6 +517,35 @@ function CollabPage() {
     setIsAutoplayActive(prev => !prev)
   }, [])
 
+  const handlePovToggle = useCallback(async () => {
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) return
+    if (povMode) {
+      ctrl.connect()
+      await restoreOrbitState(ctrl, savedOrbitRef.current)
+      savedOrbitRef.current = null
+      setPovMode(false)
+      return
+    }
+    if (!modelMetrics) return
+    const snap = captureOrbitState(ctrl)
+    if (!snap) return
+    savedOrbitRef.current = snap
+    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    ctrl.disconnect()
+    setPovMode(true)
+  }, [povMode, modelMetrics, povHeightOffset])
+
+  useEffect(() => {
+    if (!povMode) return
+    if (autoplayIntervalRef.current) {
+      clearInterval(autoplayIntervalRef.current)
+      autoplayIntervalRef.current = null
+    }
+    setIsAutoplayActive(false)
+    cameraTargetPresetRef.current = null
+  }, [povMode])
+
   // Autoplay loop
   useEffect(() => {
     if (!isAutoplayActive || cameraPresets.length === 0) {
@@ -591,6 +630,8 @@ function CollabPage() {
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+        onModelMetricsChange={setModelMetrics}
+        povMode={povMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -652,6 +693,9 @@ function CollabPage() {
           onToggleAutoplay={handleToggleAutoplay}
           // ── Screenshot ───────────────────────────────────────────────────
           onScreenshot={handleScreenshot}
+          povMode={povMode}
+          onPovToggle={handlePovToggle}
+          showPovControl={!isTouchDevice() && !!modelUrl && !!modelMetrics && sceneReady}
         />
 
         <TopBar role={null} color="cyan" />

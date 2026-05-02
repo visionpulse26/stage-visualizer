@@ -10,6 +10,8 @@ import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
+import { isTouchDevice } from '../utils/isTouchDevice'
+import { enterPovMode, captureOrbitState, restoreOrbitState } from '../utils/povCamera'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -47,6 +49,12 @@ function AdminPage() {
   const [sunElevation, setSunElevation] = useState(45)
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
+
+  // ── Epic 1 — Audience POV (Phase 1: orbit transition only, no FPS yet) ─────
+  const [povHeightOffset, setPovHeightOffset] = useState(1.7)
+  const [povMode, setPovMode] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
+  const savedOrbitRef = useRef(null)
 
   // ── Sun position vector (must be declared before any useCallback that uses it) ──
   const sunPosition = useMemo(() => {
@@ -584,6 +592,25 @@ function AdminPage() {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
+  const handlePovToggle = useCallback(async () => {
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) return
+    if (povMode) {
+      ctrl.connect()
+      await restoreOrbitState(ctrl, savedOrbitRef.current)
+      savedOrbitRef.current = null
+      setPovMode(false)
+      return
+    }
+    if (!modelMetrics) return
+    const snap = captureOrbitState(ctrl)
+    if (!snap) return
+    savedOrbitRef.current = snap
+    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    ctrl.disconnect()
+    setPovMode(true)
+  }, [povMode, modelMetrics, povHeightOffset])
+
   const handleSaveAutoplayConfig = useCallback(async () => {
     if (!publishedId) {
       alert('Publish the project first, then save autoplay config.')
@@ -638,6 +665,9 @@ function AdminPage() {
     setIsPlaying(false)
     setCameraPresets(p.camera_presets || [])
     setGridCellSize(p.grid_cell_size ?? 1)
+    setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
+    setPovMode(false)
+    savedOrbitRef.current = null
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
@@ -885,6 +915,7 @@ function AdminPage() {
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
         scene_config,
+        pov_height_offset: povHeightOffset,
       }
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
@@ -910,7 +941,8 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
+      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus,
+      povHeightOffset])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -930,6 +962,8 @@ function AdminPage() {
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+        onModelMetricsChange={setModelMetrics}
+        povMode={povMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -974,6 +1008,7 @@ function AdminPage() {
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}
           gridCellSize={gridCellSize}   onGridCellSizeChange={setGridCellSize}
+          povHeightOffset={povHeightOffset} onPovHeightOffsetChange={setPovHeightOffset}
           cameraPresets={cameraPresets}
           onSaveView={handleSaveView}
           onGoToView={handleGoToView}
@@ -1026,6 +1061,22 @@ function AdminPage() {
         />
 
         <TopBar role="Admin" color="violet" />
+
+        {!isTouchDevice() && (stageUrl || cloudStageUrl) && (
+          <button
+            type="button"
+            onClick={handlePovToggle}
+            disabled={!povMode && !modelMetrics}
+            className={`absolute top-14 right-4 z-[5000] px-3 py-2 rounded-xl border text-[10px] font-semibold uppercase tracking-widest transition-all backdrop-blur-sm ${
+              povMode
+                ? 'bg-amber-500/20 border-amber-500/45 text-amber-100'
+                : 'bg-black/50 border-white/15 text-white/70 hover:text-white hover:border-violet-500/40 disabled:opacity-40 disabled:pointer-events-none'
+            }`}
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            {povMode ? 'Exit POV' : 'Audience POV'}
+          </button>
+        )}
       </StageCanvas>
 
       <ClientRadarPanel publishedId={publishedId} />
