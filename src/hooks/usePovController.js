@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 import * as THREE from 'three'
 
 const PITCH_LIMIT = 1.39 // ~80°
@@ -6,6 +6,7 @@ const PITCH_LIMIT = 1.39 // ~80°
 /**
  * First-person movement + look while orbit CameraControls are disconnected.
  * Pointer lock must be active on `gl.domElement` for mouse look (see PovFpsRig overlay).
+ * Losing pointer lock does not exit POV — pages handle Esc / Exit button to restore orbit.
  */
 export function usePovController({
   enabled,
@@ -13,9 +14,9 @@ export function usePovController({
   gl,
   floorY = 1.7,
   geofenceBox,
-  moveSpeed = 5,
+  geofencePadding = 0,
+  moveSpeed = 9,
   lookSensitivity = 0.002,
-  onExit,
 }) {
   const keysRef = useRef({})
   const yawRef = useRef(0)
@@ -31,17 +32,16 @@ export function usePovController({
     velRef.current.set(0, 0, 0)
   }, [enabled, camera])
 
-  useEffect(() => {
-    if (!enabled || !gl) return
-    let wasLocked = document.pointerLockElement === gl.domElement
-    const onPL = () => {
-      const now = document.pointerLockElement === gl.domElement
-      if (wasLocked && !now) onExit?.()
-      wasLocked = now
-    }
-    document.addEventListener('pointerlockchange', onPL)
-    return () => document.removeEventListener('pointerlockchange', onPL)
-  }, [enabled, gl, onExit])
+  const expandedGeofence = useMemo(() => {
+    if (!geofenceBox?.isBox3) return null
+    if (geofencePadding <= 0) return geofenceBox
+    const b = geofenceBox.clone()
+    b.min.x -= geofencePadding
+    b.max.x += geofencePadding
+    b.min.z -= geofencePadding
+    b.max.z += geofencePadding
+    return b
+  }, [geofenceBox, geofencePadding])
 
   useEffect(() => {
     if (!enabled) return
@@ -95,18 +95,18 @@ export function usePovController({
       if (dir.lengthSq() > 0) dir.normalize()
 
       velRef.current.addScaledVector(dir, moveSpeed * delta)
-      velRef.current.multiplyScalar(0.85)
+      velRef.current.multiplyScalar(0.9)
 
       camera.position.addScaledVector(velRef.current, delta)
 
       camera.position.y = floorY
 
-      if (geofenceBox?.isBox3) {
-        camera.position.x = Math.max(geofenceBox.min.x, Math.min(geofenceBox.max.x, camera.position.x))
-        camera.position.z = Math.max(geofenceBox.min.z, Math.min(geofenceBox.max.z, camera.position.z))
+      if (expandedGeofence?.isBox3) {
+        camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
+        camera.position.z = Math.max(expandedGeofence.min.z, Math.min(expandedGeofence.max.z, camera.position.z))
       }
     },
-    [enabled, camera, floorY, geofenceBox, moveSpeed],
+    [enabled, camera, floorY, expandedGeofence, moveSpeed],
   )
 
   return { tick }

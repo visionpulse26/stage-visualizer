@@ -537,6 +537,18 @@ function CollabPage() {
     setPovMode(false)
   }, [])
 
+  useEffect(() => {
+    if (!povMode) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        exitPovMode()
+      }
+    }
+    window.addEventListener('keydown', onKey, { capture: true })
+    return () => window.removeEventListener('keydown', onKey, { capture: true })
+  }, [povMode, exitPovMode])
+
   const handlePovToggle = useCallback(async () => {
     const ctrl = cameraControlsRef.current
     if (!ctrl) return
