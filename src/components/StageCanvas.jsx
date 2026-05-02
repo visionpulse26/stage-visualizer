@@ -700,6 +700,7 @@ function StageCanvas({
           makeDefault
           smoothTime={0.5}
           dollySpeed={0.5}
+          enabled={!povMode}
         />
 
         {cameraControlsRef && !povMode && (
