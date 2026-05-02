@@ -31,7 +31,7 @@ npm run dev
 
 4. Open http://localhost:3000 in your browser
 
-**Admin login + R2 uploads on localhost:** use `npm run dev:local` (Vercel dev + API routes) and configure `.env.local` — see [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md). Branch **`stage_beta_state`** is intended for beta / roadmap work without affecting production `main`.
+**Admin login + R2 uploads on localhost:** run `npm run setup:local` once (creates `.env.local` from `.env.example`), fill secrets from Supabase / R2 dashboards, then `npm run dev:local` — details in [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md). Branch **`stage_beta_state`** is for beta / roadmap work without affecting production `main`.
 
 ## Usage
 

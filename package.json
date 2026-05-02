@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "setup:local": "node scripts/setup-local.mjs",
     "dev": "vite",
     "dev:local": "vercel dev",
     "build": "vite build",

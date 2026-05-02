@@ -1,63 +1,105 @@
-# Local development (admin login + stage/media upload)
+# Chạy local (admin + upload)
 
-Use the git branch **`stage_beta_state`** for Epic / beta work. This doc lists everything needed so **Supabase auth**, **admin**, and **R2 uploads** work on your machine.
+Tài liệu chia hai phần: **(A) làm trên máy** và **(B) chỉ hướng dẫn trên dashboard** — không thay thế việc bạn đăng nhập Cloudflare / Vercel / Supabase.
 
-## Why not plain `npm run dev`?
+---
 
-`npm run dev` runs **Vite only**. Uploads call `POST /api/get-upload-url`, which is a **Vercel serverless function**. That route does not exist on the Vite dev server alone, so presigned uploads fail until you run the full stack.
+## A — Trên máy (repo + terminal)
 
-**Use:**
+Làm lần lượt:
 
-```bash
-npm install
-npm run dev:local
-```
-
-This runs **`vercel dev`**, which serves the Vite app and the `api/` functions with the same origins your browser expects.
-
-- Dev server port is **3000** (see `vite.config.js`). Open **http://localhost:3000**.
-
-First time on a machine you may need to link the folder to your Vercel project (CLI will prompt), or rely on **`.env.local`** alone if your team uses env files without linking.
-
-## Environment variables
-
-1. Copy the template:
+1. **Nhánh có đủ script** (nếu bạn dùng nhánh beta):
 
    ```bash
-   cp .env.example .env.local
+   git fetch origin && git checkout stage_beta_state
    ```
 
-2. Fill **`.env.local`** (never commit it):
+2. **Cài package:**
 
-   | Variable | Purpose |
-   |----------|---------|
-   | `VITE_SUPABASE_URL` | Supabase project URL |
-   | `VITE_SUPABASE_ANON_KEY` | Supabase anon (public) key |
-   | `VITE_UPLOAD_SECRET` | Sent as `x-upload-token` from the browser |
-   | `UPLOAD_SECRET` | **Same string** as `VITE_UPLOAD_SECRET` — validated in `api/get-upload-url.js` |
-   | `R2_*` | Cloudflare R2 credentials and public base URL for your bucket |
+   ```bash
+   npm install
+   ```
 
-   Use the **same Supabase project** as production/staging if you already have admin users and data, or a **separate Supabase project** for isolation (create users there).
+3. **Tạo `.env.local` từ mẫu** (chỉ tạo nếu chưa có file):
 
-3. Optional: **`VITE_APP_URL=http://localhost:3000`** if you need a fixed origin (usually unnecessary; the app defaults to `window.location.origin`).
+   ```bash
+   npm run setup:local
+   ```
 
-## R2 CORS for localhost
+4. **Mở `.env.local`** và điền giá trị thật. Bạn lấy từng giá trị theo mục B bên dưới (Supabase, R2, secret upload). Hai dòng **`VITE_UPLOAD_SECRET`** và **`UPLOAD_SECRET`** phải **giống hệt nhau**.
 
-Direct `PUT` uploads to R2 require the bucket CORS policy to allow your dev origin. Include **http://localhost:3000** (and optionally **http://localhost:5173** if you ever change the Vite port) in **AllowedOrigins**. See `r2-cors.example.json` in the repo root and paste an adapted policy in **Cloudflare → R2 → bucket → Settings → CORS**.
+5. **Chạy app kèm API upload** (bắt buộc nếu cần upload; `npm run dev` chỉ chạy UI, không có `/api/*`):
 
-## Sanity checks
+   ```bash
+   npm run dev:local
+   ```
 
-- **Login:** `/admin` should load after Supabase email magic link or your configured auth.
-- **Upload:** Browser network tab should show `POST /api/get-upload-url` → `200`, then `PUT` to `*.r2.cloudflarestorage.com` or your public URL.
+6. Mở **http://localhost:3000** — port cố định trong `vite.config.js`.
 
-## Scripts reference
+**Lần đầu `vercel dev`:** CLI có thể hỏi **link** tới project Vercel; chọn đúng repo hoặc bỏ qua nếu env đã đủ trong `.env.local`.
 
-| Script | What it runs |
+| Script | Khi nào dùng |
 |--------|----------------|
-| `npm run dev` | Vite only — fast UI work, **uploads will not work** |
-| `npm run dev:local` | Vite + `/api/*` via Vercel dev — **use this for full local parity** |
-| `npm run build` / `npm run preview` | Production build / static preview (no local API unless proxied) |
+| `npm run setup:local` | Tạo `.env.local` lần đầu |
+| `npm run dev:local` | Dev đầy đủ (UI + `POST /api/get-upload-url`) |
+| `npm run dev` | Chỉ UI, không upload |
 
-## Deploy branch
+---
 
-Pushing **`stage_beta_state`** to GitHub does not change production until you merge to **`main`** (Vercel deploys from `main` per project rules). Use this branch for POV / beta features without affecting the live site.
+## B — Chỉ làm trên dashboard (cloud)
+
+### B1 — Supabase
+
+1. **Project → Settings → API**
+   - Copy **Project URL** → `VITE_SUPABASE_URL`
+   - Copy **anon public** key → `VITE_SUPABASE_ANON_KEY`
+
+2. **Authentication → URL configuration** (nếu dùng magic link / OAuth):
+   - **Site URL** có thể là production hoặc `http://localhost:3000` khi chỉ dev local.
+   - **Redirect URLs:** thêm `http://localhost:3000/**` (hoặc đường dẫn callback mà Supabase yêu cầu) để link đăng nhập không bị chặn khi chạy local.
+
+3. Dùng **cùng project** với production để có sẵn user/project trong DB, hoặc project riêng cho dev (tạo user admin mới ở đó).
+
+---
+
+### B2 — Cloudflare R2
+
+1. **R2 → bucket** dùng cho asset (cùng bucket prod hoặc bucket dev).
+
+2. **Settings → CORS policy:** cho phép origin dev, ví dụ thêm vào **Allowed Origins**:
+   - `http://localhost:3000`
+   - (tuỳ chọn) `http://localhost:5173` nếu sau này đổi port Vite  
+   Mẫu JSON: xem `r2-cors.example.json` ở root repo — chỉnh thêm domain production của bạn.
+
+3. **R2 API token** (hoặc S3-compatible credentials) để điền:
+   - `R2_ACCOUNT_ID`
+   - `R2_ACCESS_KEY_ID`
+   - `R2_SECRET_ACCESS_KEY`
+   - `R2_BUCKET`
+   - `R2_PUBLIC_BASE_URL` — URL public của bucket (ví dụ `https://pub-xxxxx.r2.dev`, không có `/` cuối).
+
+---
+
+### B3 — Vercel (deploy production, không bắt buộc cho dev thuần local)
+
+Khi deploy từ `main`, trong **Project → Settings → Environment Variables** cần (tối thiểu cho app + upload):
+
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- `VITE_UPLOAD_SECRET` (cùng giá trị với secret phía server)
+- `UPLOAD_SECRET` (trùng `VITE_UPLOAD_SECRET`)
+- Toàn bộ `R2_*` như trong `.env.example`
+
+Cron / analytics (nếu dùng): `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, v.v. — xem `api/README.md`.
+
+---
+
+## Kiểm tra nhanh
+
+- **`/admin`** mở được sau khi đăng nhập.
+- DevTools → **Network:** `POST .../api/get-upload-url` → **200**, sau đó **PUT** tới R2.
+
+---
+
+## Nhánh deploy
+
+Làm feature beta trên **`stage_beta_state`**; production Vercel thường gắn **`main`** — merge khi sẵn sàng.
