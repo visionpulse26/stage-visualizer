@@ -26,6 +26,9 @@ export function usePovController({
   const yawRef = useRef(0)
   const pitchRef = useRef(0)
   const velRef = useRef(new THREE.Vector3())
+  const tempForwardRef = useRef(new THREE.Vector3())
+  const tempRightRef = useRef(new THREE.Vector3())
+  const tempDirRef = useRef(new THREE.Vector3())
 
   useEffect(() => {
     if (!enabled || !camera) return
@@ -50,6 +53,7 @@ export function usePovController({
   useEffect(() => {
     if (!enabled) return
     const down = (ev) => {
+      if (gl && document.pointerLockElement !== gl.domElement) return
       keysRef.current[ev.code] = true
     }
     const up = (ev) => {
@@ -78,19 +82,26 @@ export function usePovController({
   const tick = useCallback(
     (delta) => {
       if (!enabled || !camera) return
+      const isLocked = !gl || document.pointerLockElement === gl.domElement
 
       const euler = new THREE.Euler(pitchRef.current, yawRef.current, 0, 'YXZ')
       camera.quaternion.setFromEuler(euler)
 
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+      if (!isLocked) {
+        keysRef.current = {}
+        velRef.current.set(0, 0, 0)
+        return
+      }
+
+      const forward = tempForwardRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion)
       forward.y = 0
       if (forward.lengthSq() > 1e-10) forward.normalize()
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
+      const right = tempRightRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion)
       right.y = 0
       if (right.lengthSq() > 1e-10) right.normalize()
 
       const keys = keysRef.current
-      const dir = new THREE.Vector3()
+      const dir = tempDirRef.current.set(0, 0, 0)
       if (keys.KeyW || keys.ArrowUp) dir.add(forward)
       if (keys.KeyS || keys.ArrowDown) dir.addScaledVector(forward, -1)
       if (keys.KeyA || keys.ArrowLeft) dir.addScaledVector(right, -1)
@@ -98,8 +109,7 @@ export function usePovController({
 
       if (dir.lengthSq() > 0) dir.normalize()
 
-      velRef.current.addScaledVector(dir, moveSpeed * delta)
-      velRef.current.multiplyScalar(0.9)
+      velRef.current.copy(dir).multiplyScalar(moveSpeed)
 
       const rb = rigidBodyRef?.current
       if (rb) {
@@ -117,7 +127,7 @@ export function usePovController({
         }
       }
     },
-    [enabled, camera, floorY, expandedGeofence, moveSpeed, rigidBodyRef],
+    [enabled, camera, floorY, expandedGeofence, gl, moveSpeed, rigidBodyRef],
   )
 
   return { tick }

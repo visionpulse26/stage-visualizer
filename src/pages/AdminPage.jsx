@@ -607,7 +607,7 @@ function AdminPage() {
       const ctrl = cameraControlsRef.current
       if (ctrl) {
         reconnectOrbitControls(ctrl, glDomElementRef.current)
-        await restoreOrbitState(ctrl, savedOrbitRef.current)
+        await restoreOrbitState(ctrl, savedOrbitRef.current, { animate: false })
       }
     } finally {
       povExitInProgressRef.current = false
