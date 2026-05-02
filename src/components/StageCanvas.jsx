@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
@@ -9,7 +9,10 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Scene from './Scene'
-import { PovFpsRig } from './PovFpsRig'
+
+const LazyPovFpsRig = lazy(() =>
+  import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
+)
 
 /** Exposes `gl.domElement` so pages can call `cameraControls.connect(canvas)` after POV. */
 function GlDomElementBridge({ targetRef }) {
@@ -742,12 +745,14 @@ function StageCanvas({
         )}
 
         {povMode && modelUrl && onPovExitRequest && (
-          <PovFpsRig
-            enabled={povMode}
-            floorY={povHeightOffset}
-            geofenceBox={modelMetrics?.box ?? null}
-            geofencePadding={povGeofencePadding}
-          />
+          <Suspense fallback={null}>
+            <LazyPovFpsRig
+              enabled={povMode}
+              floorY={povHeightOffset}
+              geofenceBox={modelMetrics?.box ?? null}
+              geofencePadding={povGeofencePadding}
+            />
+          </Suspense>
         )}
 
         {/* Bloom + DoF — stage stays sharp, background/foreground bokeh */}

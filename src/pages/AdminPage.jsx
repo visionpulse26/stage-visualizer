@@ -655,6 +655,18 @@ function AdminPage() {
     setPovMode(true)
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
+  const resetPovSession = useCallback(() => {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock() } catch (_) {}
+    }
+    const ctrl = cameraControlsRef.current
+    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
+    savedOrbitRef.current = null
+    povExitInProgressRef.current = false
+    povModeRef.current = false
+    setPovMode(false)
+  }, [])
+
   const handleSaveAutoplayConfig = useCallback(async () => {
     if (!publishedId) {
       alert('Publish the project first, then save autoplay config.')
@@ -689,6 +701,7 @@ function AdminPage() {
     // Refetch project to get latest media_playlist (multi-admin sync)
     const { data: fresh, error } = await supabase.from('projects').select('*').eq('id', project.id).single()
     const p = fresh && !error ? fresh : project
+    resetPovSession()
 
     // Revoke existing local blob URLs
     localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
@@ -710,9 +723,6 @@ function AdminPage() {
     setCameraPresets(p.camera_presets || [])
     setGridCellSize(p.grid_cell_size ?? 1)
     setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
-    setPovMode(false)
-    povModeRef.current = false
-    savedOrbitRef.current = null
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
@@ -816,7 +826,7 @@ function AdminPage() {
       setVideoPlaylist([clip])
       activateVideo(id, p.video_url)
     }
-  }, [stageUrl, activateVideo, isRemote])
+  }, [stageUrl, activateVideo, isRemote, resetPovSession])
 
   // ── Clone as New Round (from Publish panel) ───────────────────────────────
   const handleCloneAsNewRound = useCallback(async () => {
