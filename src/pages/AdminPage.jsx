@@ -12,6 +12,7 @@ import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
+import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -50,16 +51,25 @@ function AdminPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
-  // ── Epic 1 — Audience POV (Phase 1: orbit transition only, no FPS yet) ─────
+  // ── Epic 1 — Audience POV ────────────────────────────────────────────────────
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  // Collider manager: meshes scanned from loaded model + admin config overrides
+  const [meshMetadata, setMeshMetadata]           = useState([])
+  const [povColliderConfig, setPovColliderConfig] = useState({ overrides: {} })
   const savedOrbitRef = useRef(null)
   const povModeRef = useRef(false)
   const povExitInProgressRef = useRef(false)
   useEffect(() => {
     povModeRef.current = povMode
   }, [povMode])
+
+  // Pre-compute collider specs for Rapier whenever metadata or config changes
+  const povColliderSpecs = useMemo(
+    () => buildPovCollidersFromConfig(meshMetadata, povColliderConfig),
+    [meshMetadata, povColliderConfig],
+  )
 
   // ── Sun position vector (must be declared before any useCallback that uses it) ──
   const sunPosition = useMemo(() => {
@@ -665,6 +675,7 @@ function AdminPage() {
     povExitInProgressRef.current = false
     povModeRef.current = false
     setPovMode(false)
+    setMeshMetadata([])
   }, [])
 
   const handleSaveAutoplayConfig = useCallback(async () => {
@@ -795,6 +806,9 @@ function AdminPage() {
       if (cfg.cameraFlyDurationSeconds != null) {
         setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
       }
+
+      // POV collider config (overrides map — empty by default)
+      setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
     }
 
     // Restore full media playlist from fresh refetch (multi-admin sync), or fall back to legacy single video_url
@@ -957,6 +971,7 @@ function AdminPage() {
         autoplayIntervalSeconds: autoplayIntervalSeconds,
         cameraFlyDurationSeconds: cameraFlyDurationSeconds,
         versionStatus: versionStatus || '',
+        povColliderConfig: povColliderConfig,
       }
 
       // 5. Upsert project record
@@ -999,7 +1014,7 @@ function AdminPage() {
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
       bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus,
-      embedEnabled, povHeightOffset])
+      embedEnabled, povHeightOffset, povColliderConfig])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -1021,6 +1036,8 @@ function AdminPage() {
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}
+        onMeshScanChange={setMeshMetadata}
+        stageColliders={povColliderSpecs}
         povMode={povMode}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
@@ -1120,6 +1137,9 @@ function AdminPage() {
           protectLed={protectLed}          onProtectLedToggle={() => setProtectLed(v => !v)}
           transparentLedConfig={transparentLedConfig}
           onTransparentLedConfigChange={setTransparentLedConfig}
+          meshMetadata={meshMetadata}
+          povColliderConfig={povColliderConfig}
+          onPovColliderConfigChange={setPovColliderConfig}
         />
 
         <TopBar role="Admin" color="violet" />

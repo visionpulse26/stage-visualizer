@@ -16,6 +16,7 @@ import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
+import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -49,6 +50,12 @@ function CollabPage() {
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const [meshMetadata, setMeshMetadata]           = useState([])
+  const [povColliderConfig, setPovColliderConfig] = useState({ overrides: {} })
+  const povColliderSpecs = useMemo(
+    () => buildPovCollidersFromConfig(meshMetadata, povColliderConfig),
+    [meshMetadata, povColliderConfig],
+  )
   const savedOrbitRef = useRef(null)
   const povModeRef = useRef(false)
   const povExitInProgressRef = useRef(false)
@@ -383,6 +390,7 @@ function CollabPage() {
           if (cfg.autoplayIntervalSeconds != null) setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
           if (cfg.cameraFlyDurationSeconds != null) setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
           if (cfg.versionStatus != null) setVersionStatus(cfg.versionStatus)
+          setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
         }
       } catch {
         if (!cancelled) setProjectNotFound(true)
@@ -589,6 +597,7 @@ function CollabPage() {
     povExitInProgressRef.current = false
     povModeRef.current = false
     setPovMode(false)
+    setMeshMetadata([])
   }, [])
 
   useEffect(() => {
@@ -687,6 +696,8 @@ function CollabPage() {
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}
+        onMeshScanChange={setMeshMetadata}
+        stageColliders={povColliderSpecs}
         povMode={povMode}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
