@@ -44,6 +44,8 @@ Làm lần lượt:
 | `npm run dev:local` | Dev đầy đủ (UI + `POST /api/get-upload-url`) |
 | `npm run dev` | Chỉ UI, không upload |
 
+**Nếu Network báo 404 cho `/@vite/client` hoặc `/src/main.jsx`:** nguyên nhân thường là rewrite SPA kiểu `"/(.*)" → /index.html` khiến `vercel dev` trả HTML thay cho module Vite. Repo này dùng rewrite **theo từng route** (`/admin`, `/privacy`, `/collab/...`, `/view/...`) để tránh lỗi đó. Trên production, URL lạ không thuộc các route đó có thể thành **404 của Vercel** (không còn fallback React `*`).
+
 ---
 
 ## B — Chỉ làm trên dashboard (cloud)

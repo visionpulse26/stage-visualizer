@@ -35,7 +35,19 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/collab/:projectId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/view/:projectId",
       "destination": "/index.html"
     }
   ],
