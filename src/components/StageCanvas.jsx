@@ -137,6 +137,42 @@ function ToneMappingController() {
   return null
 }
 
+function PovClipGuard({ enabled, modelMetrics }) {
+  const { camera, scene } = useThree()
+
+  useEffect(() => {
+    if (!enabled || !modelMetrics) return
+
+    const prevNear = camera.near
+    const prevFar = camera.far
+    const prevFogNear = scene.fog?.near
+    const prevFogFar = scene.fog?.far
+    const radius = Math.max(modelMetrics.radius || 0, 1)
+    const maxDim = Math.max(modelMetrics.size?.x || 0, modelMetrics.size?.y || 0, modelMetrics.size?.z || 0, 1)
+
+    camera.near = 0.02
+    camera.far = Math.max(prevFar, radius * 120, maxDim * 120, 5000)
+    camera.updateProjectionMatrix()
+
+    if (scene.fog) {
+      scene.fog.near = Math.max(800, radius * 20, maxDim * 12)
+      scene.fog.far = Math.max(2400, radius * 60, maxDim * 36)
+    }
+
+    return () => {
+      camera.near = prevNear
+      camera.far = prevFar
+      camera.updateProjectionMatrix()
+      if (scene.fog && prevFogNear != null && prevFogFar != null) {
+        scene.fog.near = prevFogNear
+        scene.fog.far = prevFogFar
+      }
+    }
+  }, [enabled, modelMetrics, camera, scene])
+
+  return null
+}
+
 function LocalStudioEnvironment({ intensity = 1, background = false, bgBlur = 0 }) {
   const { gl, scene } = useThree()
 
@@ -593,6 +629,7 @@ function StageCanvas({
         />
         {glDomElementRef && <GlDomElementBridge targetRef={glDomElementRef} />}
         {/* ACES filmic tone mapping — hardcoded for cinema quality */}
+        <PovClipGuard enabled={povMode} modelMetrics={modelMetrics} />
         <ToneMappingController />
 
         {/* Background — black in stealth mode, overridden by HDRI when visible */}
