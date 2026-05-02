@@ -11,6 +11,19 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import Scene from './Scene'
 import { PovFpsRig } from './PovFpsRig'
 
+/** Exposes `gl.domElement` so pages can call `cameraControls.connect(canvas)` after POV. */
+function GlDomElementBridge({ targetRef }) {
+  const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    if (!targetRef) return
+    targetRef.current = gl.domElement
+    return () => {
+      targetRef.current = null
+    }
+  }, [gl, targetRef])
+  return null
+}
+
 // ── Atmospheric dust particles ────────────────────────────────────────────────
 function AtmosphericDust() {
   return (
@@ -479,6 +492,8 @@ function StageCanvas({
   povHeightOffset = 1.7,
   /** Called from the host page on Esc / Exit POV to restore orbit (not tied to pointer-lock loss). */
   onPovExitRequest,
+  /** Set to `gl.domElement` for reconnecting orbit controls after POV. */
+  glDomElementRef,
   children,
 }) {
   const internalPresetRef = useRef(null)
@@ -575,6 +590,7 @@ function StageCanvas({
           onContextLost={handleContextLost}
           onContextRestored={handleContextRestored}
         />
+        {glDomElementRef && <GlDomElementBridge targetRef={glDomElementRef} />}
         {/* ACES filmic tone mapping — hardcoded for cinema quality */}
         <ToneMappingController />
 

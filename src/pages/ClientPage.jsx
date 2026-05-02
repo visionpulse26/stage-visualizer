@@ -16,7 +16,7 @@ import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { isTouchDevice } from '../utils/isTouchDevice'
-import { enterPovMode, captureOrbitState, restoreOrbitState } from '../utils/povCamera'
+import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 
 const isRemoteUrl = (url) => !!url && (url.startsWith('http://') || url.startsWith('https://'))
 
@@ -45,6 +45,7 @@ function ClientPage() {
 
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const glDomElementRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
@@ -369,7 +370,7 @@ function ClientPage() {
       if (document.pointerLockElement) document.exitPointerLock()
       const ctrl = cameraControlsRef.current
       if (ctrl) {
-        ctrl.connect()
+        reconnectOrbitControls(ctrl, glDomElementRef.current)
         await restoreOrbitState(ctrl, savedOrbitRef.current)
       }
     } finally {
@@ -509,6 +510,7 @@ function ClientPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
+        glDomElementRef={glDomElementRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}

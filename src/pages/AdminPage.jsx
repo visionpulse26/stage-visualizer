@@ -11,7 +11,7 @@ import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 import { isTouchDevice } from '../utils/isTouchDevice'
-import { enterPovMode, captureOrbitState, restoreOrbitState } from '../utils/povCamera'
+import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -72,6 +72,7 @@ function AdminPage() {
   // ── Camera presets ───────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const glDomElementRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
@@ -605,7 +606,7 @@ function AdminPage() {
       if (document.pointerLockElement) document.exitPointerLock()
       const ctrl = cameraControlsRef.current
       if (ctrl) {
-        ctrl.connect()
+        reconnectOrbitControls(ctrl, glDomElementRef.current)
         await restoreOrbitState(ctrl, savedOrbitRef.current)
       }
     } finally {
@@ -1006,6 +1007,7 @@ function AdminPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!(stageFile || cloudStageUrl)}
         cameraControlsRef={cameraControlsRef}
+        glDomElementRef={glDomElementRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
         onModelMetricsChange={setModelMetrics}
