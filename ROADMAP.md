@@ -27,9 +27,9 @@ AdminPage / CollabPage
        ├─ <CameraAutoFrame />                           ← auto-fit on model load
        ├─ <CameraSmoothFlyController />                 ← preset lerp
        └─ <PovFpsRig />        ← mounted only when povMode === true
+            ├─ @react-three/rapier (floor + boundary walls + kinematic capsule)
             ├─ PointerLock API
-            ├─ WASD kinematic movement
-            └─ Geofence AABB clamp (+ padding)
+            └─ WASD movement (hook drives capsule; camera follows after step)
 ```
 
 ```
@@ -262,7 +262,9 @@ For V2 (future), use `nipplejs` or a custom touch-joystick component:
 
 ### Phase 3 — Collision Detection & Geofencing
 
-Two strategies — pick based on model complexity:
+**Shipped (Phase 3a — 2026-05):** `@react-three/rapier@1.3.1` (R3F 8–compatible) mounts only while POV is active (`PovFpsRig`): zero-gravity world, large fixed floor, four fixed **CuboidCollider** walls aligned to the same expanded XZ bounds as the old software clamp, and a **`kinematicPosition` capsule** whose translation is driven each physics step by `usePovController` then copied back to the default camera. Per-mesh Rapier colliders and NavMesh remain future work.
+
+Two strategies — pick based on model complexity (longer-term):
 
 #### Option A: Lightweight Rapier physics (recommended for production)
 

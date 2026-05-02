@@ -7,6 +7,9 @@ const PITCH_LIMIT = 1.39 // ~80°
  * First-person movement + look while orbit CameraControls are disconnected.
  * Pointer lock must be active on `gl.domElement` for mouse look (see PovFpsRig overlay).
  * Losing pointer lock does not exit POV — pages handle Esc / Exit button to restore orbit.
+ *
+ * When `rigidBodyRef` is set (Rapier kinematic body), translation is driven before the
+ * physics step and XZ clamp is skipped — geofence walls handle boundaries (Phase 3).
  */
 export function usePovController({
   enabled,
@@ -17,6 +20,7 @@ export function usePovController({
   geofencePadding = 0,
   moveSpeed = 9,
   lookSensitivity = 0.002,
+  rigidBodyRef,
 }) {
   const keysRef = useRef({})
   const yawRef = useRef(0)
@@ -97,16 +101,23 @@ export function usePovController({
       velRef.current.addScaledVector(dir, moveSpeed * delta)
       velRef.current.multiplyScalar(0.9)
 
-      camera.position.addScaledVector(velRef.current, delta)
-
-      camera.position.y = floorY
-
-      if (expandedGeofence?.isBox3) {
-        camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
-        camera.position.z = Math.max(expandedGeofence.min.z, Math.min(expandedGeofence.max.z, camera.position.z))
+      const rb = rigidBodyRef?.current
+      if (rb) {
+        const t = rb.translation()
+        const nx = t.x + velRef.current.x * delta
+        const ny = floorY
+        const nz = t.z + velRef.current.z * delta
+        rb.setNextKinematicTranslation({ x: nx, y: ny, z: nz })
+      } else {
+        camera.position.addScaledVector(velRef.current, delta)
+        camera.position.y = floorY
+        if (expandedGeofence?.isBox3) {
+          camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
+          camera.position.z = Math.max(expandedGeofence.min.z, Math.min(expandedGeofence.max.z, camera.position.z))
+        }
       }
     },
-    [enabled, camera, floorY, expandedGeofence, moveSpeed],
+    [enabled, camera, floorY, expandedGeofence, moveSpeed, rigidBodyRef],
   )
 
   return { tick }
