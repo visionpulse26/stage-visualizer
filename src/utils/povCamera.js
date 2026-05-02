@@ -61,3 +61,19 @@ export async function restoreOrbitState(controls, saved) {
   )
   await waitForControlsRest(controls)
 }
+
+/**
+ * Reattach yomotsu camera-controls to the WebGL canvas after POV `disconnect()`.
+ * Calling `connect()` without a DOM element does not restore pointer / wheel listeners.
+ */
+export function reconnectOrbitControls(controls, canvasDom) {
+  if (!controls?.connect || !controls?.disconnect) return
+  controls.enabled = true
+  if (!canvasDom) return
+  try {
+    controls.disconnect()
+  } catch {
+    /* noop */
+  }
+  controls.connect(canvasDom)
+}
