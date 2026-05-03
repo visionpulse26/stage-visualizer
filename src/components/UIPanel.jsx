@@ -166,8 +166,12 @@ function UIPanel({
       e.dataTransfer.effectAllowed = 'move'
       e.dataTransfer.setData('text/plain', String(index))
     } catch (_) {}
-    setDragSourceIndex(index)
-    setDragOverIndex(index)
+    // Defer visual updates: calling setState inside dragstart causes Chrome to
+    // re-render mid-capture, destroying the drag ghost and silently cancelling the drag.
+    requestAnimationFrame(() => {
+      setDragSourceIndex(index)
+      setDragOverIndex(index)
+    })
   }, [onReorderPlaylist])
 
   const handlePlaylistDrop = useCallback((e, toIndex) => {
