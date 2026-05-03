@@ -31,13 +31,28 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
 
     if (effectiveRole !== 'floor' && effectiveRole !== 'blocker') continue
 
+    if (effectiveRole === 'floor' && Array.isArray(meta.floorTiles) && meta.floorTiles.length > 0) {
+      meta.floorTiles.forEach((tile, index) => {
+        specs.push({
+          id: `${meta.id}_tile_${index}`,
+          type: 'floor',
+          position: tile.position,
+          halfExtents: tile.halfExtents,
+        })
+      })
+      continue
+    }
+
     specs.push({
       id:          meta.id,
       type:        effectiveRole,
       position:    meta.center,               // [x, y, z]
       halfExtents: [
         Math.max(meta.size.x * 0.5, MIN_HALF),
-        Math.max(meta.size.y * 0.5, MIN_HALF),
+        Math.max(
+          effectiveRole === 'floor' ? Math.min(meta.size.y * 0.5, 0.08) : meta.size.y * 0.5,
+          MIN_HALF,
+        ),
         Math.max(meta.size.z * 0.5, MIN_HALF),
       ],
     })

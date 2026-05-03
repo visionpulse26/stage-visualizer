@@ -8,12 +8,39 @@ const CAPSULE_HALF_HEIGHT = 0.55
 const CAPSULE_RADIUS = 0.28
 const CAPSULE_REST_CENTER_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS
 
-export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePadding, gl }) {
+function findSpawnFromFloorColliders(camera, stageColliders) {
+  const floors = stageColliders.filter((s) => s.type === 'floor' || s.type === 'explicit-floor')
+  if (floors.length === 0) return null
+
+  let best = null
+  let bestScore = Infinity
+
+  for (const floor of floors) {
+    const [cx, cy, cz] = floor.position
+    const [hx, hy, hz] = floor.halfExtents
+    const insideX = camera.position.x >= cx - hx && camera.position.x <= cx + hx
+    const insideZ = camera.position.z >= cz - hz && camera.position.z <= cz + hz
+    const dx = insideX ? 0 : Math.min(Math.abs(camera.position.x - (cx - hx)), Math.abs(camera.position.x - (cx + hx)))
+    const dz = insideZ ? 0 : Math.min(Math.abs(camera.position.z - (cz - hz)), Math.abs(camera.position.z - (cz + hz)))
+    const score = dx * dx + dz * dz
+
+    if (score < bestScore) {
+      const x = insideX ? camera.position.x : cx
+      const z = insideZ ? camera.position.z : cz
+      best = [x, cy + hy + CAPSULE_REST_CENTER_Y + 0.08, z]
+      bestScore = score
+    }
+  }
+
+  return best
+}
+
+export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePadding, gl, stageColliders = [] }) {
   const { camera } = useThree()
   const rb = useRef(null)
   const eyeOffset = floorY - CAPSULE_REST_CENTER_Y
   const spawn = useMemo(
-    () => [
+    () => findSpawnFromFloorColliders(camera, stageColliders) ?? [
       camera.position.x,
       Math.max(CAPSULE_REST_CENTER_Y + 2, camera.position.y - eyeOffset),
       camera.position.z,

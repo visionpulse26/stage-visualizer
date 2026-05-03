@@ -1,5 +1,11 @@
 import * as THREE from 'three'
 
+const FLOOR_TILE_TARGET_SIZE = 0.75
+const FLOOR_TILE_THICKNESS = 0.12
+const MAX_FLOOR_TILES_PER_MESH = 700
+const raycaster = new THREE.Raycaster()
+const down = new THREE.Vector3(0, -1, 0)
+
 // ── Auto-suggest heuristic ────────────────────────────────────────────────────
 // This is only a HINT to prefill the Admin UI — not a source of truth.
 // Users override via the PovColliderManager panel.
@@ -56,6 +62,54 @@ function suggestRole(name, materialNames, center, size) {
  *   visible         - mesh.visible at time of scan
  *   suggestedRole   - 'floor' | 'blocker' | 'ignore'  (hint only)
  */
+function shouldSkipFloorTiles(name, materialNames) {
+  const tokens = [name, ...materialNames]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
+
+  return /LED_MASTER_MAT|LED_TRANSPARENT_MAT|LED_GRID_/.test(tokens) ||
+    /\b(TRUSS|ALUMIN|ALU|RIGGING|CABLE|CHAIN|WIRE|ROPE)\b/.test(tokens)
+}
+
+function buildFloorTilesForMesh(mesh, box, size, materialNames) {
+  if (shouldSkipFloorTiles(mesh.name, materialNames)) return []
+  if (Math.max(size.x, size.z) < 0.6 || size.y > 2.4) return []
+
+  const area = Math.max(size.x * size.z, FLOOR_TILE_TARGET_SIZE * FLOOR_TILE_TARGET_SIZE)
+  const estimated = area / (FLOOR_TILE_TARGET_SIZE * FLOOR_TILE_TARGET_SIZE)
+  const cellSize = estimated > MAX_FLOOR_TILES_PER_MESH
+    ? Math.sqrt(area / MAX_FLOOR_TILES_PER_MESH)
+    : FLOOR_TILE_TARGET_SIZE
+  const half = cellSize * 0.5
+  const yStart = box.max.y + Math.max(2, size.y + 1)
+  const yEnd = box.min.y - 0.25
+  const origin = new THREE.Vector3()
+  const tiles = []
+
+  for (let x = box.min.x + half; x <= box.max.x - half * 0.25; x += cellSize) {
+    for (let z = box.min.z + half; z <= box.max.z - half * 0.25; z += cellSize) {
+      origin.set(x, yStart, z)
+      raycaster.set(origin, down)
+      raycaster.far = yStart - yEnd
+      const hit = raycaster.intersectObject(mesh, false)[0]
+      if (!hit) continue
+
+      const normalY = hit.face?.normal
+        ? hit.face.normal.clone().transformDirection(mesh.matrixWorld).normalize().y
+        : 1
+      if (normalY < 0.35) continue
+
+      tiles.push({
+        position: [x, hit.point.y - FLOOR_TILE_THICKNESS * 0.5, z],
+        halfExtents: [half, FLOOR_TILE_THICKNESS * 0.5, half],
+      })
+    }
+  }
+
+  return tiles
+}
+
 export function scanStageMeshes(clonedScene) {
   clonedScene.updateMatrixWorld(true)
 
@@ -69,6 +123,7 @@ export function scanStageMeshes(clonedScene) {
 
   clonedScene.traverse((child) => {
     if (!child.isMesh) return
+    if (!child.visible) return
 
     _box.setFromObject(child)
     if (_box.isEmpty()) return
@@ -101,6 +156,7 @@ export function scanStageMeshes(clonedScene) {
       size:          { x: _size.x, y: _size.y, z: _size.z },
       visible:       child.visible,
       suggestedRole: suggested,
+      floorTiles:    buildFloorTilesForMesh(child, _box.clone(), _size.clone(), matNames),
     })
   })
 
