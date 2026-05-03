@@ -397,10 +397,11 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
   }, [videoElement])
 
-  // ── Image texture — single load, blob URL revoked after GPU upload ──────────
+  // ── Image texture — single load; blob URL lifetime is owned by ClientPage ───
   // Replaces THREE.TextureLoader (which made a separate internal XHR visible in
   // the DevTools Network tab) + a second img.src load for color sampling.
-  // Now: one Image load → texture + color sample → blob URL revoked immediately.
+  // Now: one Image load → texture + color sample. ClientPage keeps blob URLs
+  // alive while the project is open so switching back to a previous visual works.
   const [imageTexture, setImageTexture] = useState(null)
 
   useEffect(() => {
@@ -415,20 +416,12 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     }
 
     let cancelled = false
-    let revoked   = false
-
-    const safeRevoke = () => {
-      if (!revoked) {
-        try { URL.revokeObjectURL(activeImageUrl) } catch (_) {}
-        revoked = true
-      }
-    }
 
     const img = new Image()
     img.crossOrigin = 'anonymous'
 
     img.onload = () => {
-      if (cancelled) { safeRevoke(); return }
+      if (cancelled) return
 
       // 1. Dispose previous texture
       if (imageTextureRef.current) {
@@ -466,12 +459,11 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
         setLedColor(`rgb(${Math.min(255, r * boost)},${Math.min(255, g * boost)},${Math.min(255, b * boost)})`)
       } catch (_) {}
 
-      // 4. Revoke blob URL — data is now on the GPU, URL no longer needed.
-      //    This removes the blob entry from the DevTools Network preview tab.
-      safeRevoke()
+      // Do not revoke activeImageUrl here. The playlist may reuse the same blob
+      // when the client switches away and back to this visual.
     }
 
-    img.onerror = () => { safeRevoke() }
+    img.onerror = () => {}
 
     img.src = activeImageUrl
 
@@ -479,8 +471,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       cancelled = true
       img.onload  = null
       img.onerror = null
-      // Revoke if the image hadn't finished loading when url changed
-      safeRevoke()
     }
   }, [activeImageUrl])
 

@@ -60,22 +60,10 @@ export function parseDeviceContext() {
 
 /** Start a client session (device, screen). Call on page load. */
 export function recordClientSessionStart(projectId, sessionId) {
-  if (!projectId || !sessionId) return
-  const pid = String(projectId).trim()
-  if (!pid) return
-  const { deviceOs, formFactor, screenWidth, screenHeight } = parseDeviceContext()
-  supabase
-    .from('client_sessions')
-    .insert({
-      project_id: pid,
-      session_id: sessionId,
-      device_os: deviceOs,
-      form_factor: formFactor,
-      screen_width: screenWidth || null,
-      screen_height: screenHeight || null,
-    })
-    .then(({ error }) => { if (error) console.warn('[Analytics] recordClientSessionStart:', error.message) })
-    .catch((e) => console.warn('[Analytics] recordClientSessionStart:', e))
+  // Use the same idempotent RPC as heartbeats/unload. A visitor session id is
+  // stored in sessionStorage, so reloads and React remounts can legitimately
+  // start the same (project_id, session_id) more than once.
+  recordClientSessionEnd(projectId, sessionId, 0)
 }
 
 /**

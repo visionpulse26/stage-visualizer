@@ -13,8 +13,10 @@ import { useProjectStats } from '../hooks/useProjectStats'
 import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
 import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
-import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
+
+const isRemoteUrl = (url) => !!url && (url.startsWith('http://') || url.startsWith('https://'))
 
 function ClientPage() {
   const { projectId } = useParams()
@@ -80,6 +82,7 @@ function ClientPage() {
   const [isPlaying,     setIsPlaying]     = useState(false)
 
   const videoRef = useRef(null)
+  const activationSeqRef = useRef(0)
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
   useProjectStats(projectId, 'client') // presence for LIVE PULSE
   const { startClipWatch } = useClientSessionTracking(projectId)
@@ -100,6 +103,7 @@ function ClientPage() {
   // ── Shared video activation helper — blob URLs kept in cache until project change/unmount ──
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
+    setVideoLoaded(false)
     const v = document.createElement('video')
     v.src = url
     v.crossOrigin = 'anonymous'
@@ -116,17 +120,63 @@ function ClientPage() {
       setActiveVideoId(id)
       setIsPlaying(true)
     })
+    v.addEventListener('error', () => {
+      setVideoLoaded(false)
+      setIsPlaying(false)
+    })
     v.load()
   }, [])
+
+  const resolvePlayableUrl = useCallback(async (clip) => {
+    if (!clip?.url || !isRemoteUrl(clip.url)) return clip?.url
+    const blobUrl = await fetchAsBlobUrlWithCache(clip.url)
+    addBlob(blobUrl)
+    return blobUrl
+  }, [addBlob])
+
+  const activateClip = useCallback(async (clip, { track = true } = {}) => {
+    if (!clip) return
+    const activationSeq = ++activationSeqRef.current
+    if (track) recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
+    startClipWatch?.(clip?.name || 'Unknown')
+    setVideoLoaded(false)
+
+    let url = clip.url
+    try {
+      url = await resolvePlayableUrl(clip)
+    } catch {
+      url = clip.url
+    }
+    if (activationSeq !== activationSeqRef.current) return
+
+    if (clip.type === 'image') {
+      if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+      setVideoElement(null)
+      setActiveImageUrl(url)
+      setActiveVideoId(clip.id)
+      setVideoLoaded(true)
+      setIsPlaying(false)
+    } else {
+      setActiveImageUrl(null)
+      activateVideo(clip.id, url)
+    }
+  }, [activateVideo, projectId, resolvePlayableUrl, startClipWatch])
 
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
 
     async function fetchProject() {
+      activationSeqRef.current += 1
       revokeAllBlobs()
+      clearMemCache()
       setIsDbLoading(true)
       setProjectNotFound(false)
+      setVideoPlaylist([])
+      setActiveVideoId(null)
+      setActiveImageUrl(null)
+      setVideoElement(null)
+      setVideoLoaded(false)
 
       try {
         const { data, error } = await supabase
@@ -156,54 +206,27 @@ function ClientPage() {
         // Record view in client_page_views (no RPC; works with any project id type)
         recordClientPageView(projectId)
 
-        const isRemote = (u) => u && (u.startsWith('http://') || u.startsWith('https://'))
-
         const modelSrc = data.stage_url
         setModelUrl(modelSrc || null)
 
-        const loadMediaPlaylist = async (items) => {
-          const restored = []
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i]
-            let url = item.url
-            if (isRemote(url)) {
-              try {
-                const blobUrl = await fetchAsBlobUrlWithCache(url)
-                addBlob(blobUrl)
-                url = blobUrl
-              } catch {}
-            }
-            restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
-          }
-          return restored
-        }
+        const restoreMediaPlaylist = (items) => (items || []).map((item, i) => ({
+          id: `${Date.now()}_${i}`,
+          name: item.name,
+          url: item.url,
+          type: item.type,
+        }))
 
         if (data.media_playlist && data.media_playlist.length > 0) {
-          const restored = await loadMediaPlaylist(data.media_playlist)
+          const restored = restoreMediaPlaylist(data.media_playlist)
           setVideoPlaylist(restored)
           const first = restored[0]
-          startClipWatch?.(first?.name || 'Unknown')
-          if (first.type === 'image') {
-            setActiveImageUrl(first.url)
-            setActiveVideoId(first.id)
-            setVideoLoaded(true)
-          } else {
-            activateVideo(first.id, first.url)
-          }
+          activateClip(first, { track: false })
         } else if (data.video_url) {
-          let vidUrl = data.video_url
-          if (isRemote(vidUrl)) {
-            try {
-              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
-              addBlob(blobUrl)
-              vidUrl = blobUrl
-            } catch {}
-          }
           const id = Date.now()
           const name = 'Published Video'
-          startClipWatch?.(name)
-          setVideoPlaylist([{ id, name, type: 'video', url: vidUrl }])
-          activateVideo(id, vidUrl)
+          const clip = { id, name, type: 'video', url: data.video_url }
+          setVideoPlaylist([clip])
+          activateClip(clip, { track: false })
         }
 
         setCameraPresets(data.camera_presets || [])
@@ -280,20 +303,12 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs, startClipWatch])
+  }, [projectId, activateClip, revokeAllBlobs])
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleActivateVideo = useCallback((clip) => {
-    recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
-    startClipWatch?.(clip?.name || 'Unknown')
-    if (clip.type === 'image') {
-      if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
-      setVideoElement(null); setActiveImageUrl(clip.url)
-      setActiveVideoId(clip.id); setVideoLoaded(true); setIsPlaying(false)
-    } else {
-      setActiveImageUrl(null); activateVideo(clip.id, clip.url)
-    }
-  }, [activateVideo, projectId, startClipWatch])
+    activateClip(clip)
+  }, [activateClip])
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
