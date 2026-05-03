@@ -58,6 +58,9 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     geofenceBox,
     geofencePadding,
     rigidBodyRef: rb,
+    stageColliders,
+    capsuleRestCenterY: CAPSULE_REST_CENTER_Y,
+    capsuleRadius: CAPSULE_RADIUS,
   })
 
   useBeforePhysicsStep(() => {
