@@ -109,6 +109,8 @@ function UIPanel({
   const [activeSection,    setActiveSection]    = useState('media')
   const [editingClipId,    setEditingClipId]    = useState(null)
   const [editingName,      setEditingName]      = useState('')
+  const [draggingClipId,   setDraggingClipId]   = useState(null)
+  const [dragOverIndex,    setDragOverIndex]    = useState(null)
   const renameInputRef     = useRef(null)
 
   const [externalUrlInput, setExternalUrlInput]  = useState('')
@@ -142,6 +144,45 @@ function UIPanel({
   }, [editingClipId, editingName, onRenameClip])
 
   const cancelRename = useCallback(() => { setEditingClipId(null) }, [])
+
+  const reorderPlaylist = useCallback((fromIndex, toIndex) => {
+    if (!onReorderPlaylist) return
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return
+    const boundedTo = Math.max(0, Math.min(videoPlaylist.length - 1, toIndex))
+    if (fromIndex === boundedTo) return
+
+    const next = [...videoPlaylist]
+    const [moved] = next.splice(fromIndex, 1)
+    if (!moved) return
+    next.splice(boundedTo, 0, moved)
+    onReorderPlaylist(next)
+  }, [onReorderPlaylist, videoPlaylist])
+
+  const handlePlaylistDragStart = useCallback((e, clip, index) => {
+    if (!onReorderPlaylist) return
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('application/x-tooawake-playlist-index', String(index))
+    e.dataTransfer.setData('text/plain', String(index))
+    setDraggingClipId(clip.id)
+    setDragOverIndex(index)
+  }, [onReorderPlaylist])
+
+  const handlePlaylistDrop = useCallback((e, toIndex) => {
+    e.preventDefault()
+    if (!onReorderPlaylist) return
+    const raw =
+      e.dataTransfer.getData('application/x-tooawake-playlist-index') ||
+      e.dataTransfer.getData('text/plain')
+    const fromIndex = Number.parseInt(raw, 10)
+    reorderPlaylist(fromIndex, toIndex)
+    setDraggingClipId(null)
+    setDragOverIndex(null)
+  }, [onReorderPlaylist, reorderPlaylist])
+
+  const handlePlaylistDragEnd = useCallback(() => {
+    setDraggingClipId(null)
+    setDragOverIndex(null)
+  }, [])
 
   const handleAddExternal = useCallback(() => {
     const url = externalUrlInput.trim()
@@ -363,31 +404,36 @@ function UIPanel({
                   {videoPlaylist.map((clip, idx) => (
                     <div
                       key={clip.id}
-                      draggable={!!onReorderPlaylist}
-                      onDragStart={e => { if (onReorderPlaylist) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)) } }}
-                      onDragOver={e => { if (onReorderPlaylist) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('ring-1', 'ring-violet-500/40') } }}
-                      onDragLeave={e => { e.currentTarget.classList.remove('ring-1', 'ring-violet-500/40') }}
-                      onDrop={e => {
+                      onDragOver={e => {
+                        if (!onReorderPlaylist || draggingClipId == null) return
                         e.preventDefault()
-                        e.currentTarget.classList.remove('ring-1', 'ring-violet-500/40')
-                        if (!onReorderPlaylist) return
-                        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
-                        const toIdx = idx
-                        if (fromIdx === toIdx || isNaN(fromIdx)) return
-                        const next = [...videoPlaylist]
-                        const [removed] = next.splice(fromIdx, 1)
-                        next.splice(toIdx, 0, removed)
-                        onReorderPlaylist(next)
+                        e.dataTransfer.dropEffect = 'move'
+                        setDragOverIndex(idx)
                       }}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${onReorderPlaylist ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                      onDragLeave={() => {
+                        if (dragOverIndex === idx) setDragOverIndex(null)
+                      }}
+                      onDrop={e => handlePlaylistDrop(e, idx)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
                         clip.id === activeVideoId
                           ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
                           : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
+                      } ${
+                        draggingClipId === clip.id ? 'opacity-45 scale-[0.98]' : ''
+                      } ${
+                        dragOverIndex === idx && draggingClipId !== clip.id ? 'ring-1 ring-violet-500/50 bg-violet-500/10' : ''
                       }`}
                     >
                       {/* Drag handle */}
                       {onReorderPlaylist && (
-                        <span className="flex-shrink-0 text-white/25 hover:text-white/50 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                        <span
+                          draggable
+                          onDragStart={e => handlePlaylistDragStart(e, clip, idx)}
+                          onDragEnd={handlePlaylistDragEnd}
+                          onMouseDown={e => e.stopPropagation()}
+                          className="flex-shrink-0 text-white/25 hover:text-white/60 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-white/10"
+                          title="Drag to reorder"
+                        >
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
                         </span>
                       )}
@@ -459,6 +505,24 @@ function UIPanel({
                       )}
                     </div>
                   ))}
+                  {onReorderPlaylist && (
+                    <div
+                      onDragOver={e => {
+                        if (draggingClipId == null) return
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        setDragOverIndex(videoPlaylist.length)
+                      }}
+                      onDrop={e => handlePlaylistDrop(e, videoPlaylist.length - 1)}
+                      onDragLeave={() => {
+                        if (dragOverIndex === videoPlaylist.length) setDragOverIndex(null)
+                      }}
+                      className={`h-2 rounded-full transition-all ${
+                        dragOverIndex === videoPlaylist.length ? 'bg-violet-500/40' : 'bg-transparent'
+                      }`}
+                      aria-hidden="true"
+                    />
+                  )}
                   <button
                     onClick={onClearPlaylist}
                     className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
