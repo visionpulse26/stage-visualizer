@@ -406,7 +406,7 @@ function UIPanel({
                     <div
                       key={clip.id}
                       onDragOver={e => {
-                        // Use dragIndexRef (sync) — draggingClipId updates async and blocks preventDefault on first dragovers
+                        // dragIndexRef is set synchronously in onDragStart; React state would be too late for preventDefault
                         if (!onReorderPlaylist || dragIndexRef.current == null) return
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
