@@ -251,7 +251,7 @@ function UIPanel({
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
 
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
+    <div data-ui-panel className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>
       {/* Section tabs */}
       <div className="flex gap-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-1">
         {sections.map(s => (

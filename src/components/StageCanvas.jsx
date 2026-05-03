@@ -492,6 +492,10 @@ function StageCanvas({
     : (bloomThreshold ?? 1.2)
 
   const blockFriction = useCallback((e) => {
+    // Only block drag on the 3D canvas itself, not on UI panel children that
+    // implement their own drag (e.g. playlist reorder). If the drag originates
+    // from a [draggable] element inside a .ui-panel subtree, let it through.
+    if (e.target.closest && e.target.closest('[data-ui-panel]')) return
     e.preventDefault()
   }, [])
 
