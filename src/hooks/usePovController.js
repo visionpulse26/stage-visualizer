@@ -113,11 +113,8 @@ export function usePovController({
 
       const rb = rigidBodyRef?.current
       if (rb) {
-        const t = rb.translation()
-        const nx = t.x + velRef.current.x * delta
-        const ny = floorY
-        const nz = t.z + velRef.current.z * delta
-        rb.setNextKinematicTranslation({ x: nx, y: ny, z: nz })
+        const current = rb.linvel()
+        rb.setLinvel({ x: velRef.current.x, y: current.y, z: velRef.current.z }, true)
       } else {
         camera.position.addScaledVector(velRef.current, delta)
         camera.position.y = floorY
