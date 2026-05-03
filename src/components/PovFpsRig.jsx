@@ -54,7 +54,7 @@ export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, s
               className="pointer-events-auto px-5 py-3 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md text-[11px] font-semibold uppercase tracking-widest text-white/85 hover:bg-black/85 hover:border-violet-500/40 transition-all"
               style={{ fontFamily: "'Chakra Petch', sans-serif" }}
             >
-              Click to capture mouse · WASD · Space jump · Esc to exit POV
+              Click to capture mouse · WASD · Space jump · Q/E clips · 1–9 slot · P screenshot · Esc exit POV
             </button>
           </div>
         </Html>

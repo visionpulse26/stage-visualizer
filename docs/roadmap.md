@@ -12,7 +12,7 @@ Status reflects the beta worktree after the latest local POV updates.
 | **P3a** | Admin collider manager: scan GLB meshes, assign `Auto / Floor / Blocker / Ignore`, save config in `scene_config.povColliderConfig` | Done |
 | **P3b** | Floor collider refinement: tile floor colliders instead of one large mesh bbox | Done |
 | **P3c** | Space jump: grounded jump using Rapier vertical velocity; supports default floor and assigned floor colliders | Done (local beta) |
-| **P4** | POV HUD lockout + headless media hotkeys (`Q/E`, number keys, screenshot shortcut) | Planned |
+| **P4** | POV HUD lockout + headless media hotkeys (`Q/E`, number keys, screenshot shortcut) | **Done** (beta) |
 | **P5** | Collider debug overlay + more detailed blocker colliders / step-climb refinement | Planned |
 
 ### Epic #1 Notes
@@ -20,7 +20,7 @@ Status reflects the beta worktree after the latest local POV updates.
 - Public client route `/view/:projectId` remains orbit-only.
 - `@react-three/rapier` is lazy-loaded through `PovFpsRig`, so physics is mounted only when POV is active.
 - Current blockers are still cuboid colliders around selected meshes. This is usable for safety boundaries but not yet mesh-accurate.
-- Space jump is committed locally in beta and needs push when accepted.
+- P4: In POV, Admin/Collab side panels and TopBar hide; fixed **Exit POV** + hotkey legend; `Q`/`E` cycle playlist, `1`–`9` jump to slot, `P` saves a watermarked screenshot (pointer-lock on canvas only).
 - Production build passes; POV chunk remains large and should be code-split further later.
 
 ## EPIC #2 - Embed widget (public stage in iframe / LMS)
