@@ -102,6 +102,8 @@ function UIPanel({
   transparentLedConfig, onTransparentLedConfigChange,
   // ── POV Collider Manager ─────────────────────────────────────────────────
   meshMetadata, povColliderConfig, onPovColliderConfigChange,
+  /** EPIC #1 P4 — hide panel while in POV (headless hotkeys on canvas) */
+  povMode = false,
 }) {
   const modelInputRef      = useRef(null)
   const videoInputRef      = useRef(null)
@@ -253,6 +255,8 @@ function UIPanel({
   ]
 
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
+
+  if (povMode) return null
 
   return (
     <div data-ui-panel className="absolute top-4 left-4 z-10 flex flex-col gap-2" style={{ width: 280 }}>

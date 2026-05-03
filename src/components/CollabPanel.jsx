@@ -134,6 +134,9 @@ function CollabPanel({
     { id: 'camera', label: 'Camera', icon: <IconCamera /> },
   ]
 
+  // P4 — immersive POV: hide sandbox UI until Exit POV (use fixed button + hotkeys)
+  if (povMode) return null
+
   if (!isVisible) {
     return (
       <button

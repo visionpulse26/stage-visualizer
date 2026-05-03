@@ -13,6 +13,8 @@ import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage 
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
+import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
+import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -665,6 +667,25 @@ function AdminPage() {
     setPovMode(true)
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
+  const handlePovScreenshot = useCallback(() => {
+    const canvas = document.querySelector('canvas')
+    if (!canvas) return
+    const dataUrl = captureScreenshotWithWatermark(canvas, projectName, versionStatus)
+    const a = document.createElement('a')
+    a.download = `Stage_Admin_${publishedId || 'local'}.png`
+    a.href = dataUrl
+    a.click()
+  }, [projectName, versionStatus, publishedId])
+
+  usePovHeadlessMedia({
+    active: povMode,
+    glDomElementRef,
+    videoPlaylist,
+    activeVideoId,
+    onActivateClip: handleActivateVideo,
+    onScreenshot: handlePovScreenshot,
+  })
+
   const resetPovSession = useCallback(() => {
     if (document.pointerLockElement) {
       try { document.exitPointerLock() } catch (_) {}
@@ -1140,9 +1161,10 @@ function AdminPage() {
           meshMetadata={meshMetadata}
           povColliderConfig={povColliderConfig}
           onPovColliderConfigChange={setPovColliderConfig}
+          povMode={povMode}
         />
 
-        <TopBar role="Admin" color="violet" />
+        {!povMode && <TopBar role="Admin" color="violet" />}
 
         {!isTouchDevice() && (stageUrl || cloudStageUrl) && (
           <button
@@ -1159,9 +1181,18 @@ function AdminPage() {
             {povMode ? 'Exit POV' : 'Audience POV'}
           </button>
         )}
+
+        {povMode && (
+          <div
+            className="pointer-events-none fixed bottom-6 left-1/2 z-[5001] max-w-[min(100%,36rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-black/55 px-4 py-2 text-center text-[10px] text-white/50"
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
+          </div>
+        )}
       </StageCanvas>
 
-      <ClientRadarPanel publishedId={publishedId} />
+      {!povMode && <ClientRadarPanel publishedId={publishedId} />}
 
       {isDashboardOpen && (
         <ProjectsDashboard

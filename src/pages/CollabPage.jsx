@@ -17,6 +17,7 @@ import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
+import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -661,6 +662,15 @@ function CollabPage() {
     a.click()
   }, [projectId, projectName, versionStatus])
 
+  usePovHeadlessMedia({
+    active: povMode,
+    glDomElementRef,
+    videoPlaylist,
+    activeVideoId,
+    onActivateClip: handleActivateVideo,
+    onScreenshot: handleScreenshot,
+  })
+
   // ── Sun position vector ───────────────────────────────────────────────────
   const sunPosition = useMemo(() => {
     const az = (sunAzimuth   * Math.PI) / 180
@@ -767,12 +777,34 @@ function CollabPage() {
           showPovControl={!isTouchDevice() && !!modelUrl && !!modelMetrics && sceneReady}
         />
 
-        <TopBar role={null} color="cyan" />
-        <Notch status={versionStatus} />
+        {!povMode && <TopBar role={null} color="cyan" />}
+        {!povMode && <Notch status={versionStatus} />}
 
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
-          Project: <span className="text-white/60 font-mono">{projectId}</span>
-        </div>
+        {!isTouchDevice() && povMode && !!modelUrl && !!modelMetrics && (
+          <button
+            type="button"
+            onClick={handlePovToggle}
+            className="fixed top-14 right-4 z-[5000] px-3 py-2 rounded-xl border text-[10px] font-semibold uppercase tracking-widest transition-all backdrop-blur-sm bg-amber-500/20 border-amber-500/45 text-amber-100"
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            Exit audience POV
+          </button>
+        )}
+
+        {povMode && (
+          <div
+            className="pointer-events-none fixed bottom-6 left-1/2 z-[5001] max-w-[min(100%,36rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-black/55 px-4 py-2 text-center text-[10px] text-white/50"
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
+          </div>
+        )}
+
+        {!povMode && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
+            Project: <span className="text-white/60 font-mono">{projectId}</span>
+          </div>
+        )}
       </StageCanvas>
 
       {/* LOCAL Camera video element (visible preview when active) */}

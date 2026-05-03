@@ -6,13 +6,13 @@ Release scope for `main`: bring over the stable POV stack only. Public client ro
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| **P1** | POV foundation: `pov_height_offset` schema, admin height control, saved publish payload | Ready to release |
-| **P2** | POV entry / exit: orbit state capture, smooth camera transition, pointer-lock handoff, Esc exit | Ready to release |
-| **P3** | FPS controller: mouse look, WASD movement, Rapier physics capsule, gravity, geofence walls | Ready to release |
-| **P3a** | Admin collider manager: scan GLB meshes, assign `Auto / Floor / Blocker / Ignore`, save config in `scene_config.povColliderConfig` | Ready to release |
-| **P3b** | Floor collider refinement: tile floor colliders instead of one large mesh bbox | Ready to release |
-| **P3c** | Space jump: grounded jump using Rapier vertical velocity; supports default floor and assigned floor colliders | Ready to release |
-| **P4** | POV HUD lockout + headless media hotkeys (`Q/E`, number keys, screenshot shortcut) | Ready to release |
+| **P1** | POV foundation: `pov_height_offset` schema, admin height control, saved publish payload | Done |
+| **P2** | POV entry / exit: orbit state capture, smooth camera transition, pointer-lock handoff, Esc exit | Done |
+| **P3** | FPS controller: mouse look, WASD movement, Rapier physics capsule, gravity, geofence walls | Done |
+| **P3a** | Admin collider manager: scan GLB meshes, assign `Auto / Floor / Blocker / Ignore`, save config in `scene_config.povColliderConfig` | Done |
+| **P3b** | Floor collider refinement: tile floor colliders instead of one large mesh bbox | Done |
+| **P3c** | Space jump: grounded jump using Rapier vertical velocity; supports default floor and assigned floor colliders | Done |
+| **P4** | POV HUD lockout + headless media hotkeys (`Q/E`, number keys, screenshot shortcut) | Done |
 | **P5** | Collider debug overlay + blocker detail refinement + stair step-assist | Planned |
 
 ### EPIC #1 Collider Plan
@@ -31,6 +31,7 @@ Release scope for `main`: bring over the stable POV stack only. Public client ro
 - `@react-three/rapier` should be lazy-loaded through the POV rig, so physics mounts only when POV is active.
 - POV belongs to Admin and Collab routes first. Client view remains simple and stable until this is proven in production.
 - The current main release intentionally excludes the beta P5 blocker refinement that generated many AABB subdivisions.
+- P4: In POV, Admin/Collab side panels and TopBar hide; fixed **Exit POV** + hotkey legend; `Q`/`E` cycle playlist, `1`-`9` jump to slot, `P` saves a watermarked screenshot.
 
 ## EPIC #2 - Embed widget (public stage in iframe / LMS)
 
