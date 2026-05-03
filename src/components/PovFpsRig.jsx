@@ -37,6 +37,7 @@ export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, s
             geofenceBox={geofenceBox}
             geofencePadding={geofencePadding}
             gl={gl}
+            stageColliders={stageColliders}
           />
         </Physics>
       </Suspense>
