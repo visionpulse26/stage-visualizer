@@ -36,10 +36,6 @@
       "source": "/embed/:path*",
       "headers": [
         {
-          "key": "X-Frame-Options",
-          "value": "ALLOWALL"
-        },
-        {
           "key": "Cross-Origin-Embedder-Policy",
           "value": "unsafe-none"
         },
