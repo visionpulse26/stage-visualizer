@@ -80,6 +80,7 @@ function ClientPage() {
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
+  const [clipTransition, setClipTransition] = useState({ active: false, name: '' })
 
   const videoRef = useRef(null)
   const activationSeqRef = useRef(0)
@@ -101,7 +102,7 @@ function ClientPage() {
   }, [projectId, resetStageLoading])
 
   // ── Shared video activation helper — blob URLs kept in cache until project change/unmount ──
-  const activateVideo = useCallback((id, url) => {
+  const activateVideo = useCallback((id, url, activationSeq) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     setVideoLoaded(false)
     const v = document.createElement('video')
@@ -112,6 +113,7 @@ function ClientPage() {
     v.playsInline = true
     v.preload = 'auto'
     v.addEventListener('loadeddata', () => {
+      if (activationSeq && activationSeq !== activationSeqRef.current) return
       // Do NOT revoke blob here — keeps URL valid when switching back to this clip
       v.play().catch(() => {})
       videoRef.current = v
@@ -119,10 +121,13 @@ function ClientPage() {
       setVideoLoaded(true)
       setActiveVideoId(id)
       setIsPlaying(true)
+      setClipTransition({ active: false, name: '' })
     })
     v.addEventListener('error', () => {
+      if (activationSeq && activationSeq !== activationSeqRef.current) return
       setVideoLoaded(false)
       setIsPlaying(false)
+      setClipTransition({ active: false, name: '' })
     })
     v.load()
   }, [])
@@ -137,6 +142,7 @@ function ClientPage() {
   const activateClip = useCallback(async (clip, { track = true } = {}) => {
     if (!clip) return
     const activationSeq = ++activationSeqRef.current
+    if (track) setClipTransition({ active: true, name: clip?.name || 'Next scene' })
     if (track) recordClientInteraction(projectId, 'clip_play', clip?.name || 'Unknown')
     startClipWatch?.(clip?.name || 'Unknown')
     setVideoLoaded(false)
@@ -154,11 +160,11 @@ function ClientPage() {
       setVideoElement(null)
       setActiveImageUrl(url)
       setActiveVideoId(clip.id)
-      setVideoLoaded(true)
+      setVideoLoaded(false)
       setIsPlaying(false)
     } else {
       setActiveImageUrl(null)
-      activateVideo(clip.id, url)
+      activateVideo(clip.id, url, activationSeq)
     }
   }, [activateVideo, projectId, resolvePlayableUrl, startClipWatch])
 
@@ -177,6 +183,7 @@ function ClientPage() {
       setActiveImageUrl(null)
       setVideoElement(null)
       setVideoLoaded(false)
+      setClipTransition({ active: false, name: '' })
 
       try {
         const { data, error } = await supabase
@@ -313,6 +320,11 @@ function ClientPage() {
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
 
+  const handleImageTextureLoaded = useCallback(() => {
+    setVideoLoaded(true)
+    setClipTransition({ active: false, name: '' })
+  }, [])
+
   const handleScreenshot = useCallback(() => {
     const canvas = document.querySelector('canvas')
     if (!canvas) return
@@ -430,6 +442,7 @@ function ClientPage() {
         bloomThreshold={bloomThreshold}
         protectLed={protectLed}
         transparentLedConfig={transparentLedConfig}
+        onImageTextureLoaded={handleImageTextureLoaded}
       >
         <ClientPanel
           cameraPresets={cameraPresets}
@@ -449,6 +462,11 @@ function ClientPage() {
 
         <Notch status={versionStatus} />
       </StageCanvas>
+
+      <NextSceneLoadingPopup
+        show={sceneReady && clipTransition.active}
+        clipName={clipTransition.name}
+      />
 
       <GlobalFooter projectName={projectName} />
     </div>
@@ -489,6 +507,41 @@ function ClientLinkLocked() {
           </p>
         </div>
       </div>
+    </div>
+  )
+}
+
+function NextSceneLoadingPopup({ show, clipName }) {
+  if (!show) return null
+
+  return (
+    <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center px-4">
+      <div className="pointer-events-auto min-w-[260px] max-w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-white/12 bg-black/70 backdrop-blur-xl shadow-2xl px-5 py-4">
+        <div className="flex items-center gap-4">
+          <div className="relative h-10 w-10 flex-shrink-0">
+            <div className="absolute inset-0 rounded-full border border-[#FF5F1F]/25" />
+            <div className="absolute inset-1 rounded-full border-2 border-white/10 border-t-[#FF5F1F] animate-spin" />
+            <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#FF5F1F]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#FF5F1F]">
+              Loading next scene
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold text-white/90">
+              {clipName || 'Preparing visual'}
+            </p>
+            <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 rounded-full bg-[#FF5F1F] animate-[scene-progress_1.15s_ease-in-out_infinite]" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <style>{`
+        @keyframes scene-progress {
+          0% { transform: translateX(-110%); }
+          100% { transform: translateX(220%); }
+        }
+      `}</style>
     </div>
   )
 }
