@@ -1,3 +1,4 @@
+﻿import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage  from './pages/LoginPage'
@@ -5,6 +6,8 @@ import AdminPage  from './pages/AdminPage'
 import CollabPage from './pages/CollabPage'
 import ClientPage from './pages/ClientPage'
 import PrivacyPage from './pages/PrivacyPage'
+
+const EmbedPage = lazy(() => import('./pages/EmbedPage'))
 
 function App() {
   return (
@@ -30,6 +33,18 @@ function App() {
 
         {/* Public: End-client view — no login required */}
         <Route path="/view/:projectId" element={<ClientPage />} />
+
+        {/* Protected: Embed preview — admin-only for V1; will be made public when embed-token API ships */}
+        <Route
+          path="/embed/:projectId"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={null}>
+                <EmbedPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
 
         {/* Fallback: unknown paths → login */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -70,6 +70,7 @@ function AdminPage() {
   const [publishError,  setPublishError]  = useState(null)
   const [projectName,   setProjectName]   = useState('')
   const [versionStatus, setVersionStatus] = useState('')
+  const [embedEnabled,  setEmbedEnabled]  = useState(false)
 
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
@@ -641,6 +642,7 @@ function AdminPage() {
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
+    setEmbedEnabled(p.embed_enabled ?? false)
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
@@ -885,6 +887,7 @@ function AdminPage() {
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
         scene_config,
+        embed_enabled:   embedEnabled,
       }
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
@@ -910,7 +913,7 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
+      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus, embedEnabled])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -996,6 +999,8 @@ function AdminPage() {
           onOpenDashboard={() => setIsDashboardOpen(true)}
           onCloneAsNewRound={handleCloneAsNewRound}
           cloneToast={cloneToast}
+          embedEnabled={embedEnabled}
+          onEmbedEnabledChange={setEmbedEnabled}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
           hdriError={hdriError}
