@@ -1,4 +1,4 @@
-{
+﻿{
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
@@ -29,23 +29,6 @@
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' data: https: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://visual.tooawake.mov https://*.r2.dev https://*.r2.cloudflarestorage.com blob:; worker-src 'self' blob:; upgrade-insecure-requests"
-        }
-      ]
-    },
-    {
-      "source": "/embed/:path*",
-      "headers": [
-        {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "unsafe-none"
-        },
-        {
-          "key": "Cross-Origin-Resource-Policy",
-          "value": "cross-origin"
-        },
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'self' https://www.canva.com https://canva.com https://www.notion.so https://notion.so https://*.notion.site; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' data: https: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://visual.tooawake.mov https://*.r2.dev https://*.r2.cloudflarestorage.com blob:; worker-src 'self' blob:; upgrade-insecure-requests"
         }
       ]
     }
