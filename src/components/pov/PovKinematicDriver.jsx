@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useBeforePhysicsStep, useAfterPhysicsStep } from '@react-three/rapier'
 import { usePovController } from '../../hooks/usePovController'
 
@@ -50,7 +51,7 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     [],
   )
 
-  const { tick } = usePovController({
+  const { tick, applyLook } = usePovController({
     enabled,
     camera,
     gl,
@@ -61,6 +62,11 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     stageColliders,
     capsuleRestCenterY: CAPSULE_REST_CENTER_Y,
     capsuleRadius: CAPSULE_RADIUS,
+  })
+
+  // Rotation runs every render frame → always smooth, independent of physics rate
+  useFrame(() => {
+    if (enabled) applyLook()
   })
 
   useBeforePhysicsStep(() => {

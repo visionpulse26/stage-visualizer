@@ -16,11 +16,14 @@
  *   override === 'ignore'           →  skip (no collider)
  */
 
-const MIN_HALF = 0.02 // guard against zero-size colliders
+import { MIN_HALF, buildBlockerSubdivisions } from './povColliderUtils'
+
+const MAX_BLOCKER_SPECS_TOTAL = 1200
 
 export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig = {}) {
   const overrides = povColliderConfig?.overrides ?? {}
   const specs = []
+  let blockerCount = 0
 
   for (const meta of meshMetadata) {
     const override = overrides[meta.id]
@@ -43,16 +46,28 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
       continue
     }
 
+    if (effectiveRole === 'blocker') {
+      const blockerParts = buildBlockerSubdivisions(meta)
+      blockerParts.forEach((part) => {
+        if (blockerCount >= MAX_BLOCKER_SPECS_TOTAL) return
+        specs.push({
+          id: part.id,
+          type: 'blocker',
+          position: part.position,
+          halfExtents: part.halfExtents,
+        })
+        blockerCount += 1
+      })
+      continue
+    }
+
     specs.push({
-      id:          meta.id,
-      type:        effectiveRole,
-      position:    meta.center,               // [x, y, z]
+      id:       meta.id,
+      type:     effectiveRole,
+      position: meta.center,
       halfExtents: [
         Math.max(meta.size.x * 0.5, MIN_HALF),
-        Math.max(
-          effectiveRole === 'floor' ? Math.min(meta.size.y * 0.5, 0.08) : meta.size.y * 0.5,
-          MIN_HALF,
-        ),
+        Math.max(Math.min(meta.size.y * 0.5, 0.08), MIN_HALF),
         Math.max(meta.size.z * 0.5, MIN_HALF),
       ],
     })

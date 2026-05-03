@@ -56,6 +56,7 @@ function AdminPage() {
   // ── Epic 1 — Audience POV ────────────────────────────────────────────────────
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
+  const [povDebug, setPovDebug] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
   // Collider manager: meshes scanned from loaded model + admin config overrides
   const [meshMetadata, setMeshMetadata]           = useState([])
@@ -697,6 +698,7 @@ function AdminPage() {
     povExitInProgressRef.current = false
     povModeRef.current = false
     setPovMode(false)
+    setPovDebug(false)
     setMeshMetadata([])
   }, [])
 
@@ -1084,6 +1086,7 @@ function AdminPage() {
         onMeshScanChange={setMeshMetadata}
         stageColliders={povColliderSpecs}
         povMode={povMode}
+        povDebug={povDebug}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
@@ -1209,11 +1212,26 @@ function AdminPage() {
         )}
 
         {povMode && (
+          <button
+            type="button"
+            onClick={() => setPovDebug((v) => !v)}
+            className={`fixed top-14 right-36 z-[5000] px-3 py-2 rounded-xl border text-[10px] font-semibold uppercase tracking-widest transition-all backdrop-blur-sm ${
+              povDebug
+                ? 'bg-emerald-500/20 border-emerald-500/45 text-emerald-100'
+                : 'bg-black/45 border-white/15 text-white/65 hover:text-white hover:border-emerald-500/40'
+            }`}
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            {povDebug ? 'Debug ON' : 'Debug OFF'}
+          </button>
+        )}
+
+        {povMode && (
           <div
             className="pointer-events-none fixed bottom-6 left-1/2 z-[5001] max-w-[min(100%,36rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-black/55 px-4 py-2 text-center text-[10px] text-white/50"
             style={{ fontFamily: "'Chakra Petch', sans-serif" }}
           >
-            Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
+            Q / E — prev · next clip · 1-9 — slot · P — screenshot · Esc — exit POV · Debug toggle on top-right
           </div>
         )}
       </StageCanvas>

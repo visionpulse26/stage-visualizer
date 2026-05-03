@@ -37,10 +37,15 @@ function suggestRole(name, materialNames, center, size) {
   const isLow  = center.y < 1.5
   if (isWide && isThin && isLow) return 'floor'
 
-  // Blocker heuristic: named like cover/mask/frame, or: big box-like object
+  // Stair / ramp bodies: moderate height + non-trivial footprint + low center → floor tiles handle them
+  const maxXZ = Math.max(size.x, size.z)
+  const isStairBody = size.y >= 0.5 && size.y <= 3.5 && maxXZ >= 1.5 && center.y < size.y + 0.5
+  if (isStairBody) return 'floor'
+
+  // Blocker heuristic: named like wall/column, or: clearly tall narrow object
   if (/\b(COVER|MASK|FORMAT|FRAME|SUPPORT|WALL|FASCIA|PANEL|PILLAR|COLUMN|BACKDROP|SCRIM|LEG)\b/.test(tokens)) return 'blocker'
-  const isLargeEnough = Math.max(size.x, size.z) > 0.8 && size.y > 0.5
-  if (isLargeEnough) return 'blocker'
+  const isTallNarrow = size.y > 1.2 && Math.min(size.x, size.z) < 1.0 && maxXZ > 0.6
+  if (isTallNarrow) return 'blocker'
 
   return 'ignore'
 }

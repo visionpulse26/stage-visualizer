@@ -3,6 +3,7 @@ import * as THREE from 'three'
 
 const PITCH_LIMIT = 1.39
 const GLOBAL_FLOOR_TOP_Y = 0
+const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
 
 /**
  * First-person movement + look while orbit CameraControls are disconnected.
@@ -115,13 +116,18 @@ export function usePovController({
     return () => document.removeEventListener('mousemove', onMove)
   }, [enabled, gl, lookSensitivity])
 
+  // applyLook: called every render frame (useFrame) — rotation is always smooth
+  const applyLook = useCallback(() => {
+    if (!enabled || !camera) return
+    _euler.set(pitchRef.current, yawRef.current, 0, 'YXZ')
+    camera.quaternion.setFromEuler(_euler)
+  }, [enabled, camera])
+
+  // tick: called in useBeforePhysicsStep at fixed 60hz — drives velocity only
   const tick = useCallback(
-    (delta) => {
+    (_delta) => {
       if (!enabled || !camera) return
       const isLocked = !gl || document.pointerLockElement === gl.domElement
-
-      const euler = new THREE.Euler(pitchRef.current, yawRef.current, 0, 'YXZ')
-      camera.quaternion.setFromEuler(euler)
 
       if (!isLocked) {
         keysRef.current = {}
@@ -130,6 +136,7 @@ export function usePovController({
         return
       }
 
+      // Use current camera quaternion (already set by applyLook this frame)
       const forward = tempForwardRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion)
       forward.y = 0
       if (forward.lengthSq() > 1e-10) forward.normalize()
@@ -161,7 +168,7 @@ export function usePovController({
         }, true)
       } else {
         prevJumpRef.current = false
-        camera.position.addScaledVector(velRef.current, delta)
+        camera.position.addScaledVector(velRef.current, _delta)
         camera.position.y = floorY
         if (expandedGeofence?.isBox3) {
           camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
@@ -172,5 +179,5 @@ export function usePovController({
     [enabled, camera, floorY, expandedGeofence, gl, isGrounded, jumpSpeed, moveSpeed, rigidBodyRef],
   )
 
-  return { tick }
+  return { tick, applyLook }
 }

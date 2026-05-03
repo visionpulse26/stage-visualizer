@@ -537,6 +537,8 @@ function StageCanvas({
   onMeshScanChange,
   /** Pre-computed PovColliderSpec[] from host page (Admin/Collab); passed straight to PovFpsRig. */
   stageColliders = [],
+  /** Shows wireframe colliders while in POV (debug only). */
+  povDebug = false,
   children,
 }) {
   const internalPresetRef = useRef(null)
@@ -790,6 +792,7 @@ function StageCanvas({
               geofenceBox={modelMetrics?.box ?? null}
               geofencePadding={povGeofencePadding}
               stageColliders={stageColliders}
+              debugEnabled={povDebug}
             />
           </Suspense>
         )}

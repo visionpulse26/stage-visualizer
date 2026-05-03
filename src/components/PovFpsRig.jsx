@@ -4,11 +4,19 @@ import { Suspense, useEffect, useState } from 'react'
 import { Physics } from '@react-three/rapier'
 import { PovStageColliders } from './pov/PovStageColliders'
 import { PovKinematicDriver } from './pov/PovKinematicDriver'
+import { PovDebugOverlay } from './pov/PovDebugOverlay'
 
 /**
  * Epic 1 Phase 2–3 — POV inside Rapier (floor + geofence walls) + pointer-lock overlay.
  */
-export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, stageColliders = [] }) {
+export function PovFpsRig({
+  enabled,
+  floorY,
+  geofenceBox,
+  geofencePadding = 0,
+  stageColliders = [],
+  debugEnabled = false,
+}) {
   const { gl } = useThree()
 
   const [locked, setLocked] = useState(() => document.pointerLockElement === gl.domElement)
@@ -39,6 +47,13 @@ export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, s
             gl={gl}
             stageColliders={stageColliders}
           />
+          {debugEnabled && (
+            <PovDebugOverlay
+              stageColliders={stageColliders}
+              geofenceBox={geofenceBox}
+              geofencePadding={geofencePadding}
+            />
+          )}
         </Physics>
       </Suspense>
 
