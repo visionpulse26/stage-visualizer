@@ -34,15 +34,13 @@ function App() {
         {/* Public: End-client view — no login required */}
         <Route path="/view/:projectId" element={<ClientPage />} />
 
-        {/* Protected: Embed preview — admin-only for V1; will be made public when embed-token API ships */}
+        {/* Public: Embed by opaque token (P9). Logged-in admins see preview chrome; anon sees canvas only. */}
         <Route
-          path="/embed/:projectId"
+          path="/embed/:embedToken"
           element={
-            <ProtectedRoute>
-              <Suspense fallback={null}>
-                <EmbedPage />
-              </Suspense>
-            </ProtectedRoute>
+            <Suspense fallback={null}>
+              <EmbedPage />
+            </Suspense>
           }
         />
 

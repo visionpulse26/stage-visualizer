@@ -68,7 +68,7 @@
   ],
   "rewrites": [
     {
-      "source": "/embed/:projectId",
+      "source": "/embed/:embedToken",
       "destination": "/index.html"
     },
     {

@@ -29,13 +29,13 @@ Phases tracked in code comments (`EmbedPage.jsx`, `App.jsx`). Status reflects th
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| **P6** | Route `/embed/:projectId`, admin toggle `embed_enabled`, base layout + sidebar (embed code / preview chrome) | Done |
+| **P6** | Route `/embed/:embedToken`, admin toggle `embed_enabled`, base layout + sidebar (embed code / preview chrome) | Done |
 | **P7** | Wire **3D `StageCanvas`** (same scene as Client view): load `stage_url`, `scene_config`, `camera_presets`, optional `media_playlist` / `video_url`; minimal controls (camera presets, orbit) | Done |
 | **P8** | Deploy headers / CSP so the embed URL can be iframed on external sites (e.g. Canvas LMS): relax `frame-ancestors` + remove `X-Frame-Options: DENY` for `/embed` only | Done |
-| **P9** | **Embed token API** - public URL by opaque token (not raw project UUID), optional regenerate/revoke; remove `ProtectedRoute` from embed when ready | Planned |
+| **P9** | **Embed token** — column `embed_token`, public `/embed/:token` without login, legacy project UUID in URL still works when embed_enabled; admin regenerate token + iframe-only UI for anonymous | **Done** (beta worktree) |
 | **P10** | Optional: analytics for embed views, rate limits, signed short-lived URLs | Future |
 
 ### Epic #2 Notes
 
-- **Admin preview** (`/embed/:projectId` behind `ProtectedRoute`): full stage preview with embed chrome; mirrors what will ship publicly after P9.
-- **Security**: Until P9, only authenticated admins can open `/embed/...`. After P9, enforce `embed_enabled` + token for anonymous access.
+- **Admin preview**: logged-in users opening `/embed/:token` see chrome + iframe snippet; anonymous visitors see the stage canvas only.
+- **Security**: Run `supabase/embed_token_migration.sql` on production DB before relying on opaque URLs. Until migration, embed links fall back to project UUID with a warning in Admin publish panel.

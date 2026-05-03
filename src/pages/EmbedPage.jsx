@@ -10,14 +10,33 @@ import { recordClientPageView } from '../lib/analyticsTracker'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 
+/** Legacy URLs used project UUID in /embed/:id — still accepted when embed_enabled. */
+function looksLikeUuid(s) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(s || '').trim()
+  )
+}
+
 /**
- * Embed preview — admin-only until P9 (embed-token) ships.
- * Renders the same 3D stage as Client view (P7), with minimal chrome for iframe / LMS (P8 headers).
+ * Public embed (P9): `/embed/:embedToken` — opaque token, no login.
+ * Logged-in users still see admin preview chrome + iframe snippet sidebar.
  */
 export default function EmbedPage() {
-  const { projectId } = useParams()
+  const { embedToken: slug } = useParams()
   const navigate = useNavigate()
   useSecurityLockdown()
+
+  const [session, setSession] = useState(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null))
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_evt, s) => setSession(s))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const isAdminPreview = !!session
 
   const {
     loadingManager,
@@ -84,7 +103,7 @@ export default function EmbedPage() {
 
   useEffect(() => {
     resetStageLoading()
-  }, [projectId, resetStageLoading])
+  }, [slug, resetStageLoading])
 
   const activateVideo = useCallback((_id, url) => {
     if (videoRef.current) {
@@ -120,7 +139,7 @@ export default function EmbedPage() {
             addBlob(blobUrl)
             url = blobUrl
           } catch {
-            /* keep remote URL */
+            /* keep remote */
           }
         }
         restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
@@ -131,7 +150,7 @@ export default function EmbedPage() {
   )
 
   useEffect(() => {
-    if (!projectId) {
+    if (!slug) {
       setIsDbLoading(false)
       setProjectNotFound(true)
       return
@@ -145,22 +164,38 @@ export default function EmbedPage() {
       setProjectNotFound(false)
 
       try {
-        const { data, error } = await supabase
+        let data = null
+
+        const byToken = await supabase
           .from('projects')
           .select('*')
-          .eq('id', projectId)
-          .single()
+          .eq('embed_token', slug)
+          .eq('embed_enabled', true)
+          .maybeSingle()
+
+        if (cancelled) return
+        data = byToken.data
+
+        if (!data && looksLikeUuid(slug)) {
+          const legacy = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', slug)
+            .eq('embed_enabled', true)
+            .maybeSingle()
+          if (!cancelled) data = legacy.data
+        }
 
         if (cancelled) return
 
-        if (error || !data) {
+        if (!data) {
           setProjectNotFound(true)
           setIsDbLoading(false)
           return
         }
 
         setProject(data)
-        recordClientPageView(projectId)
+        recordClientPageView(data.id)
 
         const isRemote = (u) =>
           u && (u.startsWith('http://') || u.startsWith('https://'))
@@ -268,7 +303,7 @@ export default function EmbedPage() {
     return () => {
       cancelled = true
     }
-  }, [projectId, revokeAllBlobs, loadMediaPlaylist, activateVideo, addBlob])
+  }, [slug, revokeAllBlobs, loadMediaPlaylist, activateVideo, addBlob])
 
   const handleHdriLoadError = useCallback(() => {
     setHdriLoading(false)
@@ -285,7 +320,8 @@ export default function EmbedPage() {
   }, [])
 
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
-  const embedUrl = `${baseUrl}/embed/${projectId}`
+  const tokenForPublicUrl = project?.embed_token ?? slug
+  const embedUrl = `${baseUrl}/embed/${tokenForPublicUrl}`
 
   function copyEmbedCode() {
     const code = `<iframe\n  src="${embedUrl}"\n  width="100%"\n  height="500"\n  frameborder="0"\n  allow="fullscreen"\n  style="border-radius:8px"\n></iframe>`
@@ -295,10 +331,10 @@ export default function EmbedPage() {
     })
   }
 
-  if (!projectId) {
+  if (!slug) {
     return (
       <div className="w-full h-full min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-        <p className="text-red-400/80 text-sm">No project ID in URL.</p>
+        <p className="text-red-400/80 text-sm">No embed token in URL.</p>
       </div>
     )
   }
@@ -306,16 +342,99 @@ export default function EmbedPage() {
   if (projectNotFound) {
     return (
       <div className="w-full h-full min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <p className="text-white/50 text-sm">Project not found.</p>
-          <button
-            type="button"
-            onClick={() => navigate('/admin')}
-            className="text-white/30 hover:text-white/60 text-xs underline transition-colors"
-          >
-            Back to Admin
-          </button>
+        <div className="text-center space-y-3 px-4">
+          <p className="text-white/50 text-sm">
+            This embed link is invalid, disabled, or no longer available.
+          </p>
+          {isAdminPreview && (
+            <button
+              type="button"
+              onClick={() => navigate('/admin')}
+              className="text-white/30 hover:text-white/60 text-xs underline transition-colors"
+            >
+              Back to Admin
+            </button>
+          )}
         </div>
+      </div>
+    )
+  }
+
+  if (session === undefined || isDbLoading || !project) {
+    return (
+      <div className="w-full min-h-screen bg-[#0a0a0a]">
+        <BrandedLoadingScreen isLoaded={false} progress={progress} status={status} />
+      </div>
+    )
+  }
+
+  const presetOverlay = (
+    <div className="absolute inset-0 pointer-events-none z-10">
+      <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
+        <div className="flex flex-wrap gap-1.5 pointer-events-auto max-w-[85%]">
+          {cameraPresets.slice(0, 6).map((p, i) => (
+            <button
+              key={p.id ?? i}
+              type="button"
+              onClick={() => handleGoToView(p)}
+              className="px-2.5 py-1 rounded bg-black/50 border border-white/10 text-white/70 text-[10px] backdrop-blur-sm hover:bg-black/70 hover:text-white/90 transition-colors"
+            >
+              {p.name ?? `View ${i + 1}`}
+            </button>
+          ))}
+        </div>
+        <span
+          className="text-white/25 text-[10px] tracking-widest hidden sm:inline"
+          style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+        >
+          TOOAWAKE
+        </span>
+      </div>
+    </div>
+  )
+
+  const stageTree = (
+    <StageCanvas
+      modelUrl={modelUrl}
+      loadingManager={modelUrl ? loadingManager : null}
+      videoElement={videoElement}
+      activeImageUrl={activeImageUrl}
+      onLedMaterialStatus={() => {}}
+      sunPosition={sunPosition}
+      sunIntensity={sunIntensity}
+      gridCellSize={gridCellSize}
+      modelLoaded={!!modelUrl}
+      cameraControlsRef={cameraControlsRef}
+      cameraTargetPresetRef={cameraTargetPresetRef}
+      cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+      hdriPreset={hdriPreset}
+      customHdriUrl={customHdriUrl}
+      hdriFileExt={hdriFileExt}
+      onHdriLoading={setHdriLoading}
+      onHdriLoadError={handleHdriLoadError}
+      onHdriClearRequest={handleClearAllHdri}
+      envIntensity={envIntensity}
+      bgBlur={bgBlur}
+      showHdriBackground={showHdriBackground}
+      bloomStrength={bloomStrength}
+      bloomThreshold={bloomThreshold}
+      protectLed={protectLed}
+      transparentLedConfig={transparentLedConfig}
+    >
+      {presetOverlay}
+    </StageCanvas>
+  )
+
+  // Anonymous iframe visitors: stage only (no admin chrome)
+  if (session === null) {
+    return (
+      <div className="w-full h-[100dvh] min-h-0 bg-[#0a0a0a] relative overflow-hidden">
+        <BrandedLoadingScreen
+          isLoaded={sceneReady}
+          progress={progress}
+          status={status}
+        />
+        <div className="absolute inset-0">{stageTree}</div>
       </div>
     )
   }
@@ -353,7 +472,7 @@ export default function EmbedPage() {
           </button>
           <span className="text-white/10 text-[10px]">/</span>
           <span className="text-white/30 text-[10px] font-mono truncate max-w-[200px]">
-            {project?.name ?? projectId}
+            {project?.name ?? slug}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -376,56 +495,7 @@ export default function EmbedPage() {
           className="flex-1 relative min-h-[50vh] lg:min-h-0 border-b lg:border-b-0 border-white/5"
           style={{ minHeight: 'min(70vh, calc(100vh - 36px))' }}
         >
-          <StageCanvas
-            modelUrl={modelUrl}
-            loadingManager={modelUrl ? loadingManager : null}
-            videoElement={videoElement}
-            activeImageUrl={activeImageUrl}
-            onLedMaterialStatus={() => {}}
-            sunPosition={sunPosition}
-            sunIntensity={sunIntensity}
-            gridCellSize={gridCellSize}
-            modelLoaded={!!modelUrl}
-            cameraControlsRef={cameraControlsRef}
-            cameraTargetPresetRef={cameraTargetPresetRef}
-            cameraFlyDurationSeconds={cameraFlyDurationSeconds}
-            hdriPreset={hdriPreset}
-            customHdriUrl={customHdriUrl}
-            hdriFileExt={hdriFileExt}
-            onHdriLoading={setHdriLoading}
-            onHdriLoadError={handleHdriLoadError}
-            onHdriClearRequest={handleClearAllHdri}
-            envIntensity={envIntensity}
-            bgBlur={bgBlur}
-            showHdriBackground={showHdriBackground}
-            bloomStrength={bloomStrength}
-            bloomThreshold={bloomThreshold}
-            protectLed={protectLed}
-            transparentLedConfig={transparentLedConfig}
-          >
-            <div className="absolute inset-0 pointer-events-none z-10">
-              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
-                <div className="flex flex-wrap gap-1.5 pointer-events-auto max-w-[85%]">
-                  {cameraPresets.slice(0, 6).map((p, i) => (
-                    <button
-                      key={p.id ?? i}
-                      type="button"
-                      onClick={() => handleGoToView(p)}
-                      className="px-2.5 py-1 rounded bg-black/50 border border-white/10 text-white/70 text-[10px] backdrop-blur-sm hover:bg-black/70 hover:text-white/90 transition-colors"
-                    >
-                      {p.name ?? `View ${i + 1}`}
-                    </button>
-                  ))}
-                </div>
-                <span
-                  className="text-white/25 text-[10px] tracking-widest hidden sm:inline"
-                  style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-                >
-                  TOOAWAKE
-                </span>
-              </div>
-            </div>
-          </StageCanvas>
+          {stageTree}
         </div>
 
         <div className="w-full lg:w-72 bg-[#111] border-t lg:border-t-0 lg:border-l border-white/5 p-4 space-y-4 shrink-0">
@@ -434,7 +504,10 @@ export default function EmbedPage() {
             <p className="text-white/70 text-sm font-medium truncate">
               {project?.name ?? 'Untitled'}
             </p>
-            <p className="text-white/20 text-[10px] font-mono">{projectId}</p>
+            <p className="text-white/20 text-[10px] font-mono break-all">{project?.id ?? ''}</p>
+            <p className="text-white/15 text-[9px] font-mono break-all">
+              embed_token: {project?.embed_token ?? '…'}
+            </p>
           </div>
 
           <div className="border-t border-white/5 pt-3 space-y-2">
@@ -461,8 +534,8 @@ export default function EmbedPage() {
 
           <div className="border-t border-white/5 pt-3">
             <p className="text-[10px] text-white/15 leading-relaxed">
-              P7: 3D stage matches Client view. P8: response headers allow iframe embedding on
-              external sites (e.g. Canvas). P9: public embed-token URL (no admin login).
+              P9: Public URL uses opaque embed_token. Anonymous visitors see the stage only (no
+              chrome).
             </p>
           </div>
         </div>

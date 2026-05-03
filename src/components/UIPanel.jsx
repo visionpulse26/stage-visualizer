@@ -74,6 +74,7 @@ function UIPanel({
   onCloneAsNewRound,     // optional
   cloneToast,            // optional: "Project cloned successfully..."
   embedEnabled, onEmbedEnabledChange, // optional: embed widget toggle
+  embedToken, onRegenerateEmbedToken,   // P9: opaque public embed path
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
   hdriPreset, onHdriPresetChange,
   hdriLoading,
@@ -1098,6 +1099,16 @@ function UIPanel({
                 </label>
               )}
 
+              {publishedId && embedEnabled && embedToken && onRegenerateEmbedToken && (
+                <button
+                  type="button"
+                  onClick={onRegenerateEmbedToken}
+                  className="w-full py-2 rounded-lg text-[10px] border border-white/10 text-white/40 hover:text-amber-300/90 hover:border-amber-500/30 transition-all"
+                >
+                  Regenerate embed link (revoke old iframes)
+                </button>
+              )}
+
               {/* Publish button */}
               <button
                 onClick={() => onPublish({})}
@@ -1133,17 +1144,29 @@ function UIPanel({
                     {[
                       { label: 'Collab Link', path: `/collab/${publishedId}` },
                       { label: 'View Link',   path: `/view/${publishedId}` },
-                      ...(embedEnabled ? [{ label: 'Embed Link', path: `/embed/${publishedId}` }] : []),
-                    ].map(({ label, path }) => (
-                      <div key={path} className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>
-                        <button
-                          onClick={() => handleCopy(`${baseUrl}${path}`, label)}
-                          className="flex-1 flex items-center justify-between gap-1 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] text-white/50 hover:text-white/70 font-mono transition-all truncate"
-                        >
-                          <span className="truncate">{path}</span>
-                          {copied === label ? <span className="text-emerald-400 flex-shrink-0 text-[9px]">Copied!</span> : <IconCopy />}
-                        </button>
+                      ...(embedEnabled && embedToken
+                        ? [{ label: 'Embed Link', path: `/embed/${embedToken}` }]
+                        : embedEnabled
+                          ? [{ label: 'Embed Link', path: `/embed/${publishedId}`, warn: true }]
+                          : []),
+                    ].map(({ label, path, warn }) => (
+                      <div key={path} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(`${baseUrl}${path}`, label)}
+                            className="flex-1 flex items-center justify-between gap-1 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] text-white/50 hover:text-white/70 font-mono transition-all truncate"
+                          >
+                            <span className="truncate">{path}</span>
+                            {copied === label ? <span className="text-emerald-400 flex-shrink-0 text-[9px]">Copied!</span> : <IconCopy />}
+                          </button>
+                        </div>
+                        {warn && (
+                          <p className="text-[9px] text-amber-400/70 pl-[4.5rem]">
+                            Run SQL migration <code className="font-mono">embed_token</code> to get a public token URL.
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>

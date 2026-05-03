@@ -95,6 +95,7 @@ function AdminPage() {
   const [projectName,   setProjectName]   = useState('')
   const [versionStatus, setVersionStatus] = useState('')
   const [embedEnabled,  setEmbedEnabled]  = useState(false)
+  const [embedToken,    setEmbedToken]    = useState(null)
 
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
@@ -738,6 +739,7 @@ function AdminPage() {
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
     setEmbedEnabled(p.embed_enabled ?? false)
+    setEmbedToken(p.embed_token ?? null)
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
@@ -884,6 +886,21 @@ function AdminPage() {
   // ── Publish ──────────────────────────────────────────────────────────────
   const canPublish = !!(stageFile || cloudStageUrl)
 
+  const handleRegenerateEmbedToken = useCallback(async () => {
+    if (!publishedId) return
+    if (!window.confirm('Regenerate embed link? Old iframe URLs will stop working.')) return
+    const newTok = crypto.randomUUID()
+    const { error } = await supabase
+      .from('projects')
+      .update({ embed_token: newTok })
+      .eq('id', publishedId)
+    if (error) {
+      alert('Failed to rotate embed token: ' + error.message)
+      return
+    }
+    setEmbedToken(newTok)
+  }, [publishedId])
+
   const handlePublish = useCallback(async ({ videoInputMode, externalVideoUrl }) => {
     if (!stageFile && !cloudStageUrl) return
 
@@ -992,6 +1009,13 @@ function AdminPage() {
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
       if (dbErr) throw new Error(`Database save failed: ${dbErr.message}`)
+
+      const { data: tokRow } = await supabase
+        .from('projects')
+        .select('embed_token')
+        .eq('id', projectId)
+        .single()
+      if (tokRow?.embed_token) setEmbedToken(tokRow.embed_token)
 
       // Mark playlist clips as cloud-backed so re-publish won't re-upload
       setVideoPlaylist(prev => prev.map((clip, i) => ({
@@ -1110,6 +1134,8 @@ function AdminPage() {
           cloneToast={cloneToast}
           embedEnabled={embedEnabled}
           onEmbedEnabledChange={setEmbedEnabled}
+          embedToken={embedToken}
+          onRegenerateEmbedToken={handleRegenerateEmbedToken}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
           hdriError={hdriError}

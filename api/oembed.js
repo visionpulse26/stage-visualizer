@@ -26,9 +26,9 @@ function parseEmbedUrl(raw) {
     const u = new URL(decodeURIComponent(raw))
     if (u.hostname !== ALLOWED_HOST) return null
     if (!u.pathname.startsWith('/embed/')) return null
-    const projectId = u.pathname.replace('/embed/', '').split('/')[0]
-    if (!projectId) return null
-    return { url: u, projectId }
+    const embedSlug = u.pathname.replace('/embed/', '').split('/')[0]
+    if (!embedSlug) return null
+    return { url: u, embedSlug }
   } catch {
     return null
   }
@@ -62,7 +62,7 @@ export default function handler(req, res) {
   const width  = Math.min(parseInt(maxwidth,  10) || DEFAULT_WIDTH,  DEFAULT_WIDTH)
   const height = Math.min(parseInt(maxheight, 10) || DEFAULT_HEIGHT, DEFAULT_HEIGHT)
 
-  const embedSrc = `${PROVIDER_URL}/embed/${parsed.projectId}`
+  const embedSrc = `${PROVIDER_URL}/embed/${parsed.embedSlug}`
 
   const iframeHtml =
     `<iframe` +
@@ -79,7 +79,7 @@ export default function handler(req, res) {
     type:          'rich',
     provider_name: PROVIDER_NAME,
     provider_url:  PROVIDER_URL,
-    title:         `Stage Preview — ${parsed.projectId}`,
+    title:         `Stage Preview — ${parsed.embedSlug}`,
     width,
     height,
     html:          iframeHtml,
