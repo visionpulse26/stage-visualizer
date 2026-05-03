@@ -109,9 +109,9 @@ function UIPanel({
   const [activeSection,    setActiveSection]    = useState('media')
   const [editingClipId,    setEditingClipId]    = useState(null)
   const [editingName,      setEditingName]      = useState('')
-  const [draggingClipId,   setDraggingClipId]   = useState(null)
   const [dragOverIndex,    setDragOverIndex]    = useState(null)
   const renameInputRef     = useRef(null)
+  const dragIndexRef       = useRef(null)
 
   const [externalUrlInput, setExternalUrlInput]  = useState('')
   const [externalStageUrlInput, setExternalStageUrlInput] = useState('')
@@ -160,10 +160,10 @@ function UIPanel({
 
   const handlePlaylistDragStart = useCallback((e, clip, index) => {
     if (!onReorderPlaylist) return
+    dragIndexRef.current = index
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('application/x-tooawake-playlist-index', String(index))
     e.dataTransfer.setData('text/plain', String(index))
-    setDraggingClipId(clip.id)
     setDragOverIndex(index)
   }, [onReorderPlaylist])
 
@@ -173,14 +173,15 @@ function UIPanel({
     const raw =
       e.dataTransfer.getData('application/x-tooawake-playlist-index') ||
       e.dataTransfer.getData('text/plain')
-    const fromIndex = Number.parseInt(raw, 10)
+    const parsedIndex = Number.parseInt(raw, 10)
+    const fromIndex = Number.isInteger(parsedIndex) ? parsedIndex : dragIndexRef.current
     reorderPlaylist(fromIndex, toIndex)
-    setDraggingClipId(null)
+    dragIndexRef.current = null
     setDragOverIndex(null)
   }, [onReorderPlaylist, reorderPlaylist])
 
   const handlePlaylistDragEnd = useCallback(() => {
-    setDraggingClipId(null)
+    dragIndexRef.current = null
     setDragOverIndex(null)
   }, [])
 
@@ -405,7 +406,8 @@ function UIPanel({
                     <div
                       key={clip.id}
                       onDragOver={e => {
-                        if (!onReorderPlaylist || draggingClipId == null) return
+                        // Use dragIndexRef (sync) — draggingClipId updates async and blocks preventDefault on first dragovers
+                        if (!onReorderPlaylist || dragIndexRef.current == null) return
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
                         setDragOverIndex(idx)
@@ -419,9 +421,9 @@ function UIPanel({
                           ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
                           : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
                       } ${
-                        draggingClipId === clip.id ? 'opacity-45 scale-[0.98]' : ''
+                        dragIndexRef.current === idx ? 'opacity-45 scale-[0.98]' : ''
                       } ${
-                        dragOverIndex === idx && draggingClipId !== clip.id ? 'ring-1 ring-violet-500/50 bg-violet-500/10' : ''
+                        dragOverIndex === idx && dragIndexRef.current !== idx ? 'ring-1 ring-violet-500/50 bg-violet-500/10' : ''
                       }`}
                     >
                       {/* Drag handle */}
@@ -508,7 +510,7 @@ function UIPanel({
                   {onReorderPlaylist && (
                     <div
                       onDragOver={e => {
-                        if (draggingClipId == null) return
+                        if (dragIndexRef.current == null) return
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
                         setDragOverIndex(videoPlaylist.length)
