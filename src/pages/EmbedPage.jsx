@@ -37,7 +37,6 @@ export default function EmbedPage() {
   const [modelUrl, setModelUrl] = useState(null)
   const [videoElement, setVideoElement] = useState(null)
   const [activeImageUrl, setActiveImageUrl] = useState(null)
-  const [videoLoaded, setVideoLoaded] = useState(false)
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
@@ -103,7 +102,6 @@ export default function EmbedPage() {
       v.play().catch(() => {})
       videoRef.current = v
       setVideoElement(v)
-      setVideoLoaded(true)
     })
     v.load()
   }, [])
@@ -175,7 +173,6 @@ export default function EmbedPage() {
           const first = restored[0]
           if (first?.type === 'image') {
             setActiveImageUrl(first.url)
-            setVideoLoaded(true)
           } else if (first) {
             activateVideo(first.id, first.url)
           }
