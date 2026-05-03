@@ -110,6 +110,7 @@ function UIPanel({
   const [editingClipId,    setEditingClipId]    = useState(null)
   const [editingName,      setEditingName]      = useState('')
   const [dragOverIndex,    setDragOverIndex]    = useState(null)
+  const [dragSourceIndex,  setDragSourceIndex]  = useState(null)
   const renameInputRef     = useRef(null)
   const dragIndexRef       = useRef(null)
 
@@ -161,27 +162,33 @@ function UIPanel({
   const handlePlaylistDragStart = useCallback((e, clip, index) => {
     if (!onReorderPlaylist) return
     dragIndexRef.current = index
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('application/x-tooawake-playlist-index', String(index))
-    e.dataTransfer.setData('text/plain', String(index))
+    try {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(index))
+    } catch (_) {}
+    setDragSourceIndex(index)
     setDragOverIndex(index)
   }, [onReorderPlaylist])
 
   const handlePlaylistDrop = useCallback((e, toIndex) => {
     e.preventDefault()
+    e.stopPropagation()
     if (!onReorderPlaylist) return
-    const raw =
-      e.dataTransfer.getData('application/x-tooawake-playlist-index') ||
-      e.dataTransfer.getData('text/plain')
-    const parsedIndex = Number.parseInt(raw, 10)
-    const fromIndex = Number.isInteger(parsedIndex) ? parsedIndex : dragIndexRef.current
+    let fromIndex = dragIndexRef.current
+    if (!Number.isInteger(fromIndex)) {
+      const raw = e.dataTransfer.getData('text/plain')
+      const parsed = Number.parseInt(raw, 10)
+      if (Number.isInteger(parsed)) fromIndex = parsed
+    }
     reorderPlaylist(fromIndex, toIndex)
     dragIndexRef.current = null
+    setDragSourceIndex(null)
     setDragOverIndex(null)
   }, [onReorderPlaylist, reorderPlaylist])
 
   const handlePlaylistDragEnd = useCallback(() => {
     dragIndexRef.current = null
+    setDragSourceIndex(null)
     setDragOverIndex(null)
   }, [])
 
@@ -405,36 +412,46 @@ function UIPanel({
                   {videoPlaylist.map((clip, idx) => (
                     <div
                       key={clip.id}
+                      draggable={!!onReorderPlaylist}
+                      onDragStart={e => {
+                        // Don't start drag if user is clicking an interactive child (button/input)
+                        if (e.target.closest && e.target.closest('button, input')) {
+                          e.preventDefault()
+                          return
+                        }
+                        handlePlaylistDragStart(e, clip, idx)
+                      }}
+                      onDragEnd={handlePlaylistDragEnd}
+                      onDragEnter={e => {
+                        if (!onReorderPlaylist) return
+                        e.preventDefault()
+                        if (dragOverIndex !== idx) setDragOverIndex(idx)
+                      }}
                       onDragOver={e => {
-                        // dragIndexRef is set synchronously in onDragStart; React state would be too late for preventDefault
-                        if (!onReorderPlaylist || dragIndexRef.current == null) return
+                        if (!onReorderPlaylist) return
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'move'
-                        setDragOverIndex(idx)
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverIndex === idx) setDragOverIndex(null)
+                        if (dragOverIndex !== idx) setDragOverIndex(idx)
                       }}
                       onDrop={e => handlePlaylistDrop(e, idx)}
                       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                        onReorderPlaylist ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${
                         clip.id === activeVideoId
                           ? 'bg-violet-500/15 border border-violet-500/25 text-white/90'
                           : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
                       } ${
-                        dragIndexRef.current === idx ? 'opacity-45 scale-[0.98]' : ''
+                        dragSourceIndex === idx ? 'opacity-40' : ''
                       } ${
-                        dragOverIndex === idx && dragIndexRef.current !== idx ? 'ring-1 ring-violet-500/50 bg-violet-500/10' : ''
+                        dragOverIndex === idx && dragSourceIndex !== idx ? 'ring-1 ring-violet-500/60 bg-violet-500/10' : ''
                       }`}
                     >
-                      {/* Drag handle */}
+                      {/* Drag handle (visual only — whole row is draggable) */}
                       {onReorderPlaylist && (
                         <span
-                          draggable
-                          onDragStart={e => handlePlaylistDragStart(e, clip, idx)}
-                          onDragEnd={handlePlaylistDragEnd}
-                          onMouseDown={e => e.stopPropagation()}
-                          className="flex-shrink-0 text-white/25 hover:text-white/60 cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-white/10"
-                          title="Drag to reorder"
+                          className="flex-shrink-0 text-white/25 hover:text-white/60 p-0.5 rounded hover:bg-white/10 pointer-events-none"
+                          title="Drag row to reorder"
+                          aria-hidden="true"
                         >
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
                         </span>
@@ -509,16 +526,16 @@ function UIPanel({
                   ))}
                   {onReorderPlaylist && (
                     <div
-                      onDragOver={e => {
-                        if (dragIndexRef.current == null) return
+                      onDragEnter={e => {
                         e.preventDefault()
-                        e.dataTransfer.dropEffect = 'move'
                         setDragOverIndex(videoPlaylist.length)
                       }}
-                      onDrop={e => handlePlaylistDrop(e, videoPlaylist.length - 1)}
-                      onDragLeave={() => {
-                        if (dragOverIndex === videoPlaylist.length) setDragOverIndex(null)
+                      onDragOver={e => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        if (dragOverIndex !== videoPlaylist.length) setDragOverIndex(videoPlaylist.length)
                       }}
+                      onDrop={e => handlePlaylistDrop(e, videoPlaylist.length - 1)}
                       className={`h-2 rounded-full transition-all ${
                         dragOverIndex === videoPlaylist.length ? 'bg-violet-500/40' : 'bg-transparent'
                       }`}
