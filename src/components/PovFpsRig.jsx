@@ -25,7 +25,7 @@ export function PovFpsRig({ enabled, floorY, geofenceBox, geofencePadding = 0, s
   return (
     <>
       <Suspense fallback={null}>
-        <Physics gravity={[0, 0, 0]} timeStep={1 / 60} interpolate={false}>
+        <Physics gravity={[0, -18, 0]} timeStep={1 / 60} interpolate={false}>
           <PovStageColliders
             geofenceBox={geofenceBox}
             geofencePadding={geofencePadding}
