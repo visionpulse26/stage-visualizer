@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import useHdriPresets from '../hooks/useHdriPresets'
+import { PovColliderManager } from './PovColliderManager'
 
 // ── Tiny icon components ──────────────────────────────────────────────────────
 const IconUpload    = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4 4 4"/></svg>
@@ -61,6 +62,7 @@ function UIPanel({
   isCameraStreaming, onStartCameraStream, onStopCameraStream,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
+  povHeightOffset, onPovHeightOffsetChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
   autoplayIntervalSeconds, onAutoplayIntervalChange,
   cameraFlyDurationSeconds, onCameraFlyDurationChange,
@@ -69,8 +71,9 @@ function UIPanel({
   projectName, onProjectNameChange,
   versionStatus, onVersionStatusChange,
   onOpenDashboard,
-  onCloneAsNewRound,  // optional
-  cloneToast,         // optional: "Project cloned successfully..."
+  onCloneAsNewRound,     // optional
+  cloneToast,            // optional: "Project cloned successfully..."
+  embedEnabled, onEmbedEnabledChange, // optional: embed widget toggle
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────
   hdriPreset, onHdriPresetChange,
   hdriLoading,
@@ -97,6 +100,8 @@ function UIPanel({
   bloomThreshold, onBloomThresholdChange,
   protectLed, onProtectLedToggle,
   transparentLedConfig, onTransparentLedConfigChange,
+  // ── POV Collider Manager ─────────────────────────────────────────────────
+  meshMetadata, povColliderConfig, onPovColliderConfigChange,
 }) {
   const modelInputRef      = useRef(null)
   const videoInputRef      = useRef(null)
@@ -487,6 +492,31 @@ function UIPanel({
 
             <Section icon={<IconGrid />} title="Grid Settings">
               <Slider label="Cell Size" value={gridCellSize} min={0.25} max={5} step={0.25} onChange={onGridCellSizeChange} />
+            </Section>
+
+            <Section icon={<IconEye />} title="Audience POV (height)">
+              <p className="text-[9px] text-white/25 leading-snug mb-1">
+                Eye height above floor for first-person preview (saved with publish).
+              </p>
+              <Slider
+                label="Height (m)"
+                value={povHeightOffset}
+                min={0.5}
+                max={2.5}
+                step={0.05}
+                onChange={onPovHeightOffsetChange}
+              />
+            </Section>
+
+            <Section icon={<IconEye />} title="POV Colliders">
+              <p className="text-[9px] text-white/25 leading-snug mb-2">
+                Set which objects block or support walking. A=auto-suggest, F=floor, B=blocker, I=ignore. Saved with publish.
+              </p>
+              <PovColliderManager
+                meshMetadata={meshMetadata}
+                povColliderConfig={povColliderConfig}
+                onConfigChange={onPovColliderConfigChange}
+              />
             </Section>
           </>
         )}
@@ -1038,6 +1068,36 @@ function UIPanel({
                 </div>
               )}
 
+              {/* Embed widget toggle */}
+              {publishedId && (
+                <label className="flex items-center justify-between gap-3 cursor-pointer group">
+                  <div className="space-y-0.5">
+                    <span className="text-xs text-white/55 group-hover:text-white/70 transition-colors">
+                      Enable embed widget
+                    </span>
+                    <p className="text-[10px] text-white/20 leading-snug">
+                      Allow this project to be embedded in Canva, Notion, etc.
+                    </p>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={!!embedEnabled}
+                    onClick={() => onEmbedEnabledChange?.(!embedEnabled)}
+                    className={`relative flex-shrink-0 w-9 h-5 rounded-full border transition-all ${
+                      embedEnabled
+                        ? 'bg-violet-500/30 border-violet-500/50'
+                        : 'bg-white/5 border-white/10'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform ${
+                      embedEnabled
+                        ? 'translate-x-4 bg-violet-400'
+                        : 'translate-x-0 bg-white/25'
+                    }`} />
+                  </button>
+                </label>
+              )}
+
               {/* Publish button */}
               <button
                 onClick={() => onPublish({})}
@@ -1073,6 +1133,7 @@ function UIPanel({
                     {[
                       { label: 'Collab Link', path: `/collab/${publishedId}` },
                       { label: 'View Link',   path: `/view/${publishedId}` },
+                      ...(embedEnabled ? [{ label: 'Embed Link', path: `/embed/${publishedId}` }] : []),
                     ].map(({ label, path }) => (
                       <div key={path} className="flex items-center gap-1.5">
                         <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>

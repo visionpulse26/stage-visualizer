@@ -10,6 +10,9 @@ import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
+import { isTouchDevice } from '../utils/isTouchDevice'
+import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
+import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 
 function AdminPage() {
   // ── Stage model ──────────────────────────────────────────────────────────
@@ -48,6 +51,26 @@ function AdminPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
+  // ── Epic 1 — Audience POV ────────────────────────────────────────────────────
+  const [povHeightOffset, setPovHeightOffset] = useState(1.7)
+  const [povMode, setPovMode] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
+  // Collider manager: meshes scanned from loaded model + admin config overrides
+  const [meshMetadata, setMeshMetadata]           = useState([])
+  const [povColliderConfig, setPovColliderConfig] = useState({ overrides: {} })
+  const savedOrbitRef = useRef(null)
+  const povModeRef = useRef(false)
+  const povExitInProgressRef = useRef(false)
+  useEffect(() => {
+    povModeRef.current = povMode
+  }, [povMode])
+
+  // Pre-compute collider specs for Rapier whenever metadata or config changes
+  const povColliderSpecs = useMemo(
+    () => buildPovCollidersFromConfig(meshMetadata, povColliderConfig),
+    [meshMetadata, povColliderConfig],
+  )
+
   // ── Sun position vector (must be declared before any useCallback that uses it) ──
   const sunPosition = useMemo(() => {
     const az = (sunAzimuth   * Math.PI) / 180
@@ -59,6 +82,7 @@ function AdminPage() {
   // ── Camera presets ───────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const glDomElementRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
@@ -70,6 +94,7 @@ function AdminPage() {
   const [publishError,  setPublishError]  = useState(null)
   const [projectName,   setProjectName]   = useState('')
   const [versionStatus, setVersionStatus] = useState('')
+  const [embedEnabled,  setEmbedEnabled]  = useState(false)
 
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
@@ -584,6 +609,75 @@ function AdminPage() {
     setCameraTargetPreset(cameraTargetPresetRef, preset)
   }, [])
 
+  const exitPovMode = useCallback(async () => {
+    if (!povModeRef.current || povExitInProgressRef.current) return
+    povExitInProgressRef.current = true
+    try {
+      if (document.pointerLockElement) document.exitPointerLock()
+      const ctrl = cameraControlsRef.current
+      if (ctrl) {
+        reconnectOrbitControls(ctrl, glDomElementRef.current)
+        await restoreOrbitState(ctrl, savedOrbitRef.current, { animate: false })
+      }
+    } finally {
+      povExitInProgressRef.current = false
+      savedOrbitRef.current = null
+      povModeRef.current = false
+      setPovMode(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!povMode) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      void exitPovMode()
+    }
+    const opts = { capture: true }
+    window.addEventListener('keydown', onKey, opts)
+    window.addEventListener('keyup', onKey, opts)
+    document.addEventListener('keydown', onKey, opts)
+    document.addEventListener('keyup', onKey, opts)
+    return () => {
+      window.removeEventListener('keydown', onKey, opts)
+      window.removeEventListener('keyup', onKey, opts)
+      document.removeEventListener('keydown', onKey, opts)
+      document.removeEventListener('keyup', onKey, opts)
+    }
+  }, [povMode, exitPovMode])
+
+  const handlePovToggle = useCallback(async () => {
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) return
+    if (povMode) {
+      await exitPovMode()
+      return
+    }
+    if (!modelMetrics) return
+    const snap = captureOrbitState(ctrl)
+    if (!snap) return
+    savedOrbitRef.current = snap
+    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    ctrl.disconnect()
+    povModeRef.current = true
+    setPovMode(true)
+  }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
+
+  const resetPovSession = useCallback(() => {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock() } catch (_) {}
+    }
+    const ctrl = cameraControlsRef.current
+    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
+    savedOrbitRef.current = null
+    povExitInProgressRef.current = false
+    povModeRef.current = false
+    setPovMode(false)
+    setMeshMetadata([])
+  }, [])
+
   const handleSaveAutoplayConfig = useCallback(async () => {
     if (!publishedId) {
       alert('Publish the project first, then save autoplay config.')
@@ -618,6 +712,7 @@ function AdminPage() {
     // Refetch project to get latest media_playlist (multi-admin sync)
     const { data: fresh, error } = await supabase.from('projects').select('*').eq('id', project.id).single()
     const p = fresh && !error ? fresh : project
+    resetPovSession()
 
     // Revoke existing local blob URLs
     localBlobUrlsRef.current.forEach(u => { try { URL.revokeObjectURL(u) } catch (_) {} })
@@ -638,9 +733,11 @@ function AdminPage() {
     setIsPlaying(false)
     setCameraPresets(p.camera_presets || [])
     setGridCellSize(p.grid_cell_size ?? 1)
+    setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
+    setEmbedEnabled(p.embed_enabled ?? false)
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
@@ -709,6 +806,9 @@ function AdminPage() {
       if (cfg.cameraFlyDurationSeconds != null) {
         setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
       }
+
+      // POV collider config (overrides map — empty by default)
+      setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
     }
 
     // Restore full media playlist from fresh refetch (multi-admin sync), or fall back to legacy single video_url
@@ -740,7 +840,7 @@ function AdminPage() {
       setVideoPlaylist([clip])
       activateVideo(id, p.video_url)
     }
-  }, [stageUrl, activateVideo, isRemote])
+  }, [stageUrl, activateVideo, isRemote, resetPovSession])
 
   // ── Clone as New Round (from Publish panel) ───────────────────────────────
   const handleCloneAsNewRound = useCallback(async () => {
@@ -871,6 +971,7 @@ function AdminPage() {
         autoplayIntervalSeconds: autoplayIntervalSeconds,
         cameraFlyDurationSeconds: cameraFlyDurationSeconds,
         versionStatus: versionStatus || '',
+        povColliderConfig: povColliderConfig,
       }
 
       // 5. Upsert project record
@@ -885,6 +986,8 @@ function AdminPage() {
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
         scene_config,
+        pov_height_offset: povHeightOffset,
+        embed_enabled:   embedEnabled,
       }
 
       const { error: dbErr } = await supabase.from('projects').upsert(record)
@@ -910,7 +1013,8 @@ function AdminPage() {
     }
   }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
-      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus])
+      bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus,
+      povHeightOffset, povColliderConfig, embedEnabled])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -928,8 +1032,15 @@ function AdminPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!(stageFile || cloudStageUrl)}
         cameraControlsRef={cameraControlsRef}
+        glDomElementRef={glDomElementRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+        onModelMetricsChange={setModelMetrics}
+        onMeshScanChange={setMeshMetadata}
+        stageColliders={povColliderSpecs}
+        povMode={povMode}
+        povHeightOffset={povHeightOffset}
+        onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -974,6 +1085,7 @@ function AdminPage() {
           sunElevation={sunElevation}   onSunElevationChange={setSunElevation}
           sunIntensity={sunIntensity}   onSunIntensityChange={setSunIntensity}
           gridCellSize={gridCellSize}   onGridCellSizeChange={setGridCellSize}
+          povHeightOffset={povHeightOffset} onPovHeightOffsetChange={setPovHeightOffset}
           cameraPresets={cameraPresets}
           onSaveView={handleSaveView}
           onGoToView={handleGoToView}
@@ -996,6 +1108,8 @@ function AdminPage() {
           onOpenDashboard={() => setIsDashboardOpen(true)}
           onCloneAsNewRound={handleCloneAsNewRound}
           cloneToast={cloneToast}
+          embedEnabled={embedEnabled}
+          onEmbedEnabledChange={setEmbedEnabled}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
           hdriError={hdriError}
@@ -1023,9 +1137,28 @@ function AdminPage() {
           protectLed={protectLed}          onProtectLedToggle={() => setProtectLed(v => !v)}
           transparentLedConfig={transparentLedConfig}
           onTransparentLedConfigChange={setTransparentLedConfig}
+          meshMetadata={meshMetadata}
+          povColliderConfig={povColliderConfig}
+          onPovColliderConfigChange={setPovColliderConfig}
         />
 
         <TopBar role="Admin" color="violet" />
+
+        {!isTouchDevice() && (stageUrl || cloudStageUrl) && (
+          <button
+            type="button"
+            onClick={handlePovToggle}
+            disabled={!povMode && !modelMetrics}
+            className={`absolute top-14 right-4 z-[5000] px-3 py-2 rounded-xl border text-[10px] font-semibold uppercase tracking-widest transition-all backdrop-blur-sm ${
+              povMode
+                ? 'bg-amber-500/20 border-amber-500/45 text-amber-100'
+                : 'bg-black/50 border-white/15 text-white/70 hover:text-white hover:border-violet-500/40 disabled:opacity-40 disabled:pointer-events-none'
+            }`}
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            {povMode ? 'Exit POV' : 'Audience POV'}
+          </button>
+        )}
       </StageCanvas>
 
       <ClientRadarPanel publishedId={publishedId} />

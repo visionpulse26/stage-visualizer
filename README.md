@@ -31,6 +31,8 @@ npm run dev
 
 4. Open http://localhost:3000 in your browser
 
+**Admin login + R2 uploads on localhost:** run `npm run setup:local` once (creates `.env.local` from `.env.example`), fill secrets from Supabase / R2 dashboards, then `npm run dev:local` — details in [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md). Branch **`stage_beta_state`** is for beta / roadmap work without affecting production `main`.
+
 ## Usage
 
 1. Click **"Upload 3D Model"** to load a `.glb` or `.gltf` file

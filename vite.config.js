@@ -1,8 +1,14 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const projectRoot = path.dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), 'VITE')
+  // Resolve env from the directory that contains this config (not only process.cwd()),
+  // so `vercel dev` and other wrappers still pick up `.env.local`.
+  const env = loadEnv(mode, projectRoot, 'VITE')
 
   // Encode the Supabase anon key at build time so the raw JWT (`eyJhbG...`)
   // never appears as a plain string literal in the minified bundle.

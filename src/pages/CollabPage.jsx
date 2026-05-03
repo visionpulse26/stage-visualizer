@@ -14,6 +14,9 @@ import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
+import { isTouchDevice } from '../utils/isTouchDevice'
+import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
+import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -44,6 +47,22 @@ function CollabPage() {
   const [sunIntensity, setSunIntensity] = useState(1)
   const [gridCellSize, setGridCellSize] = useState(1)
 
+  const [povHeightOffset, setPovHeightOffset] = useState(1.7)
+  const [povMode, setPovMode] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
+  const [meshMetadata, setMeshMetadata]           = useState([])
+  const [povColliderConfig, setPovColliderConfig] = useState({ overrides: {} })
+  const povColliderSpecs = useMemo(
+    () => buildPovCollidersFromConfig(meshMetadata, povColliderConfig),
+    [meshMetadata, povColliderConfig],
+  )
+  const savedOrbitRef = useRef(null)
+  const povModeRef = useRef(false)
+  const povExitInProgressRef = useRef(false)
+  useEffect(() => {
+    povModeRef.current = povMode
+  }, [povMode])
+
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
   const [customHdriUrl,      setCustomHdriUrl]      = useState(null)
@@ -70,6 +89,7 @@ function CollabPage() {
   // ── Camera ───────────────────────────────────────────────────────────────
   const [cameraPresets, setCameraPresets] = useState([])
   const cameraControlsRef = useRef(null)
+  const glDomElementRef = useRef(null)
   const cameraTargetPresetRef = useRef(null)
   const [autoplayIntervalSeconds, setAutoplayIntervalSeconds] = useState(10)
   const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
@@ -246,6 +266,8 @@ function CollabPage() {
     let cancelled = false
 
     async function fetchProject() {
+      resetPovSession()
+      revokeAllBlobs()
       setIsDbLoading(true)
       setProjectNotFound(false)
 
@@ -315,6 +337,7 @@ function CollabPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+        setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
           enabled: true,
@@ -367,6 +390,7 @@ function CollabPage() {
           if (cfg.autoplayIntervalSeconds != null) setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
           if (cfg.cameraFlyDurationSeconds != null) setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
           if (cfg.versionStatus != null) setVersionStatus(cfg.versionStatus)
+          setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
         }
       } catch {
         if (!cancelled) setProjectNotFound(true)
@@ -377,7 +401,7 @@ function CollabPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, activateVideo, addBlob, revokeAllBlobs])
+  }, [projectId, activateVideo, addBlob, revokeAllBlobs, resetPovSession])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
   // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
@@ -507,6 +531,85 @@ function CollabPage() {
     setIsAutoplayActive(prev => !prev)
   }, [])
 
+  const exitPovMode = useCallback(async () => {
+    if (!povModeRef.current || povExitInProgressRef.current) return
+    povExitInProgressRef.current = true
+    try {
+      if (document.pointerLockElement) document.exitPointerLock()
+      const ctrl = cameraControlsRef.current
+      if (ctrl) {
+        reconnectOrbitControls(ctrl, glDomElementRef.current)
+        await restoreOrbitState(ctrl, savedOrbitRef.current, { animate: false })
+      }
+    } finally {
+      povExitInProgressRef.current = false
+      savedOrbitRef.current = null
+      povModeRef.current = false
+      setPovMode(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!povMode) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      void exitPovMode()
+    }
+    const opts = { capture: true }
+    window.addEventListener('keydown', onKey, opts)
+    window.addEventListener('keyup', onKey, opts)
+    document.addEventListener('keydown', onKey, opts)
+    document.addEventListener('keyup', onKey, opts)
+    return () => {
+      window.removeEventListener('keydown', onKey, opts)
+      window.removeEventListener('keyup', onKey, opts)
+      document.removeEventListener('keydown', onKey, opts)
+      document.removeEventListener('keyup', onKey, opts)
+    }
+  }, [povMode, exitPovMode])
+
+  const handlePovToggle = useCallback(async () => {
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) return
+    if (povMode) {
+      await exitPovMode()
+      return
+    }
+    if (!modelMetrics) return
+    const snap = captureOrbitState(ctrl)
+    if (!snap) return
+    savedOrbitRef.current = snap
+    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    ctrl.disconnect()
+    povModeRef.current = true
+    setPovMode(true)
+  }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
+
+  const resetPovSession = useCallback(() => {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock() } catch (_) {}
+    }
+    const ctrl = cameraControlsRef.current
+    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
+    savedOrbitRef.current = null
+    povExitInProgressRef.current = false
+    povModeRef.current = false
+    setPovMode(false)
+    setMeshMetadata([])
+  }, [])
+
+  useEffect(() => {
+    if (!povMode) return
+    if (autoplayIntervalRef.current) {
+      clearInterval(autoplayIntervalRef.current)
+      autoplayIntervalRef.current = null
+    }
+    setIsAutoplayActive(false)
+    cameraTargetPresetRef.current = null
+  }, [povMode])
+
   // Autoplay loop
   useEffect(() => {
     if (!isAutoplayActive || cameraPresets.length === 0) {
@@ -589,8 +692,15 @@ function CollabPage() {
         gridCellSize={gridCellSize}
         modelLoaded={!!modelUrl}
         cameraControlsRef={cameraControlsRef}
+        glDomElementRef={glDomElementRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+        onModelMetricsChange={setModelMetrics}
+        onMeshScanChange={setMeshMetadata}
+        stageColliders={povColliderSpecs}
+        povMode={povMode}
+        povHeightOffset={povHeightOffset}
+        onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -652,6 +762,9 @@ function CollabPage() {
           onToggleAutoplay={handleToggleAutoplay}
           // ── Screenshot ───────────────────────────────────────────────────
           onScreenshot={handleScreenshot}
+          povMode={povMode}
+          onPovToggle={handlePovToggle}
+          showPovControl={!isTouchDevice() && !!modelUrl && !!modelMetrics && sceneReady}
         />
 
         <TopBar role={null} color="cyan" />

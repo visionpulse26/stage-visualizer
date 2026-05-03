@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
@@ -9,6 +9,23 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Scene from './Scene'
+
+const LazyPovFpsRig = lazy(() =>
+  import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
+)
+
+/** Exposes `gl.domElement` so pages can call `cameraControls.connect(canvas)` after POV. */
+function GlDomElementBridge({ targetRef }) {
+  const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    if (!targetRef) return
+    targetRef.current = gl.domElement
+    return () => {
+      targetRef.current = null
+    }
+  }, [gl, targetRef])
+  return null
+}
 
 // ── Atmospheric dust particles ────────────────────────────────────────────────
 function AtmosphericDust() {
@@ -117,6 +134,42 @@ function ToneMappingController() {
     gl.toneMapping         = THREE.ACESFilmicToneMapping
     gl.toneMappingExposure = 0.62
   }, [gl])
+  return null
+}
+
+function PovClipGuard({ enabled, modelMetrics }) {
+  const { camera, scene } = useThree()
+
+  useEffect(() => {
+    if (!enabled || !modelMetrics) return
+
+    const prevNear = camera.near
+    const prevFar = camera.far
+    const prevFogNear = scene.fog?.near
+    const prevFogFar = scene.fog?.far
+    const radius = Math.max(modelMetrics.radius || 0, 1)
+    const maxDim = Math.max(modelMetrics.size?.x || 0, modelMetrics.size?.y || 0, modelMetrics.size?.z || 0, 1)
+
+    camera.near = 0.02
+    camera.far = Math.max(prevFar, radius * 120, maxDim * 120, 5000)
+    camera.updateProjectionMatrix()
+
+    if (scene.fog) {
+      scene.fog.near = Math.max(800, radius * 20, maxDim * 12)
+      scene.fog.far = Math.max(2400, radius * 60, maxDim * 36)
+    }
+
+    return () => {
+      camera.near = prevNear
+      camera.far = prevFar
+      camera.updateProjectionMatrix()
+      if (scene.fog && prevFogNear != null && prevFogFar != null) {
+        scene.fog.near = prevFogNear
+        scene.fog.far = prevFogFar
+      }
+    }
+  }, [enabled, modelMetrics, camera, scene])
+
   return null
 }
 
@@ -470,14 +523,41 @@ function StageCanvas({
   protectLed,
   transparentLedConfig,
   showHdriBackground,
+  /** Fires when the loaded model's bounding metrics update (for POV / framing). */
+  onModelMetricsChange,
+  /** When true, orbit auto-frame & preset fly are paused (POV mode). */
+  povMode = false,
+  /** Standing eye height (m) — model normalized with floor at y≈0. */
+  povHeightOffset = 1.7,
+  /** Called from the host page on Esc / Exit POV to restore orbit (not tied to pointer-lock loss). */
+  onPovExitRequest,
+  /** Set to `gl.domElement` for reconnecting orbit controls after POV. */
+  glDomElementRef,
+  /** Fires with MeshMeta[] after the model is normalized — used by Admin to build collider config. */
+  onMeshScanChange,
+  /** Pre-computed PovColliderSpec[] from host page (Admin/Collab); passed straight to PovFpsRig. */
+  stageColliders = [],
   children,
 }) {
   const internalPresetRef = useRef(null)
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const handleModelMetrics = useCallback(
+    (m) => {
+      setModelMetrics(m)
+      onModelMetricsChange?.(m)
+    },
+    [onModelMetricsChange],
+  )
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
+
+  const povGeofencePadding = useMemo(() => {
+    if (!modelMetrics?.size) return 1.5
+    const xz = Math.max(modelMetrics.size.x, modelMetrics.size.z)
+    return Math.max(1.0, xz * 0.35)
+  }, [modelMetrics])
 
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom     = bloomStrength      ?? 0.3
@@ -549,7 +629,9 @@ function StageCanvas({
           onContextLost={handleContextLost}
           onContextRestored={handleContextRestored}
         />
+        {glDomElementRef && <GlDomElementBridge targetRef={glDomElementRef} />}
         {/* ACES filmic tone mapping — hardcoded for cinema quality */}
+        <PovClipGuard enabled={povMode} modelMetrics={modelMetrics} />
         <ToneMappingController />
 
         {/* Background — black in stealth mode, overridden by HDRI when visible */}
@@ -670,7 +752,8 @@ function StageCanvas({
               transparentLedConfig={transparentLedConfig}
               loadingManager={loadingManager}
               onImageTextureLoaded={onImageTextureLoaded}
-              onModelMetrics={setModelMetrics}
+              onModelMetrics={handleModelMetrics}
+              onMeshScan={onMeshScanChange}
             />
           )}
         </Suspense>
@@ -680,9 +763,10 @@ function StageCanvas({
           makeDefault
           smoothTime={0.5}
           dollySpeed={0.5}
+          enabled={!povMode}
         />
 
-        {cameraControlsRef && (
+        {cameraControlsRef && !povMode && (
           <CameraAutoFrame
             cameraControlsRef={cameraControlsRef}
             modelMetrics={modelMetrics}
@@ -690,12 +774,24 @@ function StageCanvas({
           />
         )}
 
-        {cameraControlsRef && (
+        {cameraControlsRef && !povMode && (
           <CameraSmoothFlyController
             cameraControlsRef={cameraControlsRef}
             targetPresetRef={presetRef}
             flyDurationSeconds={cameraFlyDurationSeconds}
           />
+        )}
+
+        {povMode && modelUrl && onPovExitRequest && (
+          <Suspense fallback={null}>
+            <LazyPovFpsRig
+              enabled={povMode}
+              floorY={povHeightOffset}
+              geofenceBox={modelMetrics?.box ?? null}
+              geofencePadding={povGeofencePadding}
+              stageColliders={stageColliders}
+            />
+          </Suspense>
         )}
 
         {/* Bloom + DoF — stage stays sharp, background/foreground bokeh */}

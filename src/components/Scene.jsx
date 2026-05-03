@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
+import { scanStageMeshes } from './pov/scanStageMeshes'
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const TRANSPARENT_LED_MATERIAL_NAME = 'LED_TRANSPARENT_MAT'
@@ -156,6 +157,7 @@ function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TR
   material.userData.ownedAlphaMap = true
   return material
 }
+
 
 function normalizeMaterialTokens(...names) {
   return names
@@ -360,7 +362,7 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -696,6 +698,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     const normalizedSize = normalizedBox.getSize(new THREE.Vector3())
     const normalizedCenter = normalizedBox.getCenter(new THREE.Vector3())
     const radius = normalizedSize.length() * 0.5
+    onMeshScan?.(scanStageMeshes(clonedScene))
     onModelMetrics?.({
       box: normalizedBox.clone(),
       center: normalizedCenter.clone(),
@@ -703,7 +706,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       radius,
     })
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics])
+  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics, onMeshScan])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
@@ -752,7 +755,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -762,6 +765,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, pr
     envIntensity,
     transparentLedConfig,
     onModelMetrics,
+    onMeshScan,
   }
   return (
     <group>
