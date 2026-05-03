@@ -21,6 +21,7 @@ function ClientPanel({
 }) {
   const [isVisible, setIsVisible] = useState(true)
   const activeIsVideo = activeClip?.type !== 'image'
+  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
 
   if (!isVisible) {
     return (
@@ -35,8 +36,6 @@ function ClientPanel({
       </button>
     )
   }
-
-  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
 
   return (
     <div
