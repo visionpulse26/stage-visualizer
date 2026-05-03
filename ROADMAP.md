@@ -42,6 +42,21 @@ State lifted to page level (**`AdminPage` / `CollabPage` only**):
 - `povHeightOffset: number` — eye height (default `1.7`, published on `projects`)
 - `modelMetrics` / geofence — derived inside `StageCanvas` from `onModelMetrics` (Scene)
 
+### Current Beta Status (2026-05-03)
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Admin POV entry / exit | Done | `AdminPage` captures orbit state, enters POV, exits through Esc / Exit POV, reconnects controls. |
+| FPS movement | Done | Pointer lock, mouse look, WASD movement, geofence walls, Rapier capsule. |
+| Gravity | Done | Dynamic Rapier capsule falls onto fixed floor / floor colliders. |
+| Space jump | Done (local beta) | Space applies vertical Rapier velocity only when grounded; supports default floor and assigned floor colliders. |
+| Collider manager UI | Done | Admin can mark scanned meshes as `Auto`, `Floor`, `Blocker`, or `Ignore`. |
+| Floor detail | Done | Floor meshes generate tile colliders instead of one large bbox. |
+| Blocker detail | Partial | Blockers are still cuboid/bbox based, not mesh-accurate. |
+| Client route exposure | Done | `/view/:projectId` remains orbit-only. |
+| HUD lockout / hotkeys | Planned | Minimal POV HUD and Q/E media hotkeys are not implemented yet. |
+| Debug overlay | Planned | Collider visualization overlay is not implemented yet. |
+
 ---
 
 ### Phase 1 — Foundation: Toggle & Camera Transition (no FPS yet)
@@ -262,7 +277,7 @@ For V2 (future), use `nipplejs` or a custom touch-joystick component:
 
 ### Phase 3 — Collision Detection & Geofencing
 
-**Shipped (Phase 3a — 2026-05):** `@react-three/rapier@1.3.1` (R3F 8–compatible) mounts only while POV is active (`PovFpsRig`): zero-gravity world, large fixed floor, four fixed **CuboidCollider** walls aligned to the same expanded XZ bounds as the old software clamp, and a **`kinematicPosition` capsule** whose translation is driven each physics step by `usePovController` then copied back to the default camera. Per-mesh Rapier colliders and NavMesh remain future work.
+**Shipped (Phase 3a–3c — 2026-05):** `@react-three/rapier@1.3.1` (R3F 8-compatible) mounts only while POV is active (`PovFpsRig`): gravity-enabled physics world, large fixed default floor, four fixed **CuboidCollider** geofence walls, a dynamic capsule body driven by `usePovController`, mesh-scanned floor/blocker colliders from Admin config, tiled floor collider generation, and Space jump via vertical Rapier velocity when grounded. Mesh-accurate blockers, step-climb smoothing, collider debug overlay, NavMesh, and headless POV hotkeys remain future work.
 
 Two strategies — pick based on model complexity (longer-term):
 
@@ -791,17 +806,18 @@ EmbedPage calls this on mount before rendering the canvas.
 
 ## Implementation Phases Summary
 
-| Phase | Epic | Effort | Blocking? | Key files |
-|-------|------|--------|-----------|-----------|
-| **P1** — DB schema + calibration slider | E1 | 1 day | No | `AdminPage.jsx`, `UIPanel.jsx`, Supabase SQL |
-| **P2** — Toggle + camera lerp transition | E1 | 1 day | No | `AdminPage.jsx`, `CollabPage.jsx`, `povCamera.js` |
-| **P3** — `usePovController` + `PovFpsRig` | E1 | 2 days | After P2 | `usePovController.js`, `PovFpsRig.jsx`, `StageCanvas.jsx` |
-| **P4** — Rapier colliders + geofence | E1 | 2 days | After P3 | `Scene.jsx`, `StageCanvas.jsx` |
-| **P5** — HUD lockout + headless hotkeys | E1 | 1 day | After P3 | `AdminPage.jsx`, `CollabPage.jsx`, `useHeadlessHotkeys.js` |
-| **P6** — `/embed` route + bundle split | E2 | 1 day | No | `App.jsx`, `EmbedPage.jsx`, `vite.config.js` |
-| **P7** — `EmbedStageCanvas` + restricted orbit | E2 | 1 day | After P6 | `EmbedStageCanvas.jsx` |
-| **P8** — `vercel.json` header routing | E2 | 0.5 day | After P6 | `vercel.json` |
-| **P9** — `/api/embed-token` + Supabase view | E2 | 1 day | After P6 | `api/embed-token.js`, Supabase SQL |
+| Phase | Epic | Status | Effort | Blocking? | Key files |
+|-------|------|--------|--------|-----------|-----------|
+| **P1** — DB schema + calibration slider | E1 | Done | 1 day | No | `AdminPage.jsx`, `UIPanel.jsx`, `supabase/pov_height_offset_migration.sql` |
+| **P2** — Toggle + camera lerp transition | E1 | Done | 1 day | No | `AdminPage.jsx`, `CollabPage.jsx`, `povCamera.js` |
+| **P3** — `usePovController` + `PovFpsRig` | E1 | Done | 2 days | After P2 | `usePovController.js`, `PovFpsRig.jsx`, `StageCanvas.jsx` |
+| **P4** — Rapier colliders + geofence | E1 | Done / continuing | 2 days | After P3 | `Scene.jsx`, `StageCanvas.jsx`, `PovStageColliders.jsx`, `PovColliderManager.jsx` |
+| **P4b** — Floor tiles + Space jump | E1 | Done (local beta) | 0.5 day | After P4 | `scanStageMeshes.js`, `buildPovCollidersFromConfig.js`, `usePovController.js` |
+| **P5** — HUD lockout + headless hotkeys | E1 | Planned | 1 day | After P3 | `AdminPage.jsx`, `CollabPage.jsx`, `useHeadlessHotkeys.js` |
+| **P6** — `/embed` route + bundle split | E2 | Done | 1 day | No | `App.jsx`, `EmbedPage.jsx`, `vite.config.js` |
+| **P7** — `EmbedStageCanvas` + restricted orbit | E2 | Done | 1 day | After P6 | `EmbedPage.jsx`, `StageCanvas.jsx` |
+| **P8** — `vercel.json` header routing | E2 | Done | 0.5 day | After P6 | `vercel.json` |
+| **P9** — `/api/embed-token` + Supabase view | E2 | Planned | 1 day | After P6 | `api/embed-token.js`, Supabase SQL |
 
 **Total estimate:** Epic 1 ≈ 7 dev-days · Epic 2 ≈ 3.5 dev-days
 
