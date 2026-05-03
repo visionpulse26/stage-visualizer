@@ -1,44 +1,290 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
+import StageCanvas from '../components/StageCanvas'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
+import { useSecurityLockdown } from '../hooks/useSecurityLockdown'
+import { useStageLoading } from '../hooks/useStageLoading'
+import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
+import { supabase } from '../lib/supabaseClient'
+import { recordClientPageView } from '../lib/analyticsTracker'
+import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 
-// ── Embed Preview (Admin-only, V1) ───────────────────────────────────────────
-// This route (/embed/:projectId) is protected by ProtectedRoute — only
-// authenticated admins can access it. Once embed-token API (P9) ships,
-// ProtectedRoute will be removed and the route becomes public.
-//
-// The page renders what the embedded widget looks like: clean, no admin tools,
-// restricted orbit only. Stage canvas will be wired in EmbedStageCanvas (P7).
-
+/**
+ * Embed preview — admin-only until P9 (embed-token) ships.
+ * Renders the same 3D stage as Client view (P7), with minimal chrome for iframe / LMS (P8 headers).
+ */
 export default function EmbedPage() {
   const { projectId } = useParams()
-  const navigate      = useNavigate()
+  const navigate = useNavigate()
+  useSecurityLockdown()
 
-  const [project,  setProject]  = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState(null)
-  const [copied,   setCopied]   = useState(false)
+  const {
+    loadingManager,
+    progress,
+    status,
+    loaded: stageLoaded,
+    reset: resetStageLoading,
+  } = useStageLoading()
+
+  const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
+
+  const [project, setProject] = useState(null)
+  const [isDbLoading, setIsDbLoading] = useState(true)
+  const [projectNotFound, setProjectNotFound] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const [modelUrl, setModelUrl] = useState(null)
+  const [videoElement, setVideoElement] = useState(null)
+  const [activeImageUrl, setActiveImageUrl] = useState(null)
+  const [cameraPresets, setCameraPresets] = useState([])
+  const cameraControlsRef = useRef(null)
+  const cameraTargetPresetRef = useRef(null)
+
+  const [gridCellSize, setGridCellSize] = useState(1)
+  const [cameraFlyDurationSeconds, setCameraFlyDurationSeconds] = useState(4)
+
+  const [hdriPreset, setHdriPreset] = useState('none')
+  const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  const [hdriFileExt, setHdriFileExt] = useState('hdr')
+  const [hdriLoading, setHdriLoading] = useState(false)
+  const [envIntensity, setEnvIntensity] = useState(1)
+  const [bgBlur, setBgBlur] = useState(0)
+  const [showHdriBackground, setShowHdriBackground] = useState(false)
+  const [bloomStrength, setBloomStrength] = useState(0.3)
+  const [bloomThreshold, setBloomThreshold] = useState(1.2)
+  const [protectLed, setProtectLed] = useState(true)
+  const [transparentLedConfig, setTransparentLedConfig] = useState({
+    enabled: true,
+    gridDensity: 36,
+    gridDensityX: 36,
+    gridDensityY: 36,
+    barThickness: 0.08,
+    barThicknessX: 0.08,
+    barThicknessY: 0.08,
+    glow: 1.4,
+    opacity: 0.95,
+  })
+  const [sunPosition, setSunPosition] = useState([10.6, 10.6, 7.5])
+  const [sunIntensity, setSunIntensity] = useState(1)
+
+  const videoRef = useRef(null)
+
+  const sceneReady =
+    !isDbLoading && (modelUrl ? stageLoaded : true)
 
   useEffect(() => {
-    if (!projectId) { setError('No project ID in URL.'); setLoading(false); return }
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.src = ''
+      }
+    }
+  }, [])
 
-    supabase
-      .from('projects')
-      .select('id, name, stage_url, camera_presets, scene_config, embed_enabled')
-      .eq('id', projectId)
-      .single()
-      .then(({ data, error: dbErr }) => {
-        if (dbErr || !data) {
-          setError(dbErr?.message ?? 'Project not found.')
-        } else {
-          setProject(data)
+  useEffect(() => {
+    resetStageLoading()
+  }, [projectId, resetStageLoading])
+
+  const activateVideo = useCallback((_id, url) => {
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.src = ''
+    }
+    const v = document.createElement('video')
+    v.src = url
+    v.crossOrigin = 'anonymous'
+    v.loop = true
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
+    v.addEventListener('loadeddata', () => {
+      v.play().catch(() => {})
+      videoRef.current = v
+      setVideoElement(v)
+    })
+    v.load()
+  }, [])
+
+  const loadMediaPlaylist = useCallback(
+    async (items) => {
+      const isRemote = (u) =>
+        u && (u.startsWith('http://') || u.startsWith('https://'))
+      const restored = []
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        let url = item.url
+        if (isRemote(url)) {
+          try {
+            const blobUrl = await fetchAsBlobUrlWithCache(url)
+            addBlob(blobUrl)
+            url = blobUrl
+          } catch {
+            /* keep remote URL */
+          }
         }
-        setLoading(false)
-      })
-  }, [projectId])
+        restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
+      }
+      return restored
+    },
+    [addBlob]
+  )
 
-  const baseUrl  = import.meta.env.VITE_APP_URL ?? window.location.origin
+  useEffect(() => {
+    if (!projectId) {
+      setIsDbLoading(false)
+      setProjectNotFound(true)
+      return
+    }
+
+    let cancelled = false
+
+    async function fetchProject() {
+      revokeAllBlobs()
+      setIsDbLoading(true)
+      setProjectNotFound(false)
+
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .single()
+
+        if (cancelled) return
+
+        if (error || !data) {
+          setProjectNotFound(true)
+          setIsDbLoading(false)
+          return
+        }
+
+        setProject(data)
+        recordClientPageView(projectId)
+
+        const isRemote = (u) =>
+          u && (u.startsWith('http://') || u.startsWith('https://'))
+
+        const modelSrc = data.stage_url
+        setModelUrl(modelSrc || null)
+
+        if (data.media_playlist && data.media_playlist.length > 0) {
+          const restored = await loadMediaPlaylist(data.media_playlist)
+          const first = restored[0]
+          if (first?.type === 'image') {
+            setActiveImageUrl(first.url)
+          } else if (first) {
+            activateVideo(first.id, first.url)
+          }
+        } else if (data.video_url) {
+          let vidUrl = data.video_url
+          if (isRemote(vidUrl)) {
+            try {
+              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
+              addBlob(blobUrl)
+              vidUrl = blobUrl
+            } catch {
+              /* use raw */
+            }
+          }
+          const id = Date.now()
+          activateVideo(id, vidUrl)
+        }
+
+        setCameraPresets(data.camera_presets || [])
+        if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+
+        setTransparentLedConfig({
+          enabled: true,
+          gridDensity: 36,
+          gridDensityX: 36,
+          gridDensityY: 36,
+          barThickness: 0.08,
+          barThicknessX: 0.08,
+          barThicknessY: 0.08,
+          glow: 1.4,
+          opacity: 0.95,
+        })
+
+        const cfg = data.scene_config
+        if (cfg) {
+          setHdriPreset(cfg.hdriPreset ?? 'none')
+          setEnvIntensity(cfg.envIntensity ?? 1)
+          setBgBlur(cfg.bgBlur ?? 0)
+          setShowHdriBackground(cfg.showHdriBackground ?? false)
+          setBloomStrength(cfg.bloomStrength ?? 0.3)
+          setBloomThreshold(cfg.bloomThreshold ?? 1.2)
+          setProtectLed(cfg.protectLed ?? true)
+          setTransparentLedConfig((prev) => ({
+            ...prev,
+            ...(cfg.transparentLedConfig || cfg.transparentLed || {}),
+          }))
+
+          if (cfg.sunPosition && Array.isArray(cfg.sunPosition)) {
+            setSunPosition(cfg.sunPosition)
+          }
+          if (cfg.sunIntensity != null) {
+            setSunIntensity(cfg.sunIntensity)
+          }
+
+          if (cfg.customHdriUrl) {
+            const hdriSrc = cfg.customHdriUrl.replace(
+              'visual.tooawake.online',
+              'visual.tooawake.mov'
+            )
+            const basePath = hdriSrc.split('?')[0] || hdriSrc
+            const rawExt = basePath.split('.').pop()?.toLowerCase() || 'hdr'
+            setHdriFileExt(['hdr', 'exr'].includes(rawExt) ? rawExt : 'hdr')
+            if (isRemote(hdriSrc)) {
+              fetchAsBlobUrlWithCache(hdriSrc)
+                .then((blobUrl) => {
+                  if (!cancelled) {
+                    addBlob(blobUrl)
+                    setCustomHdriUrl(blobUrl)
+                  }
+                })
+                .catch(() => {
+                  if (!cancelled) setCustomHdriUrl(hdriSrc)
+                })
+            } else {
+              setCustomHdriUrl(hdriSrc)
+            }
+          } else {
+            setHdriFileExt('hdr')
+            setCustomHdriUrl(null)
+          }
+          if (cfg.cameraFlyDurationSeconds != null) {
+            setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
+          }
+        }
+      } catch {
+        if (!cancelled) setProjectNotFound(true)
+      } finally {
+        if (!cancelled) setIsDbLoading(false)
+      }
+    }
+
+    fetchProject()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, revokeAllBlobs, loadMediaPlaylist, activateVideo, addBlob])
+
+  const handleHdriLoadError = useCallback(() => {
+    setHdriLoading(false)
+  }, [])
+
+  const handleClearAllHdri = useCallback(() => {
+    setCustomHdriUrl(null)
+    setHdriPreset('none')
+    setHdriLoading(false)
+  }, [])
+
+  const handleGoToView = useCallback((preset) => {
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
+  }, [])
+
+  const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
   const embedUrl = `${baseUrl}/embed/${projectId}`
 
   function copyEmbedCode() {
@@ -49,14 +295,21 @@ export default function EmbedPage() {
     })
   }
 
-  if (loading) return <BrandedLoadingScreen />
+  if (!projectId) {
+    return (
+      <div className="w-full h-full min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+        <p className="text-red-400/80 text-sm">No project ID in URL.</p>
+      </div>
+    )
+  }
 
-  if (error) {
+  if (projectNotFound) {
     return (
       <div className="w-full h-full min-h-screen bg-[#0f0f0f] flex items-center justify-center">
         <div className="text-center space-y-3">
-          <p className="text-red-400/80 text-sm">{error}</p>
+          <p className="text-white/50 text-sm">Project not found.</p>
           <button
+            type="button"
             onClick={() => navigate('/admin')}
             className="text-white/30 hover:text-white/60 text-xs underline transition-colors"
           >
@@ -69,15 +322,32 @@ export default function EmbedPage() {
 
   return (
     <div className="w-full min-h-screen bg-[#0a0a0a] flex flex-col">
-      {/* Admin header strip — not shown in actual embed iframe */}
-      <div className="h-9 bg-[#111] border-b border-white/5 flex items-center justify-between px-4 flex-shrink-0">
+      <BrandedLoadingScreen
+        isLoaded={sceneReady}
+        progress={progress}
+        status={status}
+      />
+
+      <div className="h-9 shrink-0 bg-[#111] border-b border-white/5 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={() => navigate('/admin')}
             className="text-white/25 hover:text-white/55 text-[10px] transition-colors flex items-center gap-1"
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5M12 5l-7 7 7 7"/>
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 12H5M12 5l-7 7 7 7"
+              />
             </svg>
             Admin
           </button>
@@ -101,48 +371,69 @@ export default function EmbedPage() {
         </div>
       </div>
 
-      {/* Embed frame area — this is what will be rendered inside the iframe */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-0">
-        {/* Canvas placeholder — replaced by EmbedStageCanvas in P7 */}
-        <div className="flex-1 relative bg-[#0f0f0f] flex items-center justify-center min-h-[400px]">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl border border-white/8 mx-auto flex items-center justify-center">
-              <svg className="w-5 h-5 text-white/20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
-              </svg>
-            </div>
-            <p className="text-white/20 text-xs">3D Stage Canvas (P7)</p>
-            <p className="text-white/10 text-[10px] font-mono truncate max-w-[200px] mx-auto">
-              {project?.stage_url ? 'Stage model loaded' : 'No stage model'}
-            </p>
-          </div>
-
-          {/* Minimal overlay — preset selector, branding */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
-            <div className="flex gap-1.5 pointer-events-auto">
-              {(project?.camera_presets ?? []).slice(0, 4).map((p, i) => (
-                <button
-                  key={i}
-                  className="px-2.5 py-1 rounded bg-black/50 border border-white/10 text-white/40 text-[10px] backdrop-blur-sm"
+      <div className="flex-1 flex flex-col lg:flex-row gap-0 min-h-0">
+        <div
+          className="flex-1 relative min-h-[50vh] lg:min-h-0 border-b lg:border-b-0 border-white/5"
+          style={{ minHeight: 'min(70vh, calc(100vh - 36px))' }}
+        >
+          <StageCanvas
+            modelUrl={modelUrl}
+            loadingManager={modelUrl ? loadingManager : null}
+            videoElement={videoElement}
+            activeImageUrl={activeImageUrl}
+            onLedMaterialStatus={() => {}}
+            sunPosition={sunPosition}
+            sunIntensity={sunIntensity}
+            gridCellSize={gridCellSize}
+            modelLoaded={!!modelUrl}
+            cameraControlsRef={cameraControlsRef}
+            cameraTargetPresetRef={cameraTargetPresetRef}
+            cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+            hdriPreset={hdriPreset}
+            customHdriUrl={customHdriUrl}
+            hdriFileExt={hdriFileExt}
+            onHdriLoading={setHdriLoading}
+            onHdriLoadError={handleHdriLoadError}
+            onHdriClearRequest={handleClearAllHdri}
+            envIntensity={envIntensity}
+            bgBlur={bgBlur}
+            showHdriBackground={showHdriBackground}
+            bloomStrength={bloomStrength}
+            bloomThreshold={bloomThreshold}
+            protectLed={protectLed}
+            transparentLedConfig={transparentLedConfig}
+          >
+            <div className="absolute inset-0 pointer-events-none z-10">
+              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
+                <div className="flex flex-wrap gap-1.5 pointer-events-auto max-w-[85%]">
+                  {cameraPresets.slice(0, 6).map((p, i) => (
+                    <button
+                      key={p.id ?? i}
+                      type="button"
+                      onClick={() => handleGoToView(p)}
+                      className="px-2.5 py-1 rounded bg-black/50 border border-white/10 text-white/70 text-[10px] backdrop-blur-sm hover:bg-black/70 hover:text-white/90 transition-colors"
+                    >
+                      {p.name ?? `View ${i + 1}`}
+                    </button>
+                  ))}
+                </div>
+                <span
+                  className="text-white/25 text-[10px] tracking-widest hidden sm:inline"
+                  style={{ fontFamily: "'Chakra Petch', sans-serif" }}
                 >
-                  {p.name ?? `View ${i + 1}`}
-                </button>
-              ))}
+                  TOOAWAKE
+                </span>
+              </div>
             </div>
-            <span
-              className="text-white/15 text-[10px] tracking-widest"
-              style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-            >
-              TOOAWAKE
-            </span>
-          </div>
+          </StageCanvas>
         </div>
 
-        {/* Admin sidebar — embed code + info; not part of the actual iframe */}
-        <div className="w-full lg:w-72 bg-[#111] border-t lg:border-t-0 lg:border-l border-white/5 p-4 space-y-4 flex-shrink-0">
+        <div className="w-full lg:w-72 bg-[#111] border-t lg:border-t-0 lg:border-l border-white/5 p-4 space-y-4 shrink-0">
           <div className="space-y-1">
             <p className="text-[10px] text-white/30 uppercase tracking-widest">Project</p>
-            <p className="text-white/70 text-sm font-medium truncate">{project?.name ?? 'Untitled'}</p>
+            <p className="text-white/70 text-sm font-medium truncate">
+              {project?.name ?? 'Untitled'}
+            </p>
             <p className="text-white/20 text-[10px] font-mono">{projectId}</p>
           </div>
 
@@ -152,6 +443,7 @@ export default function EmbedPage() {
               {`<iframe\n  src="${embedUrl}"\n  width="100%"\n  height="500"\n  frameborder="0"\n  allow="fullscreen"\n></iframe>`}
             </pre>
             <button
+              type="button"
               onClick={copyEmbedCode}
               className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/8 border border-white/10 text-white/40 hover:text-white/65 text-xs transition-all"
             >
@@ -169,8 +461,8 @@ export default function EmbedPage() {
 
           <div className="border-t border-white/5 pt-3">
             <p className="text-[10px] text-white/15 leading-relaxed">
-              This preview is admin-only. The embed widget will be publicly accessible once
-              the embed-token API is deployed.
+              P7: 3D stage matches Client view. P8: response headers allow iframe embedding on
+              external sites (e.g. Canvas). P9: public embed-token URL (no admin login).
             </p>
           </div>
         </div>
