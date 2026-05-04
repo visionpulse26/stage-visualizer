@@ -262,6 +262,19 @@ function CollabPage() {
     v.load()
   }, [])
 
+  const resetPovSession = useCallback(() => {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock() } catch (_) {}
+    }
+    const ctrl = cameraControlsRef.current
+    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
+    savedOrbitRef.current = null
+    povExitInProgressRef.current = false
+    povModeRef.current = false
+    setPovMode(false)
+    setMeshMetadata([])
+  }, [])
+
   // ── Load project from Supabase ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
@@ -593,19 +606,6 @@ function CollabPage() {
     povModeRef.current = true
     setPovMode(true)
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
-
-  const resetPovSession = useCallback(() => {
-    if (document.pointerLockElement) {
-      try { document.exitPointerLock() } catch (_) {}
-    }
-    const ctrl = cameraControlsRef.current
-    if (ctrl) reconnectOrbitControls(ctrl, glDomElementRef.current)
-    savedOrbitRef.current = null
-    povExitInProgressRef.current = false
-    povModeRef.current = false
-    setPovMode(false)
-    setMeshMetadata([])
-  }, [])
 
   useEffect(() => {
     if (!povMode) return
