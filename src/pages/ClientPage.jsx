@@ -15,6 +15,8 @@ import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
+import { isTouchDevice } from '../utils/isTouchDevice'
+import { enterPovMode, captureOrbitState, restoreOrbitState } from '../utils/povCamera'
 
 const isRemoteUrl = (url) => !!url && (url.startsWith('http://') || url.startsWith('https://'))
 
@@ -50,6 +52,11 @@ function ClientPage() {
   const autoplayIntervalRef = useRef(null)
 
   const [gridCellSize, setGridCellSize] = useState(1)
+
+  const [povHeightOffset, setPovHeightOffset] = useState(1.7)
+  const [povMode, setPovMode] = useState(false)
+  const [modelMetrics, setModelMetrics] = useState(null)
+  const savedOrbitRef = useRef(null)
 
   // ── Scene config (LITE & STABLE — consistent with Admin settings) ───────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
@@ -238,6 +245,9 @@ function ClientPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
+        setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
+        setPovMode(false)
+        savedOrbitRef.current = null
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
           enabled: true,
@@ -346,6 +356,35 @@ function ClientPage() {
     setIsAutoplayActive(prev => !prev)
   }, [])
 
+  const handlePovToggle = useCallback(async () => {
+    const ctrl = cameraControlsRef.current
+    if (!ctrl) return
+    if (povMode) {
+      ctrl.connect()
+      await restoreOrbitState(ctrl, savedOrbitRef.current)
+      savedOrbitRef.current = null
+      setPovMode(false)
+      return
+    }
+    if (!modelMetrics) return
+    const snap = captureOrbitState(ctrl)
+    if (!snap) return
+    savedOrbitRef.current = snap
+    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    ctrl.disconnect()
+    setPovMode(true)
+  }, [povMode, modelMetrics, povHeightOffset])
+
+  useEffect(() => {
+    if (!povMode) return
+    if (autoplayIntervalRef.current) {
+      clearInterval(autoplayIntervalRef.current)
+      autoplayIntervalRef.current = null
+    }
+    setIsAutoplayActive(false)
+    cameraTargetPresetRef.current = null
+  }, [povMode])
+
   // Autoplay loop
   useEffect(() => {
     if (!isAutoplayActive || cameraPresets.length === 0) {
@@ -429,6 +468,8 @@ function ClientPage() {
         cameraControlsRef={cameraControlsRef}
         cameraTargetPresetRef={cameraTargetPresetRef}
         cameraFlyDurationSeconds={cameraFlyDurationSeconds}
+        onModelMetricsChange={setModelMetrics}
+        povMode={povMode}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -458,6 +499,9 @@ function ClientPage() {
           onScreenshot={handleScreenshot}
           isAutoplayActive={isAutoplayActive}
           onToggleAutoplay={handleToggleAutoplay}
+          povMode={povMode}
+          onPovToggle={handlePovToggle}
+          showPovControl={!isTouchDevice() && !!modelUrl && !!modelMetrics && sceneReady}
         />
 
         <Notch status={versionStatus} />

@@ -61,6 +61,7 @@ function UIPanel({
   isCameraStreaming, onStartCameraStream, onStopCameraStream,
   sunAzimuth, onSunAzimuthChange, sunElevation, onSunElevationChange, sunIntensity, onSunIntensityChange,
   gridCellSize, onGridCellSizeChange,
+  povHeightOffset, onPovHeightOffsetChange,
   cameraPresets, onSaveView, onGoToView, onDeletePreset,
   autoplayIntervalSeconds, onAutoplayIntervalChange,
   cameraFlyDurationSeconds, onCameraFlyDurationChange,
@@ -575,6 +576,20 @@ function UIPanel({
 
             <Section icon={<IconGrid />} title="Grid Settings">
               <Slider label="Cell Size" value={gridCellSize} min={0.25} max={5} step={0.25} onChange={onGridCellSizeChange} />
+            </Section>
+
+            <Section icon={<IconEye />} title="Audience POV (height)">
+              <p className="text-[9px] text-white/25 leading-snug mb-1">
+                Eye height above floor for first-person preview (saved with publish).
+              </p>
+              <Slider
+                label="Height (m)"
+                value={povHeightOffset}
+                min={0.5}
+                max={2.5}
+                step={0.05}
+                onChange={onPovHeightOffsetChange}
+              />
             </Section>
           </>
         )}

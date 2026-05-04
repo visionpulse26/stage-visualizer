@@ -101,6 +101,10 @@ function CollabPanel({
   isAutoplayActive, onToggleAutoplay,
   // ── Screenshot ─────────────────────────────────────────────────────────────
   onScreenshot,
+  // ── POV (Epic 1) ───────────────────────────────────────────────────────────
+  povMode,
+  onPovToggle,
+  showPovControl,
 }) {
   const [isVisible, setIsVisible] = useState(true)
   const [activeSection, setActiveSection] = useState('media')
@@ -331,6 +335,23 @@ function CollabPanel({
                 Use OBS Virtual Camera or NDI to preview compositions locally.
               </p>
             </Section>
+
+            {showPovControl && (
+              <div className="pt-1 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={onPovToggle}
+                  className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
+                    povMode
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white'
+                  }`}
+                  style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+                >
+                  {povMode ? 'Exit audience POV' : 'Audience POV'}
+                </button>
+              </div>
+            )}
 
             {/* Screenshot */}
             <div className="pt-1 border-t border-white/5">

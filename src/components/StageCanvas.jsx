@@ -470,12 +470,23 @@ function StageCanvas({
   protectLed,
   transparentLedConfig,
   showHdriBackground,
+  /** Fires when the loaded model's bounding metrics update (for POV / framing). */
+  onModelMetricsChange,
+  /** When true, orbit auto-frame & preset fly are paused (POV mode). */
+  povMode = false,
   children,
 }) {
   const internalPresetRef = useRef(null)
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const handleModelMetrics = useCallback(
+    (m) => {
+      setModelMetrics(m)
+      onModelMetricsChange?.(m)
+    },
+    [onModelMetricsChange],
+  )
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
 
@@ -674,7 +685,7 @@ function StageCanvas({
               transparentLedConfig={transparentLedConfig}
               loadingManager={loadingManager}
               onImageTextureLoaded={onImageTextureLoaded}
-              onModelMetrics={setModelMetrics}
+              onModelMetrics={handleModelMetrics}
             />
           )}
         </Suspense>
@@ -686,7 +697,7 @@ function StageCanvas({
           dollySpeed={0.5}
         />
 
-        {cameraControlsRef && (
+        {cameraControlsRef && !povMode && (
           <CameraAutoFrame
             cameraControlsRef={cameraControlsRef}
             modelMetrics={modelMetrics}
@@ -694,7 +705,7 @@ function StageCanvas({
           />
         )}
 
-        {cameraControlsRef && (
+        {cameraControlsRef && !povMode && (
           <CameraSmoothFlyController
             cameraControlsRef={cameraControlsRef}
             targetPresetRef={presetRef}
