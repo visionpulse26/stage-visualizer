@@ -754,7 +754,13 @@ function AdminPage() {
     setIsPlaying(false)
     setCameraPresets(p.camera_presets || [])
     setGridCellSize(p.grid_cell_size ?? 1)
-    setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
+    setPovHeightOffset(
+      typeof p.pov_height_offset === 'number'
+        ? p.pov_height_offset
+        : typeof p.scene_config?.povHeightOffset === 'number'
+          ? p.scene_config.povHeightOffset
+          : 1.7,
+    )
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
@@ -992,6 +998,7 @@ function AdminPage() {
         autoplayIntervalSeconds: autoplayIntervalSeconds,
         cameraFlyDurationSeconds: cameraFlyDurationSeconds,
         versionStatus: versionStatus || '',
+        povHeightOffset: povHeightOffset,
         povColliderConfig: povColliderConfig,
       }
 
@@ -1011,7 +1018,11 @@ function AdminPage() {
         pov_height_offset: povHeightOffset,
       }
 
-      const { error: dbErr } = await supabase.from('projects').upsert(record)
+      let { error: dbErr } = await supabase.from('projects').upsert(record)
+      if (dbErr && /pov_height_offset/i.test(dbErr.message || '')) {
+        const { pov_height_offset, ...recordWithoutPovColumn } = record
+        ;({ error: dbErr } = await supabase.from('projects').upsert(recordWithoutPovColumn))
+      }
       if (dbErr) throw new Error(`Database save failed: ${dbErr.message}`)
 
       // Mark playlist clips as cloud-backed so re-publish won't re-upload

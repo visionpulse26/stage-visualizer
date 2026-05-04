@@ -338,7 +338,13 @@ function CollabPage() {
 
         setCameraPresets(data.camera_presets || [])
         if (data.grid_cell_size != null) setGridCellSize(data.grid_cell_size)
-        setPovHeightOffset(typeof data.pov_height_offset === 'number' ? data.pov_height_offset : 1.7)
+        setPovHeightOffset(
+          typeof data.pov_height_offset === 'number'
+            ? data.pov_height_offset
+            : typeof data.scene_config?.povHeightOffset === 'number'
+              ? data.scene_config.povHeightOffset
+              : 1.7,
+        )
         setProjectName(data.name || 'LIVE STAGE')
         setTransparentLedConfig({
           enabled: true,
