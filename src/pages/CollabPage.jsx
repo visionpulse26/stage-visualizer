@@ -632,14 +632,23 @@ function CollabPage() {
     } catch (err) {
       addPovEvent('pointer-lock-error', err?.message || 'requestPointerLock failed')
     }
-    setPovStatus('camera-transition')
-    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
-    addPovEvent('camera-transition-complete')
-    ctrl.disconnect()
-    povModeRef.current = true
-    setPovMode(true)
-    setPovStatus('active')
-    addPovEvent('enter-complete', `colliders=${povColliderSpecs.length}`)
+    try {
+      setPovStatus('camera-transition')
+      await enterPovMode(ctrl, modelMetrics, povHeightOffset, { animate: false })
+      addPovEvent('camera-transition-complete')
+      ctrl.disconnect()
+      povModeRef.current = true
+      setPovMode(true)
+      setPovStatus('active')
+      addPovEvent('enter-complete', `colliders=${povColliderSpecs.length}`)
+    } catch (err) {
+      addPovEvent('enter-error', err?.message || 'POV enter failed')
+      setPovStatus('enter-error')
+      savedOrbitRef.current = null
+      povModeRef.current = false
+      setPovMode(false)
+      reconnectOrbitControls(ctrl, glDomElementRef.current)
+    }
   }, [addPovEvent, povMode, exitPovMode, modelMetrics, povHeightOffset, povColliderSpecs.length, sceneReady, modelUrl])
 
   useEffect(() => {
