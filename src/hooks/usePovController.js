@@ -3,7 +3,12 @@ import * as THREE from 'three'
 
 const PITCH_LIMIT = 1.39
 const GLOBAL_FLOOR_TOP_Y = 0
+const MAX_MOUSE_DELTA = 160
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
+
+function normalizeRadians(value) {
+  return THREE.MathUtils.euclideanModulo(value + Math.PI, Math.PI * 2) - Math.PI
+}
 
 /**
  * First-person movement + look while orbit CameraControls are disconnected.
@@ -107,8 +112,10 @@ export function usePovController({
 
     const onMove = (ev) => {
       if (document.pointerLockElement !== gl.domElement) return
-      yawRef.current -= ev.movementX * lookSensitivity
-      pitchRef.current -= ev.movementY * lookSensitivity
+      const movementX = THREE.MathUtils.clamp(ev.movementX || 0, -MAX_MOUSE_DELTA, MAX_MOUSE_DELTA)
+      const movementY = THREE.MathUtils.clamp(ev.movementY || 0, -MAX_MOUSE_DELTA, MAX_MOUSE_DELTA)
+      yawRef.current = normalizeRadians(yawRef.current - movementX * lookSensitivity)
+      pitchRef.current -= movementY * lookSensitivity
       pitchRef.current = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitchRef.current))
     }
 
@@ -136,14 +143,9 @@ export function usePovController({
         return
       }
 
-      // Use current camera quaternion (already set by applyLook this frame)
-      const forward = tempForwardRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion)
-      forward.y = 0
-      if (forward.lengthSq() > 1e-10) forward.normalize()
-
-      const right = tempRightRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion)
-      right.y = 0
-      if (right.lengthSq() > 1e-10) right.normalize()
+      const yaw = yawRef.current
+      const forward = tempForwardRef.current.set(-Math.sin(yaw), 0, -Math.cos(yaw))
+      const right = tempRightRef.current.set(Math.cos(yaw), 0, -Math.sin(yaw))
 
       const keys = keysRef.current
       const dir = tempDirRef.current.set(0, 0, 0)

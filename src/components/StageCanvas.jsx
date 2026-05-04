@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { Component, Suspense, lazy, useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
@@ -13,6 +13,29 @@ import Scene from './Scene'
 const LazyPovFpsRig = lazy(() =>
   import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
 )
+
+class PovRuntimeBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  componentDidCatch(error, info) {
+    console.error('[PovRuntimeBoundary]', error, info)
+    this.props.onError?.(error)
+  }
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false })
+    }
+  }
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
+}
 
 /** Exposes `gl.domElement` so pages can call `cameraControls.connect(canvas)` after POV. */
 function GlDomElementBridge({ targetRef }) {
@@ -554,6 +577,9 @@ function StageCanvas({
   )
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
+  const handlePovRuntimeError = useCallback(() => {
+    onPovExitRequest?.()
+  }, [onPovExitRequest])
 
   const povGeofencePadding = useMemo(() => {
     if (!modelMetrics?.size) return 1.5
@@ -785,16 +811,18 @@ function StageCanvas({
         )}
 
         {povMode && modelUrl && onPovExitRequest && (
-          <Suspense fallback={null}>
-            <LazyPovFpsRig
-              enabled={povMode}
-              floorY={povHeightOffset}
-              geofenceBox={modelMetrics?.box ?? null}
-              geofencePadding={povGeofencePadding}
-              stageColliders={stageColliders}
-              debugEnabled={povDebug}
-            />
-          </Suspense>
+          <PovRuntimeBoundary onError={handlePovRuntimeError} resetKey={modelUrl}>
+            <Suspense fallback={null}>
+              <LazyPovFpsRig
+                enabled={povMode}
+                floorY={povHeightOffset}
+                geofenceBox={modelMetrics?.box ?? null}
+                geofencePadding={povGeofencePadding}
+                stageColliders={stageColliders}
+                debugEnabled={povDebug}
+              />
+            </Suspense>
+          </PovRuntimeBoundary>
         )}
 
         {/* Bloom + DoF — stage stays sharp, background/foreground bokeh */}

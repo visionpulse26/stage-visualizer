@@ -40,3 +40,25 @@ export function buildGeofenceWallSpecs(geofenceBox, geofencePadding, wallHalfThi
     { pos: [cx, wallHalfHeight, Mz + t], args: [dx, wallHalfHeight, t] },
   ]
 }
+
+/**
+ * Wide fixed slab placed just below the global floor (y=0). Acts as a fallback
+ * surface so jumping near the geofence boundary never lets the capsule slip
+ * through the seams between per-mesh floor tiles.
+ */
+export function buildGeofenceFloorSpec(geofenceBox, geofencePadding, floorHalfThickness = 0.35) {
+  const b = getExpandedXZBounds(geofenceBox, geofencePadding)
+  if (!b) {
+    return { pos: [0, -floorHalfThickness, 0], args: [300, floorHalfThickness, 300] }
+  }
+
+  const cx = (b.min.x + b.max.x) * 0.5
+  const cz = (b.min.z + b.max.z) * 0.5
+  const hx = Math.max((b.max.x - b.min.x) * 0.5 + 4, 20)
+  const hz = Math.max((b.max.z - b.min.z) * 0.5 + 4, 20)
+
+  return {
+    pos: [cx, -floorHalfThickness, cz],
+    args: [hx, floorHalfThickness, hz],
+  }
+}

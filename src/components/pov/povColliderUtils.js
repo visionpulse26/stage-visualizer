@@ -7,34 +7,11 @@ function clampHalf(value) {
   return Math.max(value, MIN_HALF)
 }
 
-function isLikelyFloorOrStair(meta, sx, sy, sz) {
-  const tokens = `${meta.name || ''} ${(meta.materialNames || []).join(' ')}`.toUpperCase()
-
-  // Named floor / stair tokens
-  if (/\b(FLOOR|DECK|RUNWAY|CATWALK|GROUND|STAIR|STEP|RAMP|STAGE)\b/.test(tokens)) return true
-
-  // Geometrically flat (thin horizontal slab)
-  if (sy <= 0.55 && Math.max(sx, sz) >= 1.5) return true
-
-  // Stair body: moderate height (0.5–3m), non-trivial footprint, low center
-  const [, cy] = meta.center
-  const maxXZ = Math.max(sx, sz)
-  const isStairBody = sy >= 0.5 && sy <= 3.5 && maxXZ >= 1.5 && (cy < sy + 0.5)
-  if (isStairBody) return true
-
-  // Very flat relative to smallest XZ dimension
-  const flatness = sy / Math.max(Math.min(sx, sz), MIN_HALF)
-  return flatness < 0.3 && maxXZ > 1.5
-}
-
 export function buildBlockerSubdivisions(meta) {
   const [cx, cy, cz] = meta.center
   const sx = Math.max(meta.size?.x ?? 0, MIN_HALF * 2)
   const sy = Math.max(meta.size?.y ?? 0, MIN_HALF * 2)
   const sz = Math.max(meta.size?.z ?? 0, MIN_HALF * 2)
-
-  // Avoid blocker colliders on long floor decks / stair meshes.
-  if (isLikelyFloorOrStair(meta, sx, sy, sz)) return []
 
   if (Math.max(sx, sz) <= BLOCKER_SUBDIVIDE_THRESHOLD) {
     return [

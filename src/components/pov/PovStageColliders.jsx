@@ -1,6 +1,6 @@
 import { RigidBody, CuboidCollider } from '@react-three/rapier'
 import { useMemo } from 'react'
-import { buildGeofenceWallSpecs } from './povGeofenceColliders'
+import { buildGeofenceFloorSpec, buildGeofenceWallSpecs } from './povGeofenceColliders'
 
 /**
  * Fixed physics colliders for POV:
@@ -17,6 +17,10 @@ export function PovStageColliders({ geofenceBox, geofencePadding, stageColliders
     () => buildGeofenceWallSpecs(geofenceBox, geofencePadding),
     [geofenceBox, geofencePadding],
   )
+  const fallbackFloor = useMemo(
+    () => buildGeofenceFloorSpec(geofenceBox, geofencePadding),
+    [geofenceBox, geofencePadding],
+  )
 
   const floors = stageColliders.filter(
     (s) => s.type === 'floor' || s.type === 'explicit-floor',
@@ -29,7 +33,7 @@ export function PovStageColliders({ geofenceBox, geofencePadding, stageColliders
     <group name="pov-stage-colliders">
       {/* ── Global floor slab ── */}
       <RigidBody type="fixed" colliders={false}>
-        <CuboidCollider args={[160, 0.35, 160]} position={[0, -0.35, 0]} />
+        <CuboidCollider args={fallbackFloor.args} position={fallbackFloor.pos} />
       </RigidBody>
 
       {/* ── Geofence walls ── */}
