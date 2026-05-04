@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { Component, useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import { useSecurityLockdown } from '../hooks/useSecurityLockdown'
@@ -982,5 +982,80 @@ function ProjectNotFound({ projectId }) {
   )
 }
 
+// ── Page-level error boundary ────────────────────────────────────────────────
+// Catches render-time errors anywhere inside CollabPage (including hook-order
+// violations, lazy-import failures, Rapier WASM crashes) so the user always
+// sees a visible diagnostic instead of a blank tab. The actual error message
+// is also stored on `window.__COLLAB_LAST_ERROR__` for DevTools inspection.
+class CollabPageBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    try {
+      // eslint-disable-next-line no-console
+      console.error('[CollabPageBoundary]', error, info)
+      if (typeof window !== 'undefined') {
+        window.__COLLAB_LAST_ERROR__ = {
+          message: error?.message || String(error),
+          stack: error?.stack || null,
+          componentStack: info?.componentStack || null,
+          at: new Date().toISOString(),
+        }
+      }
+    } catch (_) { /* noop */ }
+  }
+  render() {
+    if (this.state.hasError) {
+      const msg = this.state.error?.message || 'Unknown render error'
+      return (
+        <div
+          className="absolute inset-0 z-[9999] flex flex-col items-center justify-center bg-[#0a0a0c] p-6"
+          style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+        >
+          <div className="max-w-xl w-full rounded-2xl border border-red-500/30 bg-black/80 p-6 text-center backdrop-blur-md">
+            <p className="text-xl font-bold tracking-widest text-red-400 mb-2">
+              COLLAB PAGE CRASHED
+            </p>
+            <p className="text-white/55 text-xs mb-4">
+              Render-time error caught. Inspect <code className="text-cyan-300">window.__COLLAB_LAST_ERROR__</code> in DevTools for full details.
+            </p>
+            <pre className="text-left text-[11px] text-white/70 font-mono bg-black/60 border border-white/10 rounded-xl p-3 max-h-60 overflow-auto break-all whitespace-pre-wrap">
+{msg}
+            </pre>
+            <div className="flex gap-3 mt-5 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-5 py-2 rounded-xl border border-cyan-400/50 bg-cyan-500/15 text-cyan-200 text-xs uppercase tracking-widest hover:bg-cyan-500/25 transition-all"
+              >
+                RELOAD
+              </button>
+              <button
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="px-5 py-2 rounded-xl border border-white/30 bg-white/5 text-white/80 text-xs uppercase tracking-widest hover:bg-white/15 transition-all"
+              >
+                DISMISS
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function CollabPageWithBoundary(props) {
+  return (
+    <CollabPageBoundary>
+      <CollabPage {...props} />
+    </CollabPageBoundary>
+  )
+}
+
 export { DbLoadingOverlay }
-export default CollabPage
+export default CollabPageWithBoundary

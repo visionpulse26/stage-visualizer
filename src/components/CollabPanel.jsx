@@ -128,6 +128,12 @@ function CollabPanel({
     setHdriDropdownOpen(false)
   }, [onHdriPresetChange, onSetHdriUrl])
 
+  // ALL HOOKS MUST BE DECLARED ABOVE ANY EARLY RETURN.
+  // Previously `blockFriction` lived below `if (povMode) return null`, which
+  // dropped the hook count when entering POV → React threw "Rendered fewer
+  // hooks than expected" → entire tree crashed → white screen on Collab.
+  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
+
   const sections = [
     { id: 'media',  label: 'Media',  icon: <IconVideo />  },
     { id: 'light',  label: 'Light',  icon: <IconSun />    },
@@ -150,8 +156,6 @@ function CollabPanel({
       </button>
     )
   }
-
-  const blockFriction = useCallback((e) => { e.preventDefault() }, [])
 
   return (
     <div
