@@ -17,12 +17,9 @@ const API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP
 export async function getPresignedUploadUrl(opts) {
   const { filename, contentType, projectId, type = 'media' } = opts
   const url = `${API_BASE}/api/get-upload-url`
-  const token = import.meta.env.VITE_UPLOAD_SECRET
-  const headers = { 'Content-Type': 'application/json' }
-  if (token) headers['x-upload-token'] = token
   const res = await fetch(url, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, contentType, projectId: projectId || null, type }),
   })
   const data = await res.json().catch(() => ({}))
@@ -87,7 +84,7 @@ export function getUploadErrorMessage(err) {
   if (/CORS|cors|blocked/i.test(msg)) return 'Request blocked (CORS). Ensure R2 and API allow your origin.'
   if (/Network error|Failed to fetch/i.test(msg)) return 'Network error. Check your connection and that the API is reachable.'
   if (/Unauthorized|^401$|HTTP 401/i.test(msg)) {
-    return 'Upload unauthorized. Ensure VITE_UPLOAD_SECRET matches server UPLOAD_SECRET.'
+    return 'Upload unauthorized. Verify upload origin policy and server environment settings.'
   }
   if (/configuration error|contact support/i.test(msg)) {
     return 'Server configuration error. Please try again later or contact support.'

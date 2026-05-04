@@ -2,8 +2,7 @@
  * Vercel Serverless: POST /api/get-upload-url
  * Returns a presigned PUT URL for direct upload to Cloudflare R2.
  * Body: { filename, contentType, projectId, type: 'media' | 'hdri' | 'stage' }
- * Env: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL, UPLOAD_SECRET
- * Header: x-upload-token must match UPLOAD_SECRET (same value as VITE_UPLOAD_SECRET on the client).
+ * Env: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL, ALLOWED_UPLOAD_ORIGINS
  */
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
@@ -14,7 +13,10 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY
 const R2_BUCKET = process.env.R2_BUCKET
 const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL || ''
-const UPLOAD_SECRET = (process.env.UPLOAD_SECRET || '').trim()
+const ALLOWED_UPLOAD_ORIGINS = (process.env.ALLOWED_UPLOAD_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
@@ -32,13 +34,34 @@ function sanitizeKey(projectId, type, filename) {
   return `${safeProject}/media/${Date.now()}_${base}`
 }
 
+function normalizeOrigin(raw) {
+  if (!raw) return ''
+  try {
+    return new URL(raw).origin
+  } catch {
+    return ''
+  }
+}
+
+function isAllowedOrigin(origin, req) {
+  if (!origin) return true
+  if (ALLOWED_UPLOAD_ORIGINS.includes(origin)) return true
+
+  const host = req.headers.host
+  if (host && origin === `https://${host}`) return true
+  if (host && process.env.NODE_ENV !== 'production' && origin === `http://${host}`) return true
+  if (process.env.VERCEL_URL && origin === `https://${process.env.VERCEL_URL}`) return true
+
+  return false
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const uploadToken = req.headers['x-upload-token']
-  if (!UPLOAD_SECRET || uploadToken !== UPLOAD_SECRET) {
+  const requestOrigin = normalizeOrigin(req.headers.origin || req.headers.referer)
+  if (!isAllowedOrigin(requestOrigin, req)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
