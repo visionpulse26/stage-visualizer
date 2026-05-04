@@ -17,6 +17,23 @@
  */
 
 const MIN_HALF = 0.02 // guard against zero-size colliders
+const MAX_STAGE_COLLIDERS = 600
+
+function isFiniteVec3(v) {
+  return Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
+}
+
+function pushSpec(specs, spec) {
+  if (specs.length >= MAX_STAGE_COLLIDERS) return false
+  if (!isFiniteVec3(spec.position) || !isFiniteVec3(spec.halfExtents)) return true
+  const halfExtents = spec.halfExtents.map((n) => Math.max(Math.abs(n), MIN_HALF))
+  if (halfExtents.some((n) => n > 10000)) return true
+  specs.push({
+    ...spec,
+    halfExtents,
+  })
+  return true
+}
 
 export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig = {}) {
   const overrides = povColliderConfig?.overrides ?? {}
@@ -33,7 +50,7 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
 
     if (effectiveRole === 'floor' && Array.isArray(meta.floorTiles) && meta.floorTiles.length > 0) {
       meta.floorTiles.forEach((tile, index) => {
-        specs.push({
+        pushSpec(specs, {
           id: `${meta.id}_tile_${index}`,
           type: 'floor',
           position: tile.position,
@@ -43,7 +60,7 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
       continue
     }
 
-    specs.push({
+    pushSpec(specs, {
       id:          meta.id,
       type:        effectiveRole,
       position:    meta.center,               // [x, y, z]
