@@ -15,12 +15,24 @@ const LazyPovFpsRig = lazy(() =>
 )
 
 class PovRuntimeBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
   componentDidCatch(error, info) {
     console.error('[PovRuntimeBoundary]', error, info)
     this.props.onError?.(error)
   }
-
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false })
+    }
+  }
   render() {
+    if (this.state.hasError) return null
     return this.props.children
   }
 }
@@ -804,7 +816,7 @@ function StageCanvas({
         )}
 
         {povMode && modelUrl && onPovExitRequest && (
-          <PovRuntimeBoundary onError={handlePovRuntimeError}>
+          <PovRuntimeBoundary onError={handlePovRuntimeError} resetKey={modelUrl}>
             <Suspense fallback={null}>
               <LazyPovFpsRig
                 enabled={povMode}

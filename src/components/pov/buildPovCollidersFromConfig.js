@@ -40,6 +40,8 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
   const specs = []
 
   for (const meta of meshMetadata) {
+    if (!meta || !meta.size || !isFiniteVec3(meta.center)) continue
+
     const override = overrides[meta.id]
     const effectiveRole =
       override === undefined || override === 'auto'
