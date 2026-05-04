@@ -715,6 +715,7 @@ function CollabPage() {
         onMeshScanChange={setMeshMetadata}
         stageColliders={povColliderSpecs}
         povMode={povMode}
+        povPhysicsEnabled={false}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
