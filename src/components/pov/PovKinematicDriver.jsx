@@ -7,6 +7,7 @@ const FIXED_DT = 1 / 60
 const CAPSULE_HALF_HEIGHT = 0.55
 const CAPSULE_RADIUS = 0.28
 const CAPSULE_REST_CENTER_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS
+const FALL_RESET_Y = -8
 
 function findSpawnFromFloorColliders(camera, stageColliders) {
   const floors = stageColliders.filter((s) => s.type === 'floor' || s.type === 'explicit-floor')
@@ -73,8 +74,8 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     const p = rb.current.translation()
     camera.position.set(p.x, p.y + eyeOffset, p.z)
 
-    if (p.y < -40) {
-      rb.current.setTranslation({ x: spawn[0], y: CAPSULE_REST_CENTER_Y + 4, z: spawn[2] }, true)
+    if (p.y < FALL_RESET_Y) {
+      rb.current.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
       rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
   })
