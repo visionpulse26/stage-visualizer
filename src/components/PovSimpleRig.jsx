@@ -21,7 +21,7 @@ function PovSimpleTicker({ enabled, floorY, geofenceBox, geofencePadding, gl }) 
   return null
 }
 
-export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0 }) {
+export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0, onDebugEvent }) {
   const { gl } = useThree()
   const [locked, setLocked] = useState(() => document.pointerLockElement === gl.domElement)
 
@@ -29,17 +29,25 @@ export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0
     if (!enabled) return
     try {
       const result = gl.domElement.requestPointerLock?.()
-      result?.catch?.(() => {})
-    } catch (_) {}
-  }, [enabled, gl])
+      result?.catch?.((err) => {
+        onDebugEvent?.('pointer-lock-rejected', err?.message || 'requestPointerLock rejected')
+      })
+    } catch (err) {
+      onDebugEvent?.('pointer-lock-error', err?.message || 'requestPointerLock failed')
+    }
+  }, [enabled, gl, onDebugEvent])
 
   useEffect(() => {
     const el = gl.domElement
-    const sync = () => setLocked(document.pointerLockElement === el)
+    const sync = () => {
+      const isLocked = document.pointerLockElement === el
+      setLocked(isLocked)
+      onDebugEvent?.('pointer-lock-change', isLocked ? 'locked' : 'unlocked')
+    }
     document.addEventListener('pointerlockchange', sync)
     sync()
     return () => document.removeEventListener('pointerlockchange', sync)
-  }, [gl])
+  }, [gl, onDebugEvent])
 
   if (!enabled) return null
 
@@ -62,8 +70,12 @@ export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0
                 e.stopPropagation()
                 try {
                   const result = gl.domElement.requestPointerLock?.()
-                  result?.catch?.(() => {})
-                } catch (_) {}
+                  result?.catch?.((err) => {
+                    onDebugEvent?.('pointer-lock-rejected', err?.message || 'requestPointerLock rejected')
+                  })
+                } catch (err) {
+                  onDebugEvent?.('pointer-lock-error', err?.message || 'requestPointerLock failed')
+                }
               }}
               className="pointer-events-auto px-5 py-3 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md text-[11px] font-semibold uppercase tracking-widest text-white/85 hover:bg-black/85 hover:border-violet-500/40 transition-all"
               style={{ fontFamily: "'Chakra Petch', sans-serif" }}

@@ -557,6 +557,7 @@ function StageCanvas({
   povHeightOffset = 1.7,
   /** Called from the host page on Esc / Exit POV to restore orbit (not tied to pointer-lock loss). */
   onPovExitRequest,
+  onPovDebugEvent,
   /** Keep Collab stable while Rapier collider tuning remains Admin-first. */
   povPhysicsEnabled = true,
   /** Set to `gl.domElement` for reconnecting orbit controls after POV. */
@@ -581,10 +582,11 @@ function StageCanvas({
   const handleContextLost = useCallback(() => setContextLost(true), [])
   const handleContextRestored = useCallback(() => setContextLost(false), [])
   const handlePovRuntimeError = useCallback(
-    () => {
+    (error) => {
+      onPovDebugEvent?.('pov-runtime-error', error?.message || 'POV runtime error')
       onPovExitRequest?.()
     },
-    [onPovExitRequest],
+    [onPovDebugEvent, onPovExitRequest],
   )
 
   const povGeofencePadding = useMemo(() => {
@@ -837,6 +839,7 @@ function StageCanvas({
                   floorY={povHeightOffset}
                   geofenceBox={modelMetrics?.box ?? null}
                   geofencePadding={povGeofencePadding}
+                  onDebugEvent={onPovDebugEvent}
                 />
               )}
             </Suspense>

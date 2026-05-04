@@ -7,6 +7,7 @@ import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
+import CollabPovDebugPanel from '../components/CollabPovDebugPanel'
 import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
@@ -50,6 +51,10 @@ function CollabPage() {
 
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
+  const [povDebugVisible, setPovDebugVisible] = useState(false)
+  const [povStatus, setPovStatus] = useState('idle')
+  const [povEvents, setPovEvents] = useState([])
+  const [pointerLocked, setPointerLocked] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
   const [meshMetadata, setMeshMetadata]           = useState([])
   const [povColliderConfig, setPovColliderConfig] = useState({ overrides: {} })
@@ -63,6 +68,11 @@ function CollabPage() {
   useEffect(() => {
     povModeRef.current = povMode
   }, [povMode])
+
+  const addPovEvent = useCallback((type, message = '') => {
+    const t = new Date().toLocaleTimeString('vi-VN', { hour12: false })
+    setPovEvents((prev) => [...prev.slice(-39), { t, type, message: String(message || '') }])
+  }, [])
 
   // ── Scene config (LITE & STABLE — no rotation) ──────────────────────────────
   const [hdriPreset,         setHdriPreset]         = useState('none')
@@ -554,6 +564,8 @@ function CollabPage() {
   const exitPovMode = useCallback(async () => {
     if (!povModeRef.current || povExitInProgressRef.current) return
     povExitInProgressRef.current = true
+    setPovStatus('exiting')
+    addPovEvent('exit-start')
     try {
       if (document.pointerLockElement) document.exitPointerLock()
       const ctrl = cameraControlsRef.current
@@ -566,8 +578,10 @@ function CollabPage() {
       savedOrbitRef.current = null
       povModeRef.current = false
       setPovMode(false)
+      setPovStatus('exited')
+      addPovEvent('exit-complete')
     }
-  }, [])
+  }, [addPovEvent])
 
   useEffect(() => {
     if (!povMode) return
@@ -597,18 +611,36 @@ function CollabPage() {
       await exitPovMode()
       return
     }
-    if (!modelMetrics) return
+    setPovDebugVisible(true)
+    setPovStatus('enter-requested')
+    addPovEvent('enter-requested', `sceneReady=${sceneReady} model=${!!modelUrl} metrics=${!!modelMetrics}`)
+    if (!modelMetrics) {
+      setPovStatus('blocked-no-metrics')
+      addPovEvent('enter-blocked', 'modelMetrics missing')
+      return
+    }
     const snap = captureOrbitState(ctrl)
-    if (!snap) return
+    if (!snap) {
+      setPovStatus('blocked-no-orbit-state')
+      addPovEvent('enter-blocked', 'captureOrbitState failed')
+      return
+    }
     savedOrbitRef.current = snap
     try {
       glDomElementRef.current?.requestPointerLock?.()
-    } catch (_) {}
+      addPovEvent('pointer-lock-requested')
+    } catch (err) {
+      addPovEvent('pointer-lock-error', err?.message || 'requestPointerLock failed')
+    }
+    setPovStatus('camera-transition')
     await enterPovMode(ctrl, modelMetrics, povHeightOffset)
+    addPovEvent('camera-transition-complete')
     ctrl.disconnect()
     povModeRef.current = true
     setPovMode(true)
-  }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
+    setPovStatus('active')
+    addPovEvent('enter-complete', `colliders=${povColliderSpecs.length}`)
+  }, [addPovEvent, povMode, exitPovMode, modelMetrics, povHeightOffset, povColliderSpecs.length, sceneReady, modelUrl])
 
   useEffect(() => {
     if (!povMode) return
@@ -619,6 +651,32 @@ function CollabPage() {
     setIsAutoplayActive(false)
     cameraTargetPresetRef.current = null
   }, [povMode])
+
+  useEffect(() => {
+    const onError = (event) => {
+      addPovEvent('window-error', event.message || 'window error')
+    }
+    const onRejection = (event) => {
+      const reason = event.reason
+      addPovEvent('unhandled-rejection', reason?.message || reason || 'unhandled rejection')
+    }
+    const onPointerLock = () => {
+      const locked = document.pointerLockElement === glDomElementRef.current
+      setPointerLocked(locked)
+      addPovEvent('pointer-lock-global', locked ? 'locked' : 'unlocked')
+    }
+
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    document.addEventListener('pointerlockchange', onPointerLock)
+    onPointerLock()
+
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+      document.removeEventListener('pointerlockchange', onPointerLock)
+    }
+  }, [addPovEvent])
 
   // Autoplay loop
   useEffect(() => {
@@ -721,6 +779,7 @@ function CollabPage() {
         povPhysicsEnabled={false}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
+        onPovDebugEvent={addPovEvent}
         hdriPreset={hdriPreset}
         customHdriUrl={customHdriUrl}
         hdriFileExt={hdriFileExt}
@@ -809,6 +868,32 @@ function CollabPage() {
             Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
           </div>
         )}
+
+        {(povMode || povDebugVisible || povEvents.length > 0) && (
+          <button
+            type="button"
+            onClick={() => setPovDebugVisible((v) => !v)}
+            className="fixed left-4 top-4 z-[7001] rounded-xl border border-cyan-400/30 bg-black/65 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-cyan-100 backdrop-blur-sm hover:border-cyan-300/70"
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            {povDebugVisible ? 'Hide POV Debug' : 'Show POV Debug'}
+          </button>
+        )}
+
+        <CollabPovDebugPanel
+          visible={povDebugVisible}
+          povMode={povMode}
+          povStatus={povStatus}
+          povEvents={povEvents}
+          modelUrl={modelUrl}
+          modelMetrics={modelMetrics}
+          meshCount={meshMetadata.length}
+          colliderCount={povColliderSpecs.length}
+          povHeightOffset={povHeightOffset}
+          pointerLocked={pointerLocked}
+          sceneReady={sceneReady}
+          onClear={() => setPovEvents([])}
+        />
 
         {!povMode && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
