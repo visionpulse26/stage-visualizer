@@ -13,6 +13,20 @@ import Scene from './Scene'
 const LazyPovFpsRig = lazy(() =>
   import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
 )
+const LazyPovSimpleRig = lazy(() =>
+  import('./PovSimpleRig').then((mod) => ({ default: mod.PovSimpleRig }))
+)
+
+function canEvaluateCode() {
+  try {
+    // Rapier's compatibility WASM path may use generated functions. If the
+    // deployed CSP blocks eval, skip that path before it can blank the page.
+    Function('return true')()
+    return true
+  } catch {
+    return false
+  }
+}
 
 class PovRuntimeBoundary extends Component {
   constructor(props) {
@@ -567,6 +581,7 @@ function StageCanvas({
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const [povEvalAllowed, setPovEvalAllowed] = useState(null)
   const handleModelMetrics = useCallback(
     (m) => {
       setModelMetrics(m)
@@ -613,6 +628,17 @@ function StageCanvas({
   useEffect(() => {
     setModelMetrics(null)
   }, [modelUrl])
+
+  useEffect(() => {
+    if (!povMode) return
+    if (povEvalAllowed == null) {
+      setPovEvalAllowed(canEvaluateCode())
+      return
+    }
+    if (!povEvalAllowed) {
+      onPovDebugEvent?.('pov-csp-fallback', 'unsafe-eval blocked; using software POV rig')
+    }
+  }, [povMode, povEvalAllowed, onPovDebugEvent])
 
   return (
     <div
@@ -820,13 +846,22 @@ function StageCanvas({
         {povMode && modelUrl && onPovExitRequest && (
           <PovRuntimeBoundary onError={handlePovRuntimeError} resetKey={modelUrl}>
             <Suspense fallback={null}>
-              <LazyPovFpsRig
-                enabled={povMode}
-                floorY={povHeightOffset}
-                geofenceBox={modelMetrics?.box ?? null}
-                geofencePadding={povGeofencePadding}
-                stageColliders={stageColliders}
-              />
+              {povEvalAllowed == null ? null : povEvalAllowed ? (
+                <LazyPovFpsRig
+                  enabled={povMode}
+                  floorY={povHeightOffset}
+                  geofenceBox={modelMetrics?.box ?? null}
+                  geofencePadding={povGeofencePadding}
+                  stageColliders={stageColliders}
+                />
+              ) : (
+                <LazyPovSimpleRig
+                  enabled={povMode}
+                  floorY={povHeightOffset}
+                  geofenceBox={modelMetrics?.box ?? null}
+                  geofencePadding={povGeofencePadding}
+                />
+              )}
             </Suspense>
           </PovRuntimeBoundary>
         )}

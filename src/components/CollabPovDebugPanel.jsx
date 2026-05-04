@@ -10,6 +10,7 @@ export default function CollabPovDebugPanel({
   povHeightOffset,
   pointerLocked,
   sceneReady,
+  rig = 'shared-rapier',
   onClear,
 }) {
   if (!visible) return null
@@ -53,7 +54,7 @@ export default function CollabPovDebugPanel({
         <span className="text-white/35">povMode</span><span>{String(!!povMode)}</span>
         <span className="text-white/35">pointerLock</span><span>{String(!!pointerLocked)}</span>
         <span className="text-white/35">sceneReady</span><span>{String(!!sceneReady)}</span>
-        <span className="text-white/35">rig</span><span>shared-rapier</span>
+        <span className="text-white/35">rig</span><span>{rig}</span>
         <span className="text-white/35">height</span><span>{Number(povHeightOffset || 0).toFixed(2)}</span>
         <span className="text-white/35">meshes</span><span>{meshCount ?? 0}</span>
         <span className="text-white/35">colliders</span><span>{colliderCount ?? 0}</span>
