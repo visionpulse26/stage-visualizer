@@ -32,7 +32,7 @@ export default function CollabPovDebugPanel({
 
   return (
     <div
-      className="fixed left-4 bottom-4 z-[7000] w-[min(92vw,440px)] rounded-xl border border-cyan-400/25 bg-black/85 p-3 text-[11px] text-cyan-50/80 shadow-2xl backdrop-blur-md"
+      className="fixed right-4 bottom-4 z-[7000] w-[min(92vw,440px)] rounded-xl border border-cyan-400/25 bg-black/85 p-3 text-[11px] text-cyan-50/80 shadow-2xl backdrop-blur-md"
       style={{ fontFamily: "'Chakra Petch', monospace" }}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -53,7 +53,7 @@ export default function CollabPovDebugPanel({
         <span className="text-white/35">povMode</span><span>{String(!!povMode)}</span>
         <span className="text-white/35">pointerLock</span><span>{String(!!pointerLocked)}</span>
         <span className="text-white/35">sceneReady</span><span>{String(!!sceneReady)}</span>
-        <span className="text-white/35">rig</span><span>simple-collab</span>
+        <span className="text-white/35">rig</span><span>shared-rapier</span>
         <span className="text-white/35">height</span><span>{Number(povHeightOffset || 0).toFixed(2)}</span>
         <span className="text-white/35">meshes</span><span>{meshCount ?? 0}</span>
         <span className="text-white/35">colliders</span><span>{colliderCount ?? 0}</span>

@@ -13,9 +13,6 @@ import Scene from './Scene'
 const LazyPovFpsRig = lazy(() =>
   import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
 )
-const LazyPovSimpleRig = lazy(() =>
-  import('./PovSimpleRig').then((mod) => ({ default: mod.PovSimpleRig }))
-)
 
 class PovRuntimeBoundary extends Component {
   constructor(props) {
@@ -558,8 +555,6 @@ function StageCanvas({
   /** Called from the host page on Esc / Exit POV to restore orbit (not tied to pointer-lock loss). */
   onPovExitRequest,
   onPovDebugEvent,
-  /** Keep Collab stable while Rapier collider tuning remains Admin-first. */
-  povPhysicsEnabled = true,
   /** Set to `gl.domElement` for reconnecting orbit controls after POV. */
   glDomElementRef,
   /** Fires with MeshMeta[] after the model is normalized — used by Admin to build collider config. */
@@ -825,23 +820,13 @@ function StageCanvas({
         {povMode && modelUrl && onPovExitRequest && (
           <PovRuntimeBoundary onError={handlePovRuntimeError} resetKey={modelUrl}>
             <Suspense fallback={null}>
-              {povPhysicsEnabled ? (
-                <LazyPovFpsRig
-                  enabled={povMode}
-                  floorY={povHeightOffset}
-                  geofenceBox={modelMetrics?.box ?? null}
-                  geofencePadding={povGeofencePadding}
-                  stageColliders={stageColliders}
-                />
-              ) : (
-                <LazyPovSimpleRig
-                  enabled={povMode}
-                  floorY={povHeightOffset}
-                  geofenceBox={modelMetrics?.box ?? null}
-                  geofencePadding={povGeofencePadding}
-                  onDebugEvent={onPovDebugEvent}
-                />
-              )}
+              <LazyPovFpsRig
+                enabled={povMode}
+                floorY={povHeightOffset}
+                geofenceBox={modelMetrics?.box ?? null}
+                geofencePadding={povGeofencePadding}
+                stageColliders={stageColliders}
+              />
             </Suspense>
           </PovRuntimeBoundary>
         )}

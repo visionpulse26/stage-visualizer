@@ -776,7 +776,6 @@ function CollabPage() {
         onMeshScanChange={setMeshMetadata}
         stageColliders={povColliderSpecs}
         povMode={povMode}
-        povPhysicsEnabled={false}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
         onPovDebugEvent={addPovEvent}
@@ -873,7 +872,7 @@ function CollabPage() {
           <button
             type="button"
             onClick={() => setPovDebugVisible((v) => !v)}
-            className="fixed left-4 top-4 z-[7001] rounded-xl border border-cyan-400/30 bg-black/65 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-cyan-100 backdrop-blur-sm hover:border-cyan-300/70"
+            className="fixed right-4 top-24 z-[7001] rounded-xl border border-cyan-400/30 bg-black/65 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-cyan-100 backdrop-blur-sm hover:border-cyan-300/70"
             style={{ fontFamily: "'Chakra Petch', sans-serif" }}
           >
             {povDebugVisible ? 'Hide POV Debug' : 'Show POV Debug'}
