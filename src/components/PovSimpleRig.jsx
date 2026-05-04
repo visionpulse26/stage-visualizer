@@ -27,7 +27,10 @@ export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0
 
   useEffect(() => {
     if (!enabled) return
-    gl.domElement.requestPointerLock?.()
+    try {
+      const result = gl.domElement.requestPointerLock?.()
+      result?.catch?.(() => {})
+    } catch (_) {}
   }, [enabled, gl])
 
   useEffect(() => {
@@ -57,7 +60,10 @@ export function PovSimpleRig({ enabled, floorY, geofenceBox, geofencePadding = 0
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                gl.domElement.requestPointerLock?.()
+                try {
+                  const result = gl.domElement.requestPointerLock?.()
+                  result?.catch?.(() => {})
+                } catch (_) {}
               }}
               className="pointer-events-auto px-5 py-3 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md text-[11px] font-semibold uppercase tracking-widest text-white/85 hover:bg-black/85 hover:border-violet-500/40 transition-all"
               style={{ fontFamily: "'Chakra Petch', sans-serif" }}

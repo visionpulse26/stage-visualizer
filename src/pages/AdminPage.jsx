@@ -661,6 +661,9 @@ function AdminPage() {
     const snap = captureOrbitState(ctrl)
     if (!snap) return
     savedOrbitRef.current = snap
+    try {
+      glDomElementRef.current?.requestPointerLock?.()
+    } catch (_) {}
     await enterPovMode(ctrl, modelMetrics, povHeightOffset)
     ctrl.disconnect()
     povModeRef.current = true
