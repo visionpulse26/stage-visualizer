@@ -33,6 +33,21 @@ function waitForControlsRest(controls, msFallback = 2000) {
   })
 }
 
+function getAudienceSpawn(modelMetrics, povHeightOffset) {
+  const { box, center, radius, size } = modelMetrics
+  const eyeY = povHeightOffset
+  const cx = center?.x ?? 0
+  const cz = center?.z ?? 0
+
+  if (box?.isBox3) {
+    const depth = Math.max(size?.z || (box.max.z - box.min.z), 1)
+    const inset = Math.max(4, Math.min(16, depth * 0.18))
+    return new THREE.Vector3(cx, eyeY, box.max.z - inset)
+  }
+
+  return new THREE.Vector3(cx, eyeY, cz + Math.max(Math.min((radius || 10) * 0.6, 16), 4))
+}
+
 /**
  * Animate camera to standing "audience" eye height (model is normalized: floor ≈ y=0).
  */
@@ -40,38 +55,19 @@ export async function enterPovMode(controls, modelMetrics, povHeightOffset, { an
   if (!controls || !modelMetrics) return
   const { center, radius } = modelMetrics
   const eyeY = povHeightOffset
-  const currentPos = controls.camera?.position
-  const currentTarget = new THREE.Vector3()
-  const hasTarget = typeof controls.getTarget === 'function'
+  const spawn = getAudienceSpawn(modelMetrics, eyeY)
+  const lookDistance = Math.max(Math.min((radius || 10) * 0.2, 12), 4)
+  const targetZ = Math.min(center.z, spawn.z - lookDistance)
 
-  if (currentPos && hasTarget) {
-    controls.getTarget(currentTarget)
-    const flatDir = new THREE.Vector3(
-      currentTarget.x - currentPos.x,
-      0,
-      currentTarget.z - currentPos.z,
-    )
-    if (flatDir.lengthSq() > 1e-6) {
-      flatDir.normalize()
-      const lookDistance = Math.max(Math.min(radius * 0.2, 12), 4)
-      controls.setLookAt(
-        currentPos.x,
-        eyeY,
-        currentPos.z,
-        currentPos.x + flatDir.x * lookDistance,
-        eyeY,
-        currentPos.z + flatDir.z * lookDistance,
-        animate,
-      )
-    } else {
-      controls.setLookAt(currentPos.x, eyeY, currentPos.z, center.x, eyeY, center.z, animate)
-    }
-  } else {
-    const cx = center.x
-    const cz = center.z
-    const camZ = cz + radius * 0.6
-    controls.setLookAt(cx, eyeY, camZ, cx, eyeY, cz, animate)
-  }
+  controls.setLookAt(
+    spawn.x,
+    eyeY,
+    spawn.z,
+    center.x,
+    eyeY,
+    targetZ,
+    animate,
+  )
   if (animate) {
     await waitForControlsRest(controls)
   } else {

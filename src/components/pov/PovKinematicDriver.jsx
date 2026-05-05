@@ -8,6 +8,10 @@ const CAPSULE_HALF_HEIGHT = 0.55
 const CAPSULE_RADIUS = 0.28
 const CAPSULE_REST_CENTER_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS
 const FALL_RESET_Y = -8
+const clamp = (value, min, max) => {
+  if (min > max) return (min + max) * 0.5
+  return Math.max(min, Math.min(max, value))
+}
 
 function findSpawnFromFloorColliders(camera, stageColliders) {
   const floors = stageColliders.filter((s) => s.type === 'floor' || s.type === 'explicit-floor')
@@ -26,8 +30,8 @@ function findSpawnFromFloorColliders(camera, stageColliders) {
     const score = dx * dx + dz * dz
 
     if (score < bestScore) {
-      const x = insideX ? camera.position.x : cx
-      const z = insideZ ? camera.position.z : cz
+      const x = clamp(camera.position.x, cx - hx + CAPSULE_RADIUS, cx + hx - CAPSULE_RADIUS)
+      const z = clamp(camera.position.z, cz - hz + CAPSULE_RADIUS, cz + hz - CAPSULE_RADIUS)
       best = [x, cy + hy + CAPSULE_REST_CENTER_Y + 0.08, z]
       bestScore = score
     }
