@@ -7,7 +7,6 @@ import CollabPanel from '../components/CollabPanel'
 import TopBar from '../components/TopBar'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import GlobalFooter from '../components/GlobalFooter'
-import CollabPovDebugPanel from '../components/CollabPovDebugPanel'
 import Notch from '../components/Notch'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
@@ -51,7 +50,6 @@ function CollabPage() {
 
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
-  const [povDebugVisible, setPovDebugVisible] = useState(false)
   const [povStatus, setPovStatus] = useState('idle')
   const [povEvents, setPovEvents] = useState([])
   const [pointerLocked, setPointerLocked] = useState(false)
@@ -611,7 +609,6 @@ function CollabPage() {
       await exitPovMode()
       return
     }
-    setPovDebugVisible(true)
     setPovStatus('enter-requested')
     addPovEvent('enter-requested', `sceneReady=${sceneReady} model=${!!modelUrl} metrics=${!!modelMetrics}`)
     if (!modelMetrics) {
@@ -876,32 +873,6 @@ function CollabPage() {
             Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
           </div>
         )}
-
-        {(povMode || povDebugVisible || povEvents.length > 0) && (
-          <button
-            type="button"
-            onClick={() => setPovDebugVisible((v) => !v)}
-            className="fixed right-4 top-24 z-[7001] rounded-xl border border-cyan-400/30 bg-black/65 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-cyan-100 backdrop-blur-sm hover:border-cyan-300/70"
-            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
-          >
-            {povDebugVisible ? 'Hide POV Debug' : 'Show POV Debug'}
-          </button>
-        )}
-
-        <CollabPovDebugPanel
-          visible={povDebugVisible}
-          povMode={povMode}
-          povStatus={povStatus}
-          povEvents={povEvents}
-          modelUrl={modelUrl}
-          modelMetrics={modelMetrics}
-          meshCount={meshMetadata.length}
-          colliderCount={povColliderSpecs.length}
-          povHeightOffset={povHeightOffset}
-          pointerLocked={pointerLocked}
-          sceneReady={sceneReady}
-          onClear={() => setPovEvents([])}
-        />
 
         {!povMode && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg px-5 py-2 text-white/40 text-xs pointer-events-none">
