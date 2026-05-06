@@ -4,7 +4,6 @@ import StageCanvas from '../components/StageCanvas'
 import { useSecurityLockdown } from '../hooks/useSecurityLockdown'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
-import GlobalFooter from '../components/GlobalFooter'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
@@ -116,11 +115,15 @@ function ClientPage() {
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
 
-  // Active slide (from snapshot) or null
-  const activeSlide = useMemo(
-    () => presentationSlides.find(s => s.id === activeSlideId) ?? presentationSlides[0] ?? null,
-    [presentationSlides, activeSlideId],
-  )
+  // Active slide — from snapshot if published, otherwise wrap the active raw clip
+  const activeSlide = useMemo(() => {
+    if (presentationSlides.length > 0) {
+      return presentationSlides.find(s => s.id === activeSlideId) ?? presentationSlides[0] ?? null
+    }
+    // No published snapshot — synthesise a minimal slide from the active playlist clip
+    const clip = videoPlaylist.find(c => c.id === activeVideoId) ?? videoPlaylist[0]
+    return clip ? rawToSlide(clip, videoPlaylist.indexOf(clip)) : null
+  }, [presentationSlides, activeSlideId, videoPlaylist, activeVideoId])
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => () => {
@@ -480,6 +483,7 @@ function ClientPage() {
             clipTitle={activeSlide?.title ?? activeClipRaw?.name ?? '—'}
             feedbackCount={0}
             onExpand={() => setContextCollapsed(false)}
+            projectName={projectName}
           />
         ) : (
           <ContextPanel
@@ -488,11 +492,10 @@ function ClientPage() {
             activePresetId={activePresetId}
             onCameraSelect={handleCameraSelect}
             onCollapse={() => setContextCollapsed(true)}
+            projectName={projectName}
           />
         )}
       </div>
-
-      <GlobalFooter projectName={projectName} />
     </div>
   )
 }
@@ -620,7 +623,7 @@ function ClipStrip({ clips, activeId, onSelect }) {
 }
 
 // ── Right context panel (expanded) ────────────────────────────────────────────
-function ContextPanel({ slide, cameraPresets, activePresetId, onCameraSelect, onCollapse }) {
+function ContextPanel({ slide, cameraPresets, activePresetId, onCameraSelect, onCollapse, projectName }) {
   return (
     <div style={{
       width: 268, flexShrink: 0,
@@ -628,23 +631,34 @@ function ContextPanel({ slide, cameraPresets, activePresetId, onCameraSelect, on
       borderLeft: `1px solid ${T.border}`,
       display: 'flex', flexDirection: 'column',
     }}>
-      {/* Header */}
+      {/* Clip title header */}
       <div style={{
-        padding: '9px 12px', borderBottom: `1px solid rgba(220,100,30,0.12)`,
-        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+        padding: '14px 14px 12px',
+        borderBottom: `1px solid rgba(220,100,30,0.12)`,
+        flexShrink: 0,
+        background: 'rgba(0,0,0,0.18)',
       }}>
-        <Col gap={1} style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {slide?.title || '—'}
-          </span>
-          {slide?.subtitle && (
-            <span style={{ fontSize: 10, color: T.text2 }}>{slide.subtitle}</span>
-          )}
-        </Col>
-        <button onClick={onCollapse} style={{
-          background: T.glass, border: `1px solid ${T.border}`, borderRadius: 5,
-          color: T.text3, cursor: 'pointer', padding: '4px 6px', fontSize: 10, flexShrink: 0,
-        }}>⟩</button>
+        <Row gap={8} align="flex-start">
+          <Col gap={3} style={{ flex: 1, minWidth: 0 }}>
+            <span style={{
+              fontSize: 15, fontWeight: 700, color: T.text,
+              lineHeight: 1.25, letterSpacing: '0.01em',
+              display: 'block',
+            }}>
+              {slide?.title || '—'}
+            </span>
+            {slide?.subtitle && (
+              <span style={{ fontSize: 11, color: T.text2, lineHeight: 1.4, display: 'block' }}>
+                {slide.subtitle}
+              </span>
+            )}
+          </Col>
+          <button onClick={onCollapse} style={{
+            background: T.glass, border: `1px solid ${T.border}`, borderRadius: 5,
+            color: T.text3, cursor: 'pointer', padding: '4px 7px',
+            fontSize: 12, flexShrink: 0, marginTop: 1,
+          }}>⟩</button>
+        </Row>
       </div>
 
       {/* Scrollable content */}
@@ -695,34 +709,45 @@ function ContextPanel({ slide, cameraPresets, activePresetId, onCameraSelect, on
             )
           })()}
 
-          {/* No content fallback */}
-          {!slide && (
-            <span style={{ fontSize: 11, color: T.text4, textAlign: 'center', display: 'block', paddingTop: 24 }}>
-              Select a clip to view context
-            </span>
-          )}
         </Col>
       </div>
 
       {/* Leave Feedback CTA — Phase 3 */}
-      <div style={{ padding: '12px', borderTop: `1px solid rgba(220,100,30,0.1)`, flexShrink: 0 }}>
+      <div style={{ padding: '12px 12px 8px', borderTop: `1px solid rgba(220,100,30,0.1)`, flexShrink: 0 }}>
         <button style={{
           width: '100%', padding: '8px', borderRadius: 7,
           fontFamily: 'Chakra Petch, sans-serif', fontSize: 11, fontWeight: 600,
           background: `linear-gradient(180deg, ${T.ember2}, ${T.ember})`,
           border: `1px solid ${T.ember2}`, color: 'white', cursor: 'pointer',
           boxShadow: `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.2)`,
-          opacity: 0.5, pointerEvents: 'none', // enabled in Phase 3
+          opacity: 0.5, pointerEvents: 'none',
         }}>
           ✦ Leave Feedback
         </button>
+      </div>
+
+      {/* Branding watermark — replaces GlobalFooter for client view */}
+      <div style={{
+        padding: '8px 14px 10px',
+        borderTop: `1px solid rgba(220,100,30,0.07)`,
+        flexShrink: 0,
+      }}>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: '1.4px',
+          textTransform: 'uppercase', color: T.ember,
+          textShadow: '0 0 8px rgba(232,83,26,0.35)',
+          display: 'block',
+          userSelect: 'none',
+        }}>
+          {projectName ? `${projectName} · ` : ''}Visualized by Too:Awake
+        </span>
       </div>
     </div>
   )
 }
 
 // ── Collapsed handle ──────────────────────────────────────────────────────────
-function CollapsedHandle({ clipTitle, feedbackCount, onExpand }) {
+function CollapsedHandle({ clipTitle, feedbackCount, onExpand, projectName }) {
   return (
     <div
       onClick={onExpand}
@@ -737,8 +762,8 @@ function CollapsedHandle({ clipTitle, feedbackCount, onExpand }) {
       <span style={{ fontSize: 12, color: T.text3 }}>‹</span>
       <span style={{
         writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-        fontSize: 10, color: T.text2, letterSpacing: '0.08em',
-        maxHeight: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        fontSize: 10, fontWeight: 600, color: T.text2, letterSpacing: '0.06em',
+        maxHeight: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
         {clipTitle}
       </span>
@@ -751,6 +776,16 @@ function CollapsedHandle({ clipTitle, feedbackCount, onExpand }) {
           {feedbackCount}
         </span>
       )}
+      {/* Branding — rotated at bottom */}
+      <div style={{ flex: 1 }} />
+      <span style={{
+        writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+        fontSize: 7, fontWeight: 700, letterSpacing: '1px',
+        textTransform: 'uppercase', color: T.ember, opacity: 0.6,
+        whiteSpace: 'nowrap', userSelect: 'none',
+      }}>
+        Too:Awake
+      </span>
     </div>
   )
 }
