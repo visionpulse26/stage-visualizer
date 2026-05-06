@@ -7,7 +7,8 @@ import CollabPage from './pages/CollabPage'
 import ClientPage from './pages/ClientPage'
 import PrivacyPage from './pages/PrivacyPage'
 
-const EmbedPage = lazy(() => import('./pages/EmbedPage'))
+const EmbedPage             = lazy(() => import('./pages/EmbedPage'))
+const PresentationEditorPage = lazy(() => import('./pages/PresentationEditorPage'))
 
 function App() {
   return (
@@ -24,6 +25,18 @@ function App() {
           element={
             <ProtectedRoute>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected: Presentation Editor — /admin/:projectId/presentation */}
+        <Route
+          path="/admin/:projectId/presentation"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={null}>
+                <PresentationEditorPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />
