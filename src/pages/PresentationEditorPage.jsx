@@ -1,10 +1,18 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import { supabase } from '../lib/supabaseClient'
 import {
+  deleteFeedback,
+  deleteVersion,
+  discardDraft,
   loadDraft,
+  loadAllVersions,
   loadPublishedVersion,
+  pruneArchivedVersions,
+  renameVersion,
+  restoreVersion,
+  revertDraftToPublished,
   saveDraft,
   publishVersion,
   loadFeedback,
@@ -12,12 +20,19 @@ import {
   buildSnapshot,
   snapshotSummary,
   slidePublishChecklist,
+  VersionConflictError,
 } from '../lib/presentationVersions'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
-import { fetchAndCacheAsset } from '../utils/secureAssetLoader'
+import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
+import { uploadClipThumbnail } from '../utils/clipThumbnails'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
+import VersionHistoryDrawer from '../features/presentation/components/VersionHistoryDrawer'
+import { DirectorNotesEditor } from '../features/presentation/components/DirectorNotesEditor'
+import { AnnotationModeTopBar } from '../features/presentation/components/AnnotationModeOverlay'
+import { AnnotationLayer, AnnotationToolbar, StageLockBanner } from '../components/FeedbackDraftPanel'
 
 // ── Design tokens (mirror Hi-Fi v2 CSS vars) ─────────────────────────────────
 const T = {
@@ -62,22 +77,25 @@ const Divider = ({ style = {} }) => (
 )
 
 // ── Small UI primitives ───────────────────────────────────────────────────────
-function GhostBtn({ children, style = {}, onClick, danger = false }) {
+function GhostBtn({ children, style = {}, onClick, onAuxClick, danger = false, disabled = false }) {
   const [hov, setHov] = useState(false)
   return (
     <button
       onClick={onClick}
+      onAuxClick={onAuxClick}
+      disabled={disabled}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5,
         padding: '5px 11px', borderRadius: 6,
         fontFamily: 'Chakra Petch, sans-serif', fontSize: 11, fontWeight: 500,
-        cursor: 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.02em',
+        cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.02em',
         transition: 'all 0.15s',
-        background: hov ? T.glass2 : T.glass,
-        border: `1px solid ${danger ? 'rgba(232,83,26,0.3)' : (hov ? T.border2 : T.border)}`,
-        color: danger ? 'rgba(232,83,26,0.8)' : (hov ? T.text : T.text2),
+        background: hov && !disabled ? T.glass2 : T.glass,
+        border: `1px solid ${danger ? 'rgba(232,83,26,0.3)' : (hov && !disabled ? T.border2 : T.border)}`,
+        color: danger ? 'rgba(232,83,26,0.8)' : (hov && !disabled ? T.text : T.text2),
+        opacity: disabled ? 0.55 : 1,
         ...style,
       }}
     >
@@ -153,6 +171,23 @@ function StatusTag({ type, children }) {
 }
 
 // ── Left panel: Slide/Clip list ───────────────────────────────────────────────
+function ClipThumbnail({ src, active, width = 46, height = 30, radius = 5 }) {
+  return (
+    <div style={{
+      width, height, borderRadius: radius, flexShrink: 0,
+      background: '#1a1410',
+      border: `1px solid ${active ? T.ember : 'rgba(220,100,30,0.15)'}`,
+      boxShadow: active ? '0 0 10px rgba(232,83,26,0.3)' : 'none',
+      backgroundImage: src
+        ? `url("${src}")`
+        : 'repeating-linear-gradient(135deg, #1a1410 0px, #1a1410 3px, #201810 3px, #201810 9px)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      overflow: 'hidden',
+    }} />
+  )
+}
+
 function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
@@ -208,14 +243,7 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
               {/* Drag handle */}
               <DragIcon />
 
-              {/* Thumbnail placeholder */}
-              <div style={{
-                width: 46, height: 30, borderRadius: 5, flexShrink: 0,
-                background: '#1a1410',
-                border: `1px solid ${isActive ? T.ember : 'rgba(220,100,30,0.15)'}`,
-                boxShadow: isActive ? '0 0 10px rgba(232,83,26,0.3)' : 'none',
-                backgroundImage: 'repeating-linear-gradient(135deg, #1a1410 0px, #1a1410 3px, #201810 3px, #201810 9px)',
-              }} />
+              <ClipThumbnail src={slide.thumbnailUrl || slide.thumbnail_url} active={isActive} />
 
               <Col gap={2} style={{ flex: 1, minWidth: 0 }}>
                 <Row gap={4}>
@@ -257,7 +285,7 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
 }
 
 // ── Right panel: Context tab ──────────────────────────────────────────────────
-function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHidden, onDelete }) {
+function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHidden, onDelete, projectId, onEditAnnotation }) {
   if (!slide) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -295,42 +323,14 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
           />
         </Col>
 
-        {/* Director's Note */}
-        <Col gap={4}>
-          <Row gap={6}>
-            <Label>Director's Note</Label>
-            <Spacer f={1} />
-            <button
-              onClick={() => onChange({ directorNoteVisible: !slide.directorNoteVisible })}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, padding: '1px 6px',
-                borderRadius: 4, cursor: 'pointer', border: 'none',
-                background: slide.directorNoteVisible
-                  ? 'rgba(43,199,130,0.1)' : 'rgba(255,255,255,0.05)',
-                borderWidth: 1, borderStyle: 'solid',
-                borderColor: slide.directorNoteVisible
-                  ? 'rgba(43,199,130,0.3)' : 'rgba(255,255,255,0.1)',
-              }}
-            >
-              {slide.directorNoteVisible
-                ? <EyeIcon color={T.green} />
-                : <EyeOffIcon color={T.text3} />}
-              <span style={{
-                fontSize: 9, fontWeight: 600, fontFamily: 'Chakra Petch, sans-serif',
-                color: slide.directorNoteVisible ? T.green : T.text3,
-              }}>
-                {slide.directorNoteVisible ? 'Visible to client' : 'Hidden from client'}
-              </span>
-            </button>
-          </Row>
-          <TextInput
-            value={slide.directorNote}
-            onChange={v => onChange({ directorNote: v })}
-            placeholder="Write a director's note for this clip…"
-            multiline
-            rows={4}
-          />
-        </Col>
+        {/* Director's Notes */}
+        <DirectorNotesEditor
+          notes={slide.directorNotes ?? []}
+          cameraPresets={cameraPresets}
+          defaultCameraPresetId={slide.defaultCameraPresetId ?? ''}
+          onChange={notes => onChange({ directorNotes: notes })}
+          onEditAnnotation={onEditAnnotation ?? (() => {})}
+        />
 
         {/* Default Camera */}
         <Col gap={4}>
@@ -381,6 +381,7 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
             <RefRow
               key={ref.id}
               ref_={ref}
+              projectId={projectId}
               onChange={updated => {
                 const refs = [...(slide.references ?? [])]
                 refs[i] = updated
@@ -457,7 +458,7 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
 }
 
 // ── Right panel: Feedback tab ─────────────────────────────────────────────────
-function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onJumpToClip, onOpenFullReview }) {
+function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onDelete, onJumpToClip, onOpenFullReview, highlightFeedbackId }) {
   const [filter, setFilter] = useState('all')
 
   const filtered = useMemo(() => {
@@ -518,7 +519,9 @@ function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onJumpToC
             <FeedbackCard
               key={item.id}
               item={item}
+              highlight={item.id === highlightFeedbackId}
               onResolve={() => onResolve(item.id, item.status === 'pending' ? 'resolved' : 'pending')}
+              onDelete={() => onDelete(item)}
               onJump={() => onJumpToClip(item)}
             />
           ))}
@@ -535,15 +538,16 @@ function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onJumpToC
   )
 }
 
-function FeedbackCard({ item, onResolve, onJump }) {
+function FeedbackCard({ item, onResolve, onDelete, onJump, highlight = false }) {
   const [hov, setHov] = useState(false)
   return (
     <div
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        background: hov ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.28)',
-        border: `1px solid ${hov ? T.border2 : 'rgba(220,100,30,0.1)'}`,
+        background: highlight ? 'rgba(31,160,238,0.07)' : (hov ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.28)'),
+        border: `1px solid ${highlight ? 'rgba(31,160,238,0.45)' : (hov ? T.border2 : 'rgba(220,100,30,0.1)')}`,
+        boxShadow: highlight ? '0 0 0 2px rgba(31,160,238,0.12)' : 'none',
         borderRadius: 8, padding: '8px 10px', transition: 'all 0.15s',
       }}
     >
@@ -587,19 +591,23 @@ function FeedbackCard({ item, onResolve, onJump }) {
         <GhostBtn style={{ padding: '2px 8px', fontSize: 9 }} onClick={onJump}>
           → Jump to clip
         </GhostBtn>
+        <GhostBtn danger style={{ padding: '2px 8px', fontSize: 9 }} onClick={onDelete}>
+          Delete
+        </GhostBtn>
       </Row>
     </div>
   )
 }
 
 // ── Publish Modal ─────────────────────────────────────────────────────────────
-function PublishModal({ slides, cameraPresets, projectName, publishedVersionNumber, onCancel, onSaveDraft, onPublish, saving }) {
+function PublishModal({ slides, cameraPresets, projectName, draftVersionNumber, publishedVersionNumber, onCancel, onSaveDraft, onPublish, saving }) {
   const [versionName, setVersionName] = useState('')
   const [releaseNotes, setReleaseNotes] = useState('')
 
   const snapshot  = buildSnapshot(projectName, slides, cameraPresets)
   const summary   = snapshotSummary(snapshot)
-  const nextNum   = (publishedVersionNumber ?? 0) + 1
+  const nextNum   = draftVersionNumber ?? ((publishedVersionNumber ?? 0) + 1)
+  const hasCenterPreset = cameraPresets.some(p => String(p?.name ?? '').toLowerCase() === 'center')
 
   return (
     <div style={{
@@ -690,6 +698,18 @@ function PublishModal({ slides, cameraPresets, projectName, publishedVersionNumb
                 </Col>
               </Row>
             </div>
+            {!hasCenterPreset && (
+              <div style={{
+                background: 'rgba(232,149,24,0.10)',
+                border: '1px solid rgba(232,149,24,0.45)',
+                borderRadius: 8,
+                padding: '9px 11px',
+              }}>
+                <span style={{ fontSize: 10, color: T.amber, lineHeight: 1.5, display: 'block', fontFamily: 'Chakra Petch, sans-serif' }}>
+                  Publish checklist: missing required camera preset <b>Center</b>. Add a preset named "Center" to guarantee Feedback mode locks to the expected camera.
+                </span>
+              </div>
+            )}
           </Col>
         </div>
 
@@ -714,6 +734,12 @@ function PublishModal({ slides, cameraPresets, projectName, publishedVersionNumb
 export default function PresentationEditorPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const jumpSlideId    = searchParams.get('slideId')
+  const jumpFeedbackId = searchParams.get('feedbackId')
+  // Freeze at mount — không để thay đổi URL retrigger load effect
+  const jumpTargetRef  = useRef({ slideId: jumpSlideId, feedbackId: jumpFeedbackId })
+  const seekApplied    = useRef(false)
 
   // ── Stage / model ─────────────────────────────────────────────────────────
   const [modelUrl,       setModelUrl]       = useState(null)
@@ -725,17 +751,36 @@ export default function PresentationEditorPage() {
   const [activePresetId, setActivePresetId] = useState(null)
   const cameraControlsRef   = useRef(null)
   const cameraTargetPresetRef = useRef(null)
+  const thumbnailQueueRef = useRef(new Set())
 
-  const [sunPosition] = useState([10.6, 10.6, 7.5])
-  const [sunIntensity] = useState(1)
-  const [gridCellSize] = useState(1)
+  const [sunPosition,   setSunPosition]   = useState([10.6, 10.6, 7.5])
+  const [sunIntensity,  setSunIntensity]  = useState(1)
+  const [gridCellSize,  setGridCellSize]  = useState(1)
+  const [hdriPreset,    setHdriPreset]    = useState('none')
+  const [customHdriUrl, setCustomHdriUrl] = useState(null)
+  const [hdriFileExt,   setHdriFileExt]   = useState('hdr')
+  const [envIntensity,  setEnvIntensity]  = useState(1)
+  const [bgBlur,        setBgBlur]        = useState(0)
+  const [showHdriBackground, setShowHdriBackground] = useState(false)
+  const [bloomStrength, setBloomStrength] = useState(0.3)
+  const [bloomThreshold, setBloomThreshold] = useState(1.2)
+  const [protectLed,    setProtectLed]    = useState(true)
+  const [transparentLedConfig, setTransparentLedConfig] = useState({
+    enabled: true, gridDensity: 36, gridDensityX: 36, gridDensityY: 36,
+    barThickness: 0.08, barThicknessX: 0.08, barThicknessY: 0.08, glow: 1.4, opacity: 0.95,
+  })
 
   const { loadingManager, loaded: stageLoaded, reset: resetStageLoading } = useStageLoading()
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
 
   // ── Video playlist → slides ───────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])   // raw DB playlist
+  const videoPlaylistRef = useRef([])
+  const [isPlaying,     setIsPlaying]     = useState(false)
+  const [currentTime,   setCurrentTime]   = useState(0)
+  const [activeDuration, setActiveDuration] = useState(0)
   const videoRef = useRef(null)
+  const activationSeqRef = useRef(0)
 
   // ── Presentation editor state ─────────────────────────────────────────────
   const [slides,          setSlides]          = useState([])
@@ -745,7 +790,16 @@ export default function PresentationEditorPage() {
   const [isSaving,        setIsSaving]        = useState(false)
   const [saveError,       setSaveError]       = useState(null)
   const [showPublish,     setShowPublish]      = useState(false)
+  const [showHistory,     setShowHistory]      = useState(false)
+  const [draftVersion,    setDraftVersion]     = useState(null)
   const [publishedVersion, setPublishedVersion] = useState(null)  // latest published
+  const [versionConflict, setVersionConflict]  = useState(null)
+  const [adminIdentity,   setAdminIdentity]    = useState('')
+
+  // ── Annotation mode (admin drawing annotation for a director note) ─────────
+  const [annotatingNoteId,    setAnnotatingNoteId]    = useState(null)
+  const [annotTempAnnotation, setAnnotTempAnnotation] = useState(null)
+  const [annotTool,           setAnnotTool]           = useState(null)
 
   // ── Feedback for active slide ─────────────────────────────────────────────
   const [slideFeedback, setSlideFeedback] = useState([])
@@ -755,6 +809,76 @@ export default function PresentationEditorPage() {
   const [projectNotFound, setProjectNotFound] = useState(false)
 
   const activeSlide = slides.find(s => s.id === activeSlideId) ?? null
+  const isVersionConflict = useCallback((err) => (
+    err instanceof VersionConflictError || err?.name === 'VersionConflictError'
+  ), [])
+
+  useEffect(() => {
+    videoPlaylistRef.current = videoPlaylist
+  }, [videoPlaylist])
+
+  useEffect(() => {
+    let mounted = true
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!mounted) return
+        const user = data?.session?.user
+        setAdminIdentity(user?.email || user?.user_metadata?.full_name || user?.id || '')
+      })
+      .catch(() => {})
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user
+      setAdminIdentity(user?.email || user?.user_metadata?.full_name || user?.id || '')
+    })
+
+    return () => {
+      mounted = false
+      listener?.subscription?.unsubscribe()
+    }
+  }, [])
+
+  const persistProjectPlaylistThumbnail = useCallback(async (slide, slideIndex, thumbnailUrl) => {
+    const currentPlaylist = videoPlaylistRef.current
+    if (!projectId || !isPersistedThumbnailUrl(thumbnailUrl) || !currentPlaylist.length) return
+
+    const clipIndex = currentPlaylist.findIndex(c =>
+      String(c.id) === String(slide.clipId) || c.name === slide.clipId
+    )
+    const targetIndex = clipIndex >= 0 ? clipIndex : slideIndex
+    if (targetIndex < 0 || targetIndex >= currentPlaylist.length) return
+
+    const currentClip = currentPlaylist[targetIndex]
+    if (currentClip?.thumbnailUrl === thumbnailUrl || currentClip?.thumbnail_url === thumbnailUrl) return
+
+    const nextPlaylist = currentPlaylist.map((clip, i) => (
+      i === targetIndex ? { ...clip, thumbnailUrl } : clip
+    ))
+    videoPlaylistRef.current = nextPlaylist
+    setVideoPlaylist(nextPlaylist)
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ media_playlist: nextPlaylist })
+      .eq('id', projectId)
+
+    if (error) throw error
+  }, [projectId])
+
+  const persistDraftThumbnail = useCallback(async (sourceSlides, slideId, thumbnailUrl) => {
+    if (!projectId || !isPersistedThumbnailUrl(thumbnailUrl)) return sourceSlides
+
+    const nextSlides = sourceSlides.map(s => (
+      s.id === slideId ? { ...s, thumbnailUrl } : s
+    ))
+    const snapshot = buildSnapshot(projectName, nextSlides, cameraPresets)
+    const savedDraft = await saveDraft(projectId, snapshot, {
+      expectedToken: draftVersion?.version_token ?? null,
+      createdBy: adminIdentity,
+    })
+    setDraftVersion(savedDraft)
+    return nextSlides
+  }, [adminIdentity, cameraPresets, draftVersion?.version_token, projectId, projectName])
 
   // ── Load project from DB ──────────────────────────────────────────────────
   useEffect(() => {
@@ -775,6 +899,30 @@ export default function PresentationEditorPage() {
 
         setProjectName(p.name ?? 'Project')
         setCameraPresets(p.camera_presets ?? [])
+        setGridCellSize(p.grid_cell_size ?? 1)
+
+        // Restore scene_config — HDRI, lighting, post-FX
+        const cfg = p.scene_config
+        if (cfg) {
+          setHdriPreset(cfg.hdriPreset ?? 'none')
+          setEnvIntensity(cfg.envIntensity ?? 1)
+          setBgBlur(cfg.bgBlur ?? 0)
+          setShowHdriBackground(cfg.showHdriBackground ?? false)
+          setBloomStrength(cfg.bloomStrength ?? 0.3)
+          setBloomThreshold(cfg.bloomThreshold ?? 1.2)
+          setProtectLed(cfg.protectLed ?? true)
+          setTransparentLedConfig(prev => ({ ...prev, ...(cfg.transparentLedConfig || cfg.transparentLed || {}) }))
+          if (cfg.sunPosition?.length) setSunPosition(cfg.sunPosition)
+          if (cfg.sunIntensity != null) setSunIntensity(cfg.sunIntensity)
+          if (cfg.customHdriUrl) {
+            const hdriSrc = cfg.customHdriUrl.replace('visual.tooawake.online', 'visual.tooawake.mov')
+            const ext = (hdriSrc.split('?')[0].split('.').pop() || 'hdr').toLowerCase()
+            setHdriFileExt(['hdr', 'exr'].includes(ext) ? ext : 'hdr')
+            fetchAsBlobUrlWithCache(hdriSrc)
+              .then(b => { addBlob(b); setCustomHdriUrl(b) })
+              .catch(() => {})
+          }
+        }
 
         // Load model
         if (p.stage_url) {
@@ -789,21 +937,33 @@ export default function PresentationEditorPage() {
         // Load presentation draft or build from playlist
         const draft = await loadDraft(projectId)
         const published = await loadPublishedVersion(projectId)
+        setDraftVersion(draft)
         setPublishedVersion(published)
 
+        let slidesData
         if (draft?.snapshot_json?.slides?.length) {
-          setSlides(draft.snapshot_json.slides)
-          const first = draft.snapshot_json.slides[0]
-          if (first) setActiveSlideId(first.id)
+          slidesData = draft.snapshot_json.slides
         } else {
-          // Bootstrap slides from media_playlist
-          const bootstrapped = playlist.map((clip, i) => makeSlideFromClip(clip, i, p.camera_presets))
-          setSlides(bootstrapped)
-          if (bootstrapped[0]) setActiveSlideId(bootstrapped[0].id)
+          slidesData = playlist.map((clip, i) => makeSlideFromClip(clip, i, p.camera_presets))
         }
+        setSlides(slidesData)
 
-        // Activate first video
-        if (playlist[0]) activatePlaylistClip(playlist[0])
+        // Determine initial slide — prefer jump target over first
+        const { slideId: jumpTarget } = jumpTargetRef.current
+        const targetSlide   = jumpTarget ? slidesData.find(s => s.id === jumpTarget) : null
+        const initialSlide  = targetSlide ?? slidesData[0]
+        if (initialSlide) setActiveSlideId(initialSlide.id)
+        if (targetSlide)  setRightTab('feedback')
+
+        // Activate exactly ONE clip (the jump target's clip, or first)
+        const initialIdx  = slidesData.indexOf(initialSlide)
+        const initialClip = initialSlide
+          ? (playlist.find(c =>
+              String(c.id) === String(initialSlide.clipId) ||
+              c.name === initialSlide.clipId
+            ) ?? playlist[initialIdx >= 0 ? initialIdx : 0])
+          : playlist[0]
+        if (initialClip) activatePlaylistClip(initialClip)
       } catch (err) {
         console.error('[PresentationEditor] load error', err)
       } finally {
@@ -819,12 +979,16 @@ export default function PresentationEditorPage() {
   useEffect(() => {
     if (!activeSlide) return
 
-    const clip = videoPlaylist.find(c => c.id === activeSlide.clipId || c.name === activeSlide.clipId)
+    const slideIdx = slides.findIndex(s => s.id === activeSlideId)
+    const clip = videoPlaylist.find(c =>
+      String(c.id) === String(activeSlide.clipId) || c.name === activeSlide.clipId
+    ) ?? videoPlaylist[slideIdx]
     if (clip) activatePlaylistClip(clip)
 
     if (activeSlide.defaultCameraPresetId) {
       setActivePresetId(activeSlide.defaultCameraPresetId)
-      setCameraTargetPreset(cameraTargetPresetRef, activeSlide.defaultCameraPresetId)
+      const preset = findPreset(cameraPresets, activeSlide.defaultCameraPresetId)
+      if (preset) setCameraTargetPreset(cameraTargetPresetRef, preset)
     }
 
     if (projectId) {
@@ -835,25 +999,121 @@ export default function PresentationEditorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSlideId, projectId])
 
+  useEffect(() => {
+    if (!projectId || !slides.length || !videoPlaylist.length) return
+
+    let cancelled = false
+    async function generateMissingThumbnails() {
+      let nextSlides = slides
+      for (const slide of slides) {
+        if (cancelled) return
+        if (isPersistedThumbnailUrl(slide.thumbnailUrl || slide.thumbnail_url)) continue
+        if (thumbnailQueueRef.current.has(slide.id)) continue
+
+        const slideIdx = slides.findIndex(s => s.id === slide.id)
+        const clip = videoPlaylist.find(c =>
+          String(c.id) === String(slide.clipId) || c.name === slide.clipId
+        ) ?? videoPlaylist[slideIdx]
+        if (!clip?.url) continue
+
+        thumbnailQueueRef.current.add(slide.id)
+        try {
+          const thumbnailUrl = await uploadClipThumbnail({
+            clip,
+            projectId,
+            onLocalUrl: (localUrl) => {
+              if (cancelled || !localUrl) return
+              addBlob(localUrl)
+              setSlides(prev => prev.map(s => (
+                s.id === slide.id ? { ...s, thumbnailUrl: localUrl } : s
+              )))
+            },
+          })
+          if (cancelled || !thumbnailUrl) continue
+          setSlides(prev => prev.map(s => (
+            s.id === slide.id ? { ...s, thumbnailUrl } : s
+          )))
+          if (isPersistedThumbnailUrl(thumbnailUrl)) {
+            await persistProjectPlaylistThumbnail(slide, slideIdx, thumbnailUrl)
+            nextSlides = await persistDraftThumbnail(nextSlides, slide.id, thumbnailUrl)
+            if (!cancelled) setSlides(nextSlides)
+          }
+        } catch (err) {
+          console.warn('[PresentationEditor] thumbnail failed', clip?.name || clip?.id, err)
+        } finally {
+          thumbnailQueueRef.current.delete(slide.id)
+        }
+      }
+    }
+
+    generateMissingThumbnails()
+    return () => { cancelled = true }
+  }, [persistDraftThumbnail, persistProjectPlaylistThumbnail, projectId, slides.length, videoPlaylist.length])
+
   // ── Video activation ──────────────────────────────────────────────────────
-  const activatePlaylistClip = useCallback((clip) => {
+  const activatePlaylistClip = useCallback(async (clip) => {
     if (!clip?.url) return
+    const activationSeq = ++activationSeqRef.current
+    setCurrentTime(0)
+    setActiveDuration(0)
+    setIsPlaying(false)
+    const isRemote = clip.url.startsWith('http://') || clip.url.startsWith('https://')
+    let url = clip.url
+    try {
+      if (isRemote) {
+        const blobUrl = await fetchAsBlobUrlWithCache(clip.url)
+        addBlob(blobUrl)
+        url = blobUrl
+      }
+    } catch { url = clip.url }
+
     if (clip.type === 'image') {
-      setActiveImageUrl(clip.url)
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.src = ''
+      }
+      setActiveImageUrl(url)
       setVideoElement(null)
       setVideoLoaded(true)
     } else {
       setActiveImageUrl(null)
       if (!videoRef.current) videoRef.current = document.createElement('video')
       const vid = videoRef.current
-      vid.src = clip.url
+      vid.pause()
+      vid.src = url
       vid.loop = true
       vid.muted = true
       vid.playsInline = true
-      vid.play().catch(() => {})
-      setVideoElement(vid)
-      setVideoLoaded(true)
+      vid.preload = 'auto'
+      vid.onloadeddata = () => {
+        if (activationSeq !== activationSeqRef.current) return
+        setVideoLoaded(true)
+        setVideoElement(vid)
+        setActiveDuration(Number.isFinite(vid.duration) ? vid.duration : 0)
+        vid.play().catch(() => {})
+      }
+      vid.onerror = () => {
+        if (activationSeq !== activationSeqRef.current) return
+        setVideoLoaded(false)
+        setIsPlaying(false)
+      }
+      vid.ontimeupdate = () => setCurrentTime(vid.currentTime || 0)
+      vid.ondurationchange = () => setActiveDuration(Number.isFinite(vid.duration) ? vid.duration : 0)
+      vid.onplay = () => setIsPlaying(true)
+      vid.onpause = () => setIsPlaying(false)
+      vid.onended = () => setIsPlaying(false)
+      vid.load()
     }
+  }, [addBlob])
+
+  const handlePlay = useCallback(() => {
+    const vid = videoRef.current
+    if (!vid || activeImageUrl) return
+    vid.play().catch(() => {})
+  }, [activeImageUrl])
+
+  const handlePause = useCallback(() => {
+    videoRef.current?.pause()
   }, [])
 
   // ── Slide mutations ───────────────────────────────────────────────────────
@@ -912,48 +1172,220 @@ export default function PresentationEditorPage() {
     markDirty()
   }, [markDirty])
 
-  // ── Camera preset selection ───────────────────────────────────────────────
-  const selectCamera = useCallback((presetId) => {
-    setActivePresetId(presetId)
-    setCameraTargetPreset(cameraTargetPresetRef, presetId)
+  // ── Annotation mode ───────────────────────────────────────────────────────
+  const enterAnnotationMode = useCallback((noteId) => {
+    const centerPreset = cameraPresets.find(p => p.name?.toLowerCase() === 'center')
+    if (!centerPreset) return
+    setActivePresetId(centerPreset.id)
+    setCameraTargetPreset(cameraTargetPresetRef, centerPreset)
+    if (cameraControlsRef.current) cameraControlsRef.current.enabled = false
+    setAnnotatingNoteId(noteId)
+    // Pre-fill temp annotation with any existing annotation on the note
+    const note = activeSlide?.directorNotes?.find(n => n.id === noteId)
+    setAnnotTempAnnotation(note?.annotation ?? null)
+    setAnnotTool(null)
+  }, [cameraPresets, activeSlide])
+
+  const exitAnnotationMode = useCallback(() => {
+    if (cameraControlsRef.current) cameraControlsRef.current.enabled = true
+    setAnnotatingNoteId(null)
+    setAnnotTempAnnotation(null)
+    setAnnotTool(null)
   }, [])
 
+  const saveAnnotation = useCallback(() => {
+    if (!annotatingNoteId || !activeSlide) { exitAnnotationMode(); return }
+    const clipTime = videoRef.current?.currentTime ?? null
+    const centerPreset = cameraPresets.find(p => p.name?.toLowerCase() === 'center')
+    const updatedNotes = (activeSlide.directorNotes ?? []).map(n =>
+      n.id === annotatingNoteId
+        ? { ...n, annotation: annotTempAnnotation, cameraPresetId: centerPreset?.id ?? n.cameraPresetId, clipTimeSeconds: clipTime, updatedAt: new Date().toISOString() }
+        : n
+    )
+    updateActiveSlide({ directorNotes: updatedNotes })
+    exitAnnotationMode()
+  }, [annotatingNoteId, activeSlide, annotTempAnnotation, cameraPresets, updateActiveSlide, exitAnnotationMode])
+
+  // ── Camera preset selection ───────────────────────────────────────────────
+  const selectCamera = useCallback((presetId) => {
+    const preset = findPreset(cameraPresets, presetId)
+    if (!preset) return
+    setActivePresetId(preset.id)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
+  }, [cameraPresets])
+
+  const ensureSlideThumbnails = useCallback(async (sourceSlides) => {
+    const nextSlides = [...sourceSlides]
+    let changed = false
+
+    for (let i = 0; i < nextSlides.length; i++) {
+      const slide = nextSlides[i]
+      if (isPersistedThumbnailUrl(slide.thumbnailUrl || slide.thumbnail_url)) continue
+
+      const clip = videoPlaylist.find(c =>
+        String(c.id) === String(slide.clipId) || c.name === slide.clipId
+      ) ?? videoPlaylist[i]
+      if (!clip?.url) continue
+
+      try {
+        const thumbnailUrl = await uploadClipThumbnail({
+          clip,
+          projectId,
+          onLocalUrl: (localUrl) => {
+            if (!localUrl) return
+            addBlob(localUrl)
+            setSlides(prev => prev.map(s => (
+              s.id === slide.id ? { ...s, thumbnailUrl: localUrl } : s
+            )))
+          },
+        })
+        if (isPersistedThumbnailUrl(thumbnailUrl)) {
+          nextSlides[i] = { ...slide, thumbnailUrl }
+          changed = true
+          await persistProjectPlaylistThumbnail(slide, i, thumbnailUrl)
+          setSlides(prev => prev.map(s => (
+            s.id === slide.id ? { ...s, thumbnailUrl } : s
+          )))
+        }
+      } catch (err) {
+        console.warn('[PresentationEditor] thumbnail upload before save failed', clip?.name || clip?.id, err)
+      }
+    }
+
+    return changed ? nextSlides : sourceSlides
+  }, [addBlob, persistProjectPlaylistThumbnail, projectId, videoPlaylist])
+
   // ── Save draft ────────────────────────────────────────────────────────────
-  const handleSaveDraft = useCallback(async (vName = '', rNotes = '') => {
+  const handleSaveDraft = useCallback(async (vName = '', rNotes = '', opts = {}) => {
     if (!projectId) return
-    setIsSaving(true); setSaveError(null)
+    const force = !!opts.force
+    setIsSaving(true); setSaveError(null); setVersionConflict(null)
     try {
-      const snapshot = buildSnapshot(projectName, slides, cameraPresets)
-      await saveDraft(projectId, snapshot, vName)
+      const slidesWithThumbnails = await ensureSlideThumbnails(slides)
+      const snapshot = buildSnapshot(projectName, slidesWithThumbnails, cameraPresets)
+      const savedDraft = await saveDraft(projectId, snapshot, {
+        versionName: vName,
+        releaseNotes: rNotes,
+        expectedToken: force ? null : (draftVersion?.version_token ?? null),
+        createdBy: adminIdentity,
+      })
+      setDraftVersion(savedDraft)
       setIsDirty(false)
     } catch (err) {
-      setSaveError(err.message)
+      if (isVersionConflict(err)) {
+        setVersionConflict({ action: 'save', currentVersion: err.currentVersion, versionName: vName, releaseNotes: rNotes })
+        setSaveError(null)
+      } else {
+        setSaveError(err.message)
+      }
     } finally {
       setIsSaving(false)
     }
-  }, [projectId, projectName, slides, cameraPresets])
+  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, slides])
 
   // ── Publish ───────────────────────────────────────────────────────────────
-  const handlePublish = useCallback(async (vName, rNotes) => {
+  const handlePublish = useCallback(async (vName, rNotes, opts = {}) => {
     if (!projectId) return
-    setIsSaving(true); setSaveError(null)
+    const force = !!opts.force
+    setIsSaving(true); setSaveError(null); setVersionConflict(null)
     try {
-      const snapshot = buildSnapshot(projectName, slides, cameraPresets)
-      const published = await publishVersion(projectId, snapshot, vName, rNotes)
+      const slidesWithThumbnails = await ensureSlideThumbnails(slides)
+      const snapshot = buildSnapshot(projectName, slidesWithThumbnails, cameraPresets)
+      const published = await publishVersion(projectId, snapshot, {
+        versionName: vName,
+        releaseNotes: rNotes,
+        expectedToken: force ? null : (draftVersion?.version_token ?? null),
+        publishedBy: adminIdentity,
+        createdBy: adminIdentity,
+      })
       setPublishedVersion(published)
+      setDraftVersion(null)
       setIsDirty(false)
       setShowPublish(false)
     } catch (err) {
-      setSaveError(err.message)
+      if (isVersionConflict(err)) {
+        setVersionConflict({ action: 'publish', currentVersion: err.currentVersion, versionName: vName, releaseNotes: rNotes })
+        setSaveError(null)
+      } else {
+        setSaveError(err.message)
+      }
     } finally {
       setIsSaving(false)
     }
-  }, [projectId, projectName, slides, cameraPresets])
+  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, slides])
+
+  const handleReloadConflictDraft = useCallback(() => {
+    const current = versionConflict?.currentVersion
+    if (!current?.snapshot_json) return
+    const snapshot = current.snapshot_json
+    if (Array.isArray(snapshot.slides)) setSlides(snapshot.slides)
+    if (Array.isArray(snapshot.cameraPresets)) setCameraPresets(snapshot.cameraPresets)
+    if (snapshot.projectName) setProjectName(snapshot.projectName)
+    setDraftVersion(current)
+    setIsDirty(false)
+    setVersionConflict(null)
+    setSaveError(null)
+  }, [versionConflict])
+
+  const handleOverwriteConflictDraft = useCallback(() => {
+    if (!versionConflict) return
+    const { action, versionName, releaseNotes } = versionConflict
+    if (action === 'publish') {
+      handlePublish(versionName, releaseNotes, { force: true })
+    } else {
+      handleSaveDraft(versionName, releaseNotes, { force: true })
+    }
+  }, [handlePublish, handleSaveDraft, versionConflict])
+
+  const handleHistoryChanged = useCallback(() => {
+    window.location.reload()
+  }, [])
+
+  const restoreVersionWithIdentity = useCallback((projectIdArg, sourceVersionId) => (
+    restoreVersion(projectIdArg, sourceVersionId, { createdBy: adminIdentity })
+  ), [adminIdentity])
+
+  const openClientPreview = useCallback(() => {
+    window.open(`/view/${projectId}`, '_blank', 'noopener,noreferrer')
+  }, [projectId])
+
+  const handlePreviewAuxClick = useCallback((event) => {
+    if (event.button !== 1) return
+    event.preventDefault()
+    openClientPreview()
+  }, [openClientPreview])
+
+  // ── Seek + camera restore after feedback loads (from jump link) ─────────
+  useEffect(() => {
+    if (!jumpFeedbackId || seekApplied.current || !slideFeedback.length) return
+    const item = slideFeedback.find(f => f.id === jumpFeedbackId)
+    if (!item) return
+    seekApplied.current = true
+    if (item.clip_time_seconds != null && videoRef.current) {
+      videoRef.current.currentTime = item.clip_time_seconds
+    }
+    if (item.camera_snapshot_json?.name) {
+      const preset = findPreset(cameraPresets, item.camera_snapshot_json.name)
+      if (preset) {
+        setActivePresetId(preset.id)
+        setCameraTargetPreset(cameraTargetPresetRef, preset)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideFeedback, jumpFeedbackId])
 
   // ── Feedback actions ──────────────────────────────────────────────────────
   const handleResolve = useCallback(async (itemId, newStatus) => {
     await setFeedbackStatus(itemId, newStatus)
     setSlideFeedback(prev => prev.map(f => f.id === itemId ? { ...f, status: newStatus } : f))
+  }, [])
+
+  const handleDeleteFeedback = useCallback(async (item) => {
+    if (!item) return
+    const label = item.comment ? `"${item.comment.slice(0, 80)}${item.comment.length > 80 ? '...' : ''}"` : 'this feedback'
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    await deleteFeedback(item.id)
+    setSlideFeedback(prev => prev.filter(f => f.id !== item.id))
   }, [])
 
   const handleJumpToClip = useCallback((item) => {
@@ -962,7 +1394,7 @@ export default function PresentationEditorPage() {
       setActiveSlideId(slide.id)
       if (item.camera_snapshot_json?.name) {
         const preset = cameraPresets.find(p => p.name === item.camera_snapshot_json.name)
-        if (preset) setCameraTargetPreset(cameraTargetPresetRef, preset.id)
+        if (preset) setCameraTargetPreset(cameraTargetPresetRef, preset)
       }
     }
   }, [slides, cameraPresets])
@@ -984,10 +1416,18 @@ export default function PresentationEditorPage() {
   const versionLabel = publishedVersion
     ? `v${publishedVersion.version_number} · ${formatRelative(publishedVersion.published_at)}`
     : null
+  const topBarStatus = isDirty
+    ? { type: 'unsaved', label: 'Unsaved changes' }
+    : draftVersion
+      ? { type: 'pending', label: `Draft saved · ${formatRelative(draftVersion.updated_at ?? draftVersion.created_at)}` }
+      : publishedVersion
+        ? { type: 'draft', label: `On v${publishedVersion.version_number} · published ${formatRelative(publishedVersion.published_at)}` }
+        : { type: 'draft', label: 'No draft' }
+  const topBarButtonStyle = { padding: '6px 12px', fontSize: 12, minHeight: 30 }
 
   return (
     <div style={{
-      background: T.bg, color: T.text, height: '100vh',
+      background: T.bg, color: T.text, height: '100%',
       display: 'flex', flexDirection: 'column',
       fontFamily: 'Chakra Petch, sans-serif', overflow: 'hidden',
       position: 'relative',
@@ -999,38 +1439,56 @@ export default function PresentationEditorPage() {
         background: 'radial-gradient(ellipse 60% 40% at 15% 100%, rgba(180,50,10,0.12) 0%, transparent 60%), radial-gradient(ellipse 40% 30% at 85% 0%, rgba(31,160,238,0.05) 0%, transparent 50%)',
       }} />
 
+      {/* ── Annotation mode top bar (replaces main top bar) ── */}
+      {annotatingNoteId && (
+        <AnnotationModeTopBar
+          noteIndex={(activeSlide?.directorNotes ?? []).findIndex(n => n.id === annotatingNoteId)}
+          slideTitle={activeSlide?.title ?? ''}
+          camName={cameraPresets.find(p => p.name?.toLowerCase() === 'center')?.name ?? 'Center'}
+          clipTime={videoRef.current?.currentTime ?? null}
+          onSave={saveAnnotation}
+          onCancel={exitAnnotationMode}
+        />
+      )}
+      {annotatingNoteId && (
+        <StageLockBanner
+          lockedCtx={{ slideTitle: activeSlide?.title ?? '', camName: 'Center', clipTime: null }}
+          mode="annotation"
+        />
+      )}
+
       {/* ── Top bar ── */}
       <div style={{
-        height: 44, background: 'rgba(10,8,6,0.94)', borderBottom: `1px solid ${T.border}`,
-        display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px',
+        height: 48, background: 'rgba(10,8,6,0.94)', borderBottom: `1px solid ${T.border}`,
+        display: annotatingNoteId ? 'none' : 'flex', alignItems: 'center', gap: 11, padding: '0 15px',
         flexShrink: 0, backdropFilter: 'blur(20px)', position: 'relative', zIndex: 10,
         boxShadow: '0 1px 0 rgba(255,255,255,0.03)',
       }}>
         {/* Logo */}
         <div style={{
-          width: 24, height: 24, borderRadius: 5, flexShrink: 0,
+          width: 26, height: 26, borderRadius: 6, flexShrink: 0,
           background: `linear-gradient(135deg, ${T.ember2}, ${T.ember})`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 700, color: 'white',
+          fontSize: 12, fontWeight: 700, color: 'white',
           boxShadow: `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.3)`,
         }}>SV</div>
 
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>StageViz</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>StageViz</span>
 
-        <div style={{ width: 1, height: 22, background: 'rgba(220,100,30,0.22)' }} />
+        <div style={{ width: 1, height: 24, background: 'rgba(220,100,30,0.22)' }} />
 
         <Col gap={1}>
-          <span style={{ fontSize: 11, fontWeight: 500, color: T.text }}>{projectName}</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: T.text }}>{projectName}</span>
           <Row gap={6}>
-            {publishedVersion && (
-              <span style={{ fontSize: 9, color: T.text3 }}>
-                Draft from Published v{publishedVersion.version_number}
+            {draftVersion && (
+              <span style={{ fontSize: 10, color: T.text3 }}>
+                Draft v{draftVersion.version_number}
               </span>
             )}
             {publishedVersion?.published_at && (
               <>
-                <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.text4 }} />
-                <span style={{ fontSize: 9, color: T.text3 }}>
+                {draftVersion && <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.text4 }} />}
+                <span style={{ fontSize: 10, color: T.text3 }}>
                   Last published {formatRelative(publishedVersion.published_at)}
                 </span>
               </>
@@ -1038,7 +1496,7 @@ export default function PresentationEditorPage() {
           </Row>
         </Col>
 
-        {isDirty && <StatusTag type="unsaved">● Unsaved changes</StatusTag>}
+        <StatusTag type={topBarStatus.type}>{topBarStatus.label}</StatusTag>
 
         <Spacer f={1} />
 
@@ -1048,14 +1506,49 @@ export default function PresentationEditorPage() {
           </span>
         )}
 
-        <GhostBtn onClick={() => navigate(`/view/${projectId}`)}>👁 Preview as client</GhostBtn>
-        <GhostBtn onClick={() => handleSaveDraft()} disabled={isSaving}>
+        <GhostBtn
+          style={topBarButtonStyle}
+          onClick={openClientPreview}
+          onAuxClick={handlePreviewAuxClick}
+        >
+          👁 Preview as client
+        </GhostBtn>
+        <GhostBtn style={topBarButtonStyle} onClick={() => navigate(`/admin/${projectId}/feedback`)}>💬 View Feedback</GhostBtn>
+        <GhostBtn style={topBarButtonStyle} onClick={() => setShowHistory(true)}>History</GhostBtn>
+        <GhostBtn style={topBarButtonStyle} onClick={() => handleSaveDraft()} disabled={isSaving}>
           {isSaving ? 'Saving…' : 'Save draft'}
         </GhostBtn>
-        <EmberBtn onClick={() => setShowPublish(true)}>→ Publish</EmberBtn>
+        <EmberBtn style={topBarButtonStyle} onClick={() => setShowPublish(true)}>→ Publish</EmberBtn>
       </div>
 
       {/* ── 3-column body ── */}
+      {versionConflict && (
+        <div style={{
+          position: 'relative',
+          zIndex: 9,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 15px',
+          background: 'rgba(232,149,24,0.12)',
+          borderBottom: '1px solid rgba(232,149,24,0.32)',
+          color: T.text,
+          fontFamily: 'Chakra Petch, sans-serif',
+        }}>
+          <span style={{ color: T.amber, fontSize: 12, fontWeight: 800 }}>Conflict</span>
+          <span style={{ color: T.text2, fontSize: 11 }}>
+            This draft was updated elsewhere. Your local edits are still open.
+          </span>
+          <Spacer f={1} />
+          <GhostBtn style={{ ...topBarButtonStyle, minHeight: 28 }} onClick={handleReloadConflictDraft} disabled={isSaving}>
+            Reload server version
+          </GhostBtn>
+          <EmberBtn style={{ ...topBarButtonStyle, minHeight: 28 }} onClick={handleOverwriteConflictDraft} disabled={isSaving}>
+            Overwrite with my edits
+          </EmberBtn>
+        </div>
+      )}
+
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
 
         {/* ── LEFT: Slide list ── */}
@@ -1112,27 +1605,50 @@ export default function PresentationEditorPage() {
                 modelUrl={modelUrl}
                 videoElement={videoElement}
                 activeImageUrl={activeImageUrl}
+                onLedMaterialStatus={() => {}}
                 sunPosition={sunPosition}
                 sunIntensity={sunIntensity}
                 gridCellSize={gridCellSize}
                 modelLoaded={stageLoaded}
                 cameraControlsRef={cameraControlsRef}
                 cameraTargetPresetRef={cameraTargetPresetRef}
-                cameraFlyDurationSeconds={4}
+                cameraFlyDurationSeconds={1.5}
                 loadingManager={loadingManager}
-                hdriPreset="none"
-                envIntensity={1}
-                bgBlur={0}
-                bloomStrength={0.3}
-                bloomThreshold={1.2}
-                protectLed
-                transparentLedConfig={{ enabled: true, gridDensity: 36, gridDensityX: 36, gridDensityY: 36, barThickness: 0.08, barThicknessX: 0.08, barThicknessY: 0.08, glow: 1.4, opacity: 0.95 }}
-                showHdriBackground={false}
+                hdriPreset={hdriPreset}
+                customHdriUrl={customHdriUrl}
+                hdriFileExt={hdriFileExt}
+                onHdriLoading={() => {}}
+                onHdriLoadError={() => {}}
+                onHdriClearRequest={() => {}}
+                envIntensity={envIntensity}
+                bgBlur={bgBlur}
+                showHdriBackground={showHdriBackground}
+                bloomStrength={bloomStrength}
+                bloomThreshold={bloomThreshold}
+                protectLed={protectLed}
+                transparentLedConfig={transparentLedConfig}
               />
             ) : (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ color: T.text4, fontSize: 11 }}>No stage model loaded</span>
               </div>
+            )}
+
+            {/* Annotation mode overlays */}
+            {annotatingNoteId && (
+              <>
+                <AnnotationLayer
+                  annotation={annotTempAnnotation}
+                  activeTool={annotTool}
+                  onAnnotationChange={setAnnotTempAnnotation}
+                />
+                <AnnotationToolbar
+                  activeTool={annotTool}
+                  onToolChange={setAnnotTool}
+                  onClear={() => { setAnnotTempAnnotation(null); setAnnotTool(null) }}
+                  hasAnnotation={!!annotTempAnnotation}
+                />
+              </>
             )}
 
             {/* Active camera badge */}
@@ -1158,21 +1674,44 @@ export default function PresentationEditorPage() {
             height: 38, background: 'rgba(5,4,3,0.95)', borderTop: `1px solid rgba(220,100,30,0.14)`,
             display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', flexShrink: 0,
           }}>
-            <span style={{ color: T.text2, fontSize: 12, cursor: 'pointer' }}>⏮</span>
-            <span style={{ color: T.text, fontSize: 12, cursor: 'pointer' }}>▶</span>
-            <span style={{ color: T.text2, fontSize: 12, cursor: 'pointer' }}>⏭</span>
+            <button
+              onClick={isPlaying ? handlePause : handlePlay}
+              disabled={!!activeImageUrl || !videoElement}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: activeImageUrl || !videoElement ? T.text4 : (isPlaying ? T.text2 : T.text),
+                cursor: activeImageUrl || !videoElement ? 'default' : 'pointer',
+                fontSize: 13,
+                padding: 0,
+                width: 18,
+                height: 18,
+                lineHeight: '18px',
+              }}
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? '⏸' : '▶'}
+            </button>
             <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: '0%', background: T.ember, borderRadius: 2 }} />
+              <div style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
+                width: `${activeDuration > 0 ? Math.min(100, (currentTime / activeDuration) * 100) : 0}%`,
+                background: T.ember,
+                borderRadius: 2,
+              }} />
             </div>
             <span style={{ color: T.text2, fontSize: 10, fontFamily: 'Chakra Petch, sans-serif' }}>
-              — / {activeSlide ? formatDuration(activeSlide.durationSeconds) : '—'}
+              {formatDuration(currentTime)} / {formatDuration(activeDuration || activeSlide?.durationSeconds || 0)}
             </span>
           </div>
         </div>
 
         {/* ── RIGHT: Context / Feedback panel ── */}
         <div style={{
-          width: 268, flexShrink: 0,
+          width: 280, flexShrink: 0, zoom: 1.1,
           background: T.glassDark, backdropFilter: 'blur(14px)',
           borderLeft: `1px solid ${T.border}`,
           display: 'flex', flexDirection: 'column',
@@ -1211,6 +1750,8 @@ export default function PresentationEditorPage() {
               onDuplicate={duplicateSlide}
               onToggleHidden={toggleHidden}
               onDelete={deleteSlide}
+              projectId={projectId}
+              onEditAnnotation={enterAnnotationMode}
             />
           ) : (
             <FeedbackPanel
@@ -1218,8 +1759,10 @@ export default function PresentationEditorPage() {
               slideName={activeSlide?.title}
               versionLabel={versionLabel}
               onResolve={handleResolve}
+              onDelete={handleDeleteFeedback}
               onJumpToClip={handleJumpToClip}
               onOpenFullReview={() => navigate(`/admin/${projectId}/feedback`)}
+              highlightFeedbackId={jumpFeedbackId}
             />
           )}
         </div>
@@ -1231,11 +1774,29 @@ export default function PresentationEditorPage() {
           slides={slides}
           cameraPresets={cameraPresets}
           projectName={projectName}
+          draftVersionNumber={draftVersion?.version_number ?? null}
           publishedVersionNumber={publishedVersion?.version_number ?? 0}
           onCancel={() => setShowPublish(false)}
           onSaveDraft={(vName, rNotes) => { handleSaveDraft(vName, rNotes); setShowPublish(false) }}
           onPublish={handlePublish}
           saving={isSaving}
+        />
+      )}
+
+      {showHistory && (
+        <VersionHistoryDrawer
+          projectId={projectId}
+          projectName={projectName}
+          loadAllVersions={loadAllVersions}
+          loadFeedback={loadFeedback}
+          discardDraft={discardDraft}
+          restoreVersion={restoreVersionWithIdentity}
+          revertDraftToPublished={revertDraftToPublished}
+          renameVersion={renameVersion}
+          deleteVersion={deleteVersion}
+          pruneArchivedVersions={pruneArchivedVersions}
+          onClose={() => setShowHistory(false)}
+          onChanged={handleHistoryChanged}
         />
       )}
     </div>
@@ -1289,21 +1850,84 @@ function Avatar({ name = '', size = 22 }) {
 }
 
 // ── Ref row component ─────────────────────────────────────────────────────────
-function RefRow({ ref_, onChange, onDelete }) {
+const REF_ACCEPT = 'image/png,image/jpeg,image/gif'
+const REF_ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif'])
+
+function RefRow({ ref_, onChange, onDelete, projectId }) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress]   = useState(0)
+  const [error, setError]         = useState(null)
+  const inputRef = useRef(null)
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!REF_ALLOWED_TYPES.has(file.type)) {
+      setError('Only PNG, JPG, GIF allowed')
+      return
+    }
+    setUploading(true); setError(null); setProgress(0)
+    try {
+      const { putUrl, publicUrl } = await getPresignedUploadUrl({
+        filename: file.name,
+        contentType: file.type,
+        projectId: projectId || undefined,
+        type: 'media',
+      })
+      const finalUrl = await uploadFileToPresignedUrl(putUrl, file, publicUrl, setProgress)
+      onChange({ ...ref_, url: finalUrl, type: 'image' })
+    } catch (err) {
+      setError(getUploadErrorMessage(err))
+    } finally {
+      setUploading(false); setProgress(0)
+    }
+  }
+
   return (
     <div style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid rgba(220,100,30,0.12)`, borderRadius: 7, padding: '8px 10px' }}>
       <Row gap={8} align="flex-start">
-        {/* Thumbnail placeholder */}
-        <div style={{
-          width: 56, height: 38, borderRadius: 5, flexShrink: 0,
-          background: '#1a1410', border: `1px solid rgba(220,100,30,0.15)`,
-          backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(220,100,30,0.05) 4px, rgba(220,100,30,0.05) 5px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <span style={{ fontSize: 8, color: T.text3 }}>ref img</span>
+        {/* Thumbnail / upload trigger */}
+        <div
+          title={ref_.url ? 'Click to replace image' : 'Click to upload image'}
+          onClick={() => !uploading && inputRef.current?.click()}
+          style={{
+            width: 56, height: 38, borderRadius: 5, flexShrink: 0,
+            background: '#1a1410',
+            border: `1px solid ${ref_.url ? 'rgba(220,100,30,0.4)' : 'rgba(220,100,30,0.15)'}`,
+            cursor: uploading ? 'wait' : 'pointer',
+            overflow: 'hidden', position: 'relative',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          {ref_.url ? (
+            <img src={ref_.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ) : uploading ? (
+            <span style={{ fontSize: 8, color: T.ember, fontFamily: 'Chakra Petch, sans-serif' }}>{progress}%</span>
+          ) : (
+            <>
+              <div style={{
+                position: 'absolute', inset: 0,
+                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(220,100,30,0.05) 4px, rgba(220,100,30,0.05) 5px)',
+              }} />
+              <span style={{ fontSize: 8, color: T.text3, position: 'relative' }}>+ img</span>
+            </>
+          )}
         </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept={REF_ACCEPT}
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+
         <Col gap={5} style={{ flex: 1, minWidth: 0 }}>
           <TextInput value={ref_.caption} onChange={v => onChange({ ...ref_, caption: v })} placeholder="Caption…" />
+          {error && (
+            <span style={{ fontSize: 9, color: '#e05555', fontFamily: 'Chakra Petch, sans-serif' }}>{error}</span>
+          )}
           <Row gap={6}>
             <button
               onClick={() => onChange({ ...ref_, visibleToClient: !ref_.visibleToClient })}
@@ -1364,6 +1988,7 @@ function makeSlideFromClip(clip, index, cameraPresets = []) {
     defaultCameraPresetId: cameraPresets[0]?.id ?? '',
     hiddenFromClient:     false,
     durationSeconds:      0,
+    thumbnailUrl:          clip.thumbnailUrl || clip.thumbnail_url || '',
     references:           [],
     sortOrder:            index + 1,
   }
@@ -1380,6 +2005,7 @@ function makeBlankSlide(index) {
     defaultCameraPresetId: '',
     hiddenFromClient:     false,
     durationSeconds:      0,
+    thumbnailUrl:          '',
     references:           [],
     sortOrder:            index + 1,
   }
@@ -1387,6 +2013,19 @@ function makeBlankSlide(index) {
 
 function newRef() {
   return { id: `ref_${Date.now()}`, type: 'image', url: '', caption: '', visibleToClient: true, sortOrder: 0 }
+}
+
+function isPersistedThumbnailUrl(url) {
+  return Boolean(url && typeof url === 'string' && !url.startsWith('blob:'))
+}
+
+function findPreset(presets, presetIdOrName) {
+  if (!Array.isArray(presets) || presetIdOrName == null) return null
+  return (
+    presets.find(p => String(p.id) === String(presetIdOrName)) ||
+    presets.find(p => String(p.name).toLowerCase() === String(presetIdOrName).toLowerCase()) ||
+    null
+  )
 }
 
 function formatDuration(seconds) {
