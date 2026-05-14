@@ -503,7 +503,7 @@ export function AnnotationLayer({ annotation, activeTool, onAnnotationChange }) 
 }
 
 // ── Annotation toolbar (floating at bottom of stage) ─────────────────────────
-export function AnnotationToolbar({ activeTool, onToolChange, onClear, hasAnnotation }) {
+export function AnnotationToolbar({ activeTool, onToolChange, onClear, hasAnnotation, onSave }) {
   return (
     <div style={{
       position: 'absolute', bottom: 50, left: '50%', transform: 'translateX(-50%)',
@@ -524,6 +524,25 @@ export function AnnotationToolbar({ activeTool, onToolChange, onClear, hasAnnota
         background: 'transparent', border: `1px solid ${hasAnnotation ? T.border : 'rgba(255,255,255,0.06)'}`,
         color: hasAnnotation ? T.text3 : T.text4,
       }}>✕ Clear</button>
+      {onSave && (
+        <>
+          <div style={{ width: 1, height: 18, background: 'rgba(232,83,26,0.35)' }} />
+          <button
+            onClick={onSave}
+            disabled={!hasAnnotation}
+            style={{
+              padding: '4px 12px', borderRadius: 5, fontSize: 10, fontWeight: 600,
+              fontFamily: 'Chakra Petch, sans-serif',
+              cursor: hasAnnotation ? 'pointer' : 'not-allowed',
+              background: hasAnnotation ? `linear-gradient(180deg, ${T.ember2}, ${T.ember})` : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${hasAnnotation ? T.ember2 : 'rgba(255,255,255,0.06)'}`,
+              color: hasAnnotation ? 'white' : T.text4,
+              boxShadow: hasAnnotation ? T.emberGlow : 'none',
+              opacity: hasAnnotation ? 1 : 0.5,
+            }}
+          >✓ Confirm</button>
+        </>
+      )}
     </div>
   )
 }

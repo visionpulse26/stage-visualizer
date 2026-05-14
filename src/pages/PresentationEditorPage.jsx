@@ -18,6 +18,7 @@ import {
   loadFeedback,
   setFeedbackStatus,
   buildSnapshot,
+  snapshotDiff,
   snapshotSummary,
   slidePublishChecklist,
   VersionConflictError,
@@ -600,12 +601,58 @@ function FeedbackCard({ item, onResolve, onDelete, onJump, highlight = false }) 
 }
 
 // ── Publish Modal ─────────────────────────────────────────────────────────────
-function PublishModal({ slides, cameraPresets, projectName, draftVersionNumber, publishedVersionNumber, onCancel, onSaveDraft, onPublish, saving }) {
+function formatSignedSeconds(seconds) {
+  const sign = seconds > 0 ? '+' : seconds < 0 ? '-' : ''
+  const abs = Math.abs(seconds)
+  const m = Math.floor(abs / 60)
+  const s = String(Math.floor(abs % 60)).padStart(2, '0')
+  return `${sign}${m}:${s}`
+}
+
+function SnapshotDiff({ diff }) {
+  if (!diff) {
+    return (
+      <span style={{ fontSize: 10, color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
+        No published snapshot available for comparison.
+      </span>
+    )
+  }
+
+  const refLabel = diff.refDelta === 0
+    ? 'No reference count change'
+    : `${diff.refDelta > 0 ? '+' : ''}${diff.refDelta} references`
+  const runtimeLabel = diff.runtimeDeltaSeconds === 0
+    ? 'No runtime change'
+    : `${formatSignedSeconds(diff.runtimeDeltaSeconds)} runtime`
+  const added = diff.addedSlides.length ? diff.addedSlides.slice(0, 3).join(', ') : 'None'
+  const removed = diff.removedSlides.length ? diff.removedSlides.slice(0, 3).join(', ') : 'None'
+  const addedMore = diff.addedSlides.length > 3 ? ` +${diff.addedSlides.length - 3} more` : ''
+  const removedMore = diff.removedSlides.length > 3 ? ` +${diff.removedSlides.length - 3} more` : ''
+
+  return (
+    <Col gap={6}>
+      {[
+        ['Clips added', `${added}${addedMore}`],
+        ['Clips removed', `${removed}${removedMore}`],
+        ['References', `${refLabel} (${diff.previousRefs} → ${diff.currentRefs})`],
+        ['Runtime', runtimeLabel],
+      ].map(([label, value]) => (
+        <Row key={label} gap={6}>
+          <span style={{ fontSize: 10, color: T.text3, minWidth: 90, fontFamily: 'Chakra Petch, sans-serif' }}>{label}</span>
+          <span style={{ fontSize: 11, color: T.text, fontFamily: 'Chakra Petch, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+        </Row>
+      ))}
+    </Col>
+  )
+}
+
+function PublishModal({ slides, cameraPresets, projectName, draftVersionNumber, publishedVersionNumber, publishedSnapshot, onCancel, onSaveDraft, onPublish, saving }) {
   const [versionName, setVersionName] = useState('')
   const [releaseNotes, setReleaseNotes] = useState('')
 
   const snapshot  = buildSnapshot(projectName, slides, cameraPresets)
   const summary   = snapshotSummary(snapshot)
+  const diff      = snapshotDiff(snapshot, publishedSnapshot)
   const nextNum   = draftVersionNumber ?? ((publishedVersionNumber ?? 0) + 1)
   const hasCenterPreset = cameraPresets.some(p => String(p?.name ?? '').toLowerCase() === 'center')
 
@@ -678,6 +725,17 @@ function PublishModal({ slides, cameraPresets, projectName, draftVersionNumber, 
                     </Row>
                   ))}
                 </Col>
+              </div>
+            </Col>
+
+            {/* Snapshot diff */}
+            <Col gap={6}>
+              <Label>Changes vs Published</Label>
+              <div style={{
+                background: 'rgba(0,0,0,0.35)', border: `1px solid rgba(31,160,238,0.18)`,
+                borderRadius: 8, padding: '10px 12px',
+              }}>
+                <SnapshotDiff diff={diff} />
               </div>
             </Col>
 
@@ -795,6 +853,7 @@ export default function PresentationEditorPage() {
   const [publishedVersion, setPublishedVersion] = useState(null)  // latest published
   const [versionConflict, setVersionConflict]  = useState(null)
   const [adminIdentity,   setAdminIdentity]    = useState('')
+  const [publishToast,    setPublishToast]     = useState(null)
 
   // ── Annotation mode (admin drawing annotation for a director note) ─────────
   const [annotatingNoteId,    setAnnotatingNoteId]    = useState(null)
@@ -1176,6 +1235,7 @@ export default function PresentationEditorPage() {
   const enterAnnotationMode = useCallback((noteId) => {
     const centerPreset = cameraPresets.find(p => p.name?.toLowerCase() === 'center')
     if (!centerPreset) return
+    videoRef.current?.pause()
     setActivePresetId(centerPreset.id)
     setCameraTargetPreset(cameraTargetPresetRef, centerPreset)
     if (cameraControlsRef.current) cameraControlsRef.current.enabled = false
@@ -1291,6 +1351,7 @@ export default function PresentationEditorPage() {
     try {
       const slidesWithThumbnails = await ensureSlideThumbnails(slides)
       const snapshot = buildSnapshot(projectName, slidesWithThumbnails, cameraPresets)
+      const previousPublishedNumber = publishedVersion?.version_number ?? null
       const published = await publishVersion(projectId, snapshot, {
         versionName: vName,
         releaseNotes: rNotes,
@@ -1302,6 +1363,10 @@ export default function PresentationEditorPage() {
       setDraftVersion(null)
       setIsDirty(false)
       setShowPublish(false)
+      setPublishToast({
+        publishedNumber: published.version_number,
+        archivedNumber: previousPublishedNumber,
+      })
     } catch (err) {
       if (isVersionConflict(err)) {
         setVersionConflict({ action: 'publish', currentVersion: err.currentVersion, versionName: vName, releaseNotes: rNotes })
@@ -1312,7 +1377,7 @@ export default function PresentationEditorPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, slides])
+  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, publishedVersion?.version_number, slides])
 
   const handleReloadConflictDraft = useCallback(() => {
     const current = versionConflict?.currentVersion
@@ -1647,6 +1712,7 @@ export default function PresentationEditorPage() {
                   onToolChange={setAnnotTool}
                   onClear={() => { setAnnotTempAnnotation(null); setAnnotTool(null) }}
                   hasAnnotation={!!annotTempAnnotation}
+                  onSave={saveAnnotation}
                 />
               </>
             )}
@@ -1776,11 +1842,55 @@ export default function PresentationEditorPage() {
           projectName={projectName}
           draftVersionNumber={draftVersion?.version_number ?? null}
           publishedVersionNumber={publishedVersion?.version_number ?? 0}
+          publishedSnapshot={publishedVersion?.snapshot_json ?? null}
           onCancel={() => setShowPublish(false)}
           onSaveDraft={(vName, rNotes) => { handleSaveDraft(vName, rNotes); setShowPublish(false) }}
           onPublish={handlePublish}
           saving={isSaving}
         />
+      )}
+
+      {publishToast && (
+        <div style={{
+          position: 'fixed',
+          right: 18,
+          top: 64,
+          zIndex: 130,
+          width: 330,
+          background: 'rgba(12,8,6,0.96)',
+          border: '1px solid rgba(43,199,130,0.45)',
+          borderRadius: 8,
+          boxShadow: '0 18px 50px rgba(0,0,0,0.45)',
+          color: T.text,
+          fontFamily: 'Chakra Petch, sans-serif',
+          padding: '11px 12px',
+        }}>
+          <Col gap={8}>
+            <Row gap={8}>
+              <span style={{ color: T.green, fontSize: 12, fontWeight: 800 }}>Published v{publishToast.publishedNumber}</span>
+              <Spacer f={1} />
+              <button
+                onClick={() => setPublishToast(null)}
+                style={{ background: 'none', border: 'none', color: T.text3, cursor: 'pointer', fontSize: 14, padding: 0 }}
+              >
+                ×
+              </button>
+            </Row>
+            <span style={{ color: T.text2, fontSize: 10, lineHeight: 1.45 }}>
+              {publishToast.archivedNumber
+                ? `Previous v${publishToast.archivedNumber} moved to Archived.`
+                : 'This is the first published version for this project.'}
+            </span>
+            <Row gap={8}>
+              <GhostBtn style={{ padding: '4px 8px', fontSize: 10 }} onClick={() => { setShowHistory(true); setPublishToast(null) }}>
+                View history
+              </GhostBtn>
+              <GhostBtn style={{ padding: '4px 8px', fontSize: 10 }} onClick={openClientPreview}>
+                Preview client
+              </GhostBtn>
+            </Row>
+          </Col>
+        </div>
       )}
 
       {showHistory && (
