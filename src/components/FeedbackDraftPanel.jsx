@@ -395,7 +395,7 @@ export function FeedbackDraftPanel({
 }
 
 // ── Annotation layer (SVG overlay on the stage) ───────────────────────────────
-export function AnnotationLayer({ annotation, activeTool, onAnnotationChange }) {
+export function AnnotationLayer({ annotation, activeTool, onAnnotationChange, readOnly = false }) {
   const svgRef = useRef(null)
   const [drawing, setDrawing] = useState(null) // { startX, startY, currentX, currentY }
 
@@ -492,8 +492,7 @@ export function AnnotationLayer({ annotation, activeTool, onAnnotationChange }) 
         position: 'absolute', inset: 0, width: '100%', height: '100%',
         cursor: activeTool ? 'crosshair' : 'default',
         zIndex: 5,
-        // Allow pointer events only when a tool is active or annotation exists
-        pointerEvents: activeTool || annotation ? 'all' : 'none',
+        pointerEvents: readOnly ? 'none' : (activeTool || annotation ? 'all' : 'none'),
       }}
     >
       {renderAnnotation(annotation)}

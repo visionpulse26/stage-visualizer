@@ -461,6 +461,28 @@ function ClientPage() {
     return () => controls.removeEventListener?.('controlstart', onControlStart)
   }, [feedbackMode])
 
+  // ── Exit note focus mode on drag / scroll ─────────────────────────────────
+  useEffect(() => {
+    if (!noteFocusNote) return
+    const el = stageViewportRef.current
+    if (!el) return
+    let startX = null, startY = null
+    const onPointerDown = (e) => { startX = e.clientX; startY = e.clientY }
+    const onPointerMove = (e) => {
+      if (startX == null) return
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 6) exitNoteFocusMode()
+    }
+    const onWheel = () => exitNoteFocusMode()
+    el.addEventListener('pointerdown', onPointerDown)
+    el.addEventListener('pointermove', onPointerMove)
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('wheel', onWheel)
+    }
+  }, [noteFocusNote, exitNoteFocusMode])
+
   // ── Activate slide → switch clip + camera ─────────────────────────────────
   const activateSlide = useCallback((slideId) => {
     const slide = presentationSlides.find(s => s.id === slideId)
@@ -563,6 +585,7 @@ function ClientPage() {
       clipTime,
       versionLabel: vLabel,
     })
+    setNoteFocusNote(null)
     setAnnotation(null)
     setAnnotTool(null)
     setComment('')
@@ -906,11 +929,12 @@ function ClientPage() {
           )}
 
           {/* Note focus mode: read-only annotation overlay */}
-          {noteFocusNote?.annotation && (
+          {!feedbackMode && noteFocusNote?.annotation && (
             <AnnotationLayer
               annotation={noteFocusNote.annotation}
               activeTool={null}
               onAnnotationChange={() => {}}
+              readOnly
             />
           )}
 
