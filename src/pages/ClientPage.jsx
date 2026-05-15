@@ -117,6 +117,7 @@ function ClientPage() {
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [contextCollapsed, setContextCollapsed] = useState(false)
+  const [referenceViewer, setReferenceViewer] = useState(null) // { refs, index }
 
   // ── Feedback mode state ───────────────────────────────────────────────────
   const [feedbackMode,  setFeedbackMode]  = useState(false)
@@ -210,6 +211,39 @@ function ClientPage() {
   useEffect(() => {
     refreshSlideFeedback(activeSlide?.id)
   }, [activeSlide?.id, refreshSlideFeedback])
+
+  const openReferenceViewer = useCallback((refs, index = 0) => {
+    const visibleRefs = (refs ?? []).filter(r => r.visibleToClient && r.url)
+    if (!visibleRefs.length) return
+    const safeIndex = Math.max(0, Math.min(index, visibleRefs.length - 1))
+    setReferenceViewer({ refs: visibleRefs, index: safeIndex })
+  }, [])
+
+  const closeReferenceViewer = useCallback(() => {
+    setReferenceViewer(null)
+  }, [])
+
+  const stepReferenceViewer = useCallback((direction) => {
+    setReferenceViewer(current => {
+      if (!current?.refs?.length) return current
+      const total = current.refs.length
+      return {
+        ...current,
+        index: (current.index + direction + total) % total,
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!referenceViewer) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeReferenceViewer()
+      if (event.key === 'ArrowLeft') stepReferenceViewer(-1)
+      if (event.key === 'ArrowRight') stepReferenceViewer(1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [closeReferenceViewer, referenceViewer, stepReferenceViewer])
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => () => {
@@ -511,6 +545,14 @@ function ClientPage() {
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true) }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
+
+  const handleCameraPresetSelect = useCallback((preset) => {
+    if (!preset || feedbackMode || noteFocusNote) return
+    setActivePresetId(preset.id)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
+    currentCameraRef.current = preset.name || String(preset.id)
+    recordClientInteraction(projectId, 'camera_change', preset.name || String(preset.id))
+  }, [feedbackMode, noteFocusNote, projectId])
 
   const handleStageScreenshot = useCallback(() => {
     const stageEl = stageViewportRef.current
@@ -839,7 +881,15 @@ function ClientPage() {
       displayClips,
       slideFeedback,
       hasSnapshot,
+      cameraPresets,
+      activePresetId,
       noteFocusNote,
+      mobileFeedbackSheet,
+      mobileFeedbackName,
+      mobileFeedbackComment,
+      reviewerNameLocked,
+      isSubmitting,
+      submitError,
       stageViewportRef,
       isPlaying,
       currentTime,
@@ -853,7 +903,17 @@ function ClientPage() {
           if (c) activateRawClip(c)
         }
       },
+      onCameraSelect: handleCameraPresetSelect,
+      onOpenReference: openReferenceViewer,
+      onOpenFeedback: openMobileFeedbackSheet,
+      onCloseFeedback: closeMobileFeedbackSheet,
+      onFeedbackNameChange: setMobileFeedbackName,
+      onFeedbackCommentChange: setMobileFeedbackComment,
+      onSubmitFeedback: handleSubmitMobileFeedback,
       onNoteClick: enterNoteFocusMode,
+      referenceViewer,
+      closeReferenceViewer,
+      stepReferenceViewer,
       stageProps: {
         modelUrl,
         loadingManager: modelUrl ? loadingManager : null,
@@ -886,9 +946,18 @@ function ClientPage() {
     }
 
     return (
-      <MobilePortraitShell {...commonMobileProps} />
+      isMobileLandscape ? (
+        <MobileLandscapeShell
+          {...commonMobileProps}
+          panelCollapsed={mobilePanelCollapsed}
+          onTogglePanel={() => setMobilePanelCollapsed(v => !v)}
+        />
+      ) : (
+        <MobilePortraitShell {...commonMobileProps} />
+      )
     )
   }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{
@@ -984,6 +1053,14 @@ function ClientPage() {
 
           {!feedbackMode && activeSlide?.title && (
             <StageTitleBadge title={activeSlide.title} />
+          )}
+
+          {!feedbackMode && !noteFocusNote && cameraPresets.length > 0 && (
+            <ClientCameraPresetDock
+              presets={cameraPresets}
+              activePresetId={activePresetId}
+              onSelect={handleCameraPresetSelect}
+            />
           )}
 
           {/* Annotation layer — SVG drawing overlay in feedback mode */}
@@ -1116,6 +1193,7 @@ function ClientPage() {
             onUpdateFeedback={isPreviewingVersion ? null : handleUpdateClientFeedback}
             onDeleteFeedback={isPreviewingVersion ? null : handleDeleteClientFeedback}
             onNoteClick={enterNoteFocusMode}
+            onOpenReference={(refs, index) => openReferenceViewer(refs, index)}
             projectName={projectName}
             readOnly={isPreviewingVersion}
           />
@@ -1123,6 +1201,11 @@ function ClientPage() {
           </RightContextRail>
         )}
       </div>
+      <ReferenceViewerModal
+        viewer={referenceViewer}
+        onClose={closeReferenceViewer}
+        onStep={stepReferenceViewer}
+      />
     </div>
   )
 }
@@ -1345,22 +1428,22 @@ function ClipThumbnail({ src, active, width = 46, height = 30, radius = 5 }) {
   )
 }
 
-function StageTitleBadge({ title }) {
+function StageTitleBadge({ title, compact = false }) {
   return (
     <div style={{
       position: 'absolute',
-      top: 14,
+      top: compact ? 2 : 14,
       left: '50%',
       transform: 'translateX(-50%)',
-      maxWidth: 'min(520px, calc(100% - 48px))',
-      minWidth: 220,
-      padding: '7px 18px',
-      borderRadius: 7,
+      maxWidth: compact ? 'min(360px, calc(100% - 32px))' : 'min(520px, calc(100% - 48px))',
+      minWidth: compact ? 160 : 220,
+      padding: compact ? '5px 12px' : '7px 18px',
+      borderRadius: compact ? 6 : 7,
       background: `linear-gradient(180deg, ${T.ember2}, ${T.ember})`,
       border: `1px solid ${T.ember2}`,
       color: '#140600',
       boxShadow: `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.28)`,
-      fontSize: 13,
+      fontSize: compact ? 10 : 13,
       fontWeight: 700,
       lineHeight: 1.2,
       textAlign: 'center',
@@ -1569,7 +1652,7 @@ function ellipsisCanvasText(ctx, text, maxWidth) {
   return `${next}...`
 }
 
-function ContextPanel({ slide, feedbackItems = [], onCollapse, onLeaveFeedback, onUpdateFeedback, onDeleteFeedback, onNoteClick, projectName, readOnly = false }) {
+function ContextPanel({ slide, feedbackItems = [], onCollapse, onLeaveFeedback, onUpdateFeedback, onDeleteFeedback, onNoteClick, onOpenReference, projectName, readOnly = false }) {
   return (
     <div style={{
       width: 304, flexShrink: 0,
@@ -1681,8 +1764,13 @@ function ContextPanel({ slide, feedbackItems = [], onCollapse, onLeaveFeedback, 
               <Col gap={8}>
                 <SectionLabel>References ({visibleRefs.length})</SectionLabel>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9 }}>
-                  {visibleRefs.map(ref => (
-                    <RefThumb key={ref.id} caption={ref.caption} url={ref.url} />
+                  {visibleRefs.map((ref, index) => (
+                    <RefThumb
+                      key={ref.id}
+                      caption={ref.caption}
+                      url={ref.url}
+                      onOpen={() => onOpenReference?.(visibleRefs, index)}
+                    />
                   ))}
                 </div>
               </Col>
@@ -1787,9 +1875,101 @@ function SectionLabel({ children }) {
   )
 }
 
-function RefThumb({ caption, url }) {
+function ClientCameraPresetDock({ presets = [], activePresetId, onSelect }) {
   return (
-    <div style={{ width: 88 }}>
+    <div style={{
+      position: 'absolute',
+      left: 14,
+      bottom: 48,
+      zIndex: 18,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: 7,
+      maxWidth: 'calc(100% - 180px)',
+    }}>
+      <span style={{
+        fontFamily: 'Chakra Petch, sans-serif',
+        fontSize: 10,
+        fontWeight: 700,
+        lineHeight: 1,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: T.text3,
+        paddingLeft: 1,
+        textShadow: '0 1px 10px rgba(0,0,0,0.7)',
+      }}>
+        Camera presets
+      </span>
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        maxWidth: '100%',
+        padding: 3,
+        borderRadius: 999,
+        background: 'rgba(20,20,20,0.78)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        backdropFilter: 'blur(12px)',
+        boxShadow: '0 10px 28px rgba(0,0,0,0.35)',
+        overflowX: 'auto',
+      }}>
+        {presets.map((preset, index) => {
+          const active = String(activePresetId) === String(preset.id)
+          return (
+            <button
+              key={preset.id ?? preset.name ?? index}
+              type="button"
+              onClick={() => onSelect(preset)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 27,
+                minWidth: 74,
+                padding: '6px 15px',
+                borderRadius: 999,
+                fontFamily: 'Chakra Petch, sans-serif',
+                fontSize: 11,
+                fontWeight: active ? 800 : 650,
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                letterSpacing: 0,
+                background: active ? `linear-gradient(180deg, ${T.ember2}, ${T.ember})` : 'transparent',
+                border: 'none',
+                color: active ? '#fff' : T.text3,
+                boxShadow: active ? '0 0 16px rgba(232,83,26,0.28), inset 0 1px 0 rgba(255,255,255,0.22)' : 'none',
+              }}
+            >
+              {preset.name || `View ${index + 1}`}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function RefThumb({ caption, url, onOpen }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!url || !onOpen}
+      title={caption || 'Open reference'}
+      style={{
+        width: 88,
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
+        color: 'inherit',
+        textAlign: 'left',
+        cursor: url && onOpen ? 'pointer' : 'default',
+        fontFamily: 'Chakra Petch, sans-serif',
+      }}
+    >
       <div style={{
         width: 88, height: 58, borderRadius: 6,
         background: '#1a1410', border: `1px solid rgba(220,100,30,0.15)`,
@@ -1807,8 +1987,150 @@ function RefThumb({ caption, url }) {
           textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{caption}</span>
       )}
+    </button>
+  )
+}
+
+function ReferenceViewerModal({ viewer, onClose, onStep }) {
+  if (!viewer?.refs?.length) return null
+  const ref = viewer.refs[viewer.index] ?? viewer.refs[0]
+  const hasMultiple = viewer.refs.length > 1
+  const caption = ref?.caption?.trim()
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Reference image viewer"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 80,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'min(6vh, 48px) min(5vw, 56px)',
+        background: 'rgba(0,0,0,0.78)',
+        backdropFilter: 'blur(18px)',
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          position: 'relative',
+          width: 'min(1120px, 100%)',
+          maxHeight: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          border: `1px solid rgba(220,100,30,0.32)`,
+          borderRadius: 8,
+          background: 'rgba(8,6,4,0.94)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.55), 0 0 32px rgba(232,83,26,0.16)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{
+          height: 42,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '0 12px 0 16px',
+          borderBottom: `1px solid rgba(220,100,30,0.18)`,
+          flexShrink: 0,
+        }}>
+          <span style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: T.ember2,
+          }}>
+            References
+          </span>
+          <span style={{ fontSize: 11, color: T.text3 }}>
+            {viewer.index + 1} / {viewer.refs.length}
+          </span>
+          <Spacer />
+          <button onClick={onClose} style={referenceViewerButtonStyle()} aria-label="Close reference viewer">x</button>
+        </div>
+
+        <div style={{
+          position: 'relative',
+          minHeight: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#020202',
+        }}>
+          {hasMultiple && (
+            <button
+              onClick={() => onStep(-1)}
+              style={{ ...referenceViewerButtonStyle(true), left: 14 }}
+              aria-label="Previous reference"
+            >
+              &lt;
+            </button>
+          )}
+          <img
+            src={ref.url}
+            alt={caption || 'Reference'}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: 'calc(100vh - 190px)',
+              objectFit: 'contain',
+            }}
+          />
+          {hasMultiple && (
+            <button
+              onClick={() => onStep(1)}
+              style={{ ...referenceViewerButtonStyle(true), right: 14 }}
+              aria-label="Next reference"
+            >
+              &gt;
+            </button>
+          )}
+        </div>
+
+        <div style={{
+          minHeight: 50,
+          padding: '12px 16px 14px',
+          borderTop: `1px solid rgba(220,100,30,0.18)`,
+          flexShrink: 0,
+        }}>
+          <p style={{
+            margin: 0,
+            color: caption ? T.text : T.text3,
+            fontSize: 13,
+            lineHeight: 1.55,
+          }}>
+            {caption || 'No caption added.'}
+          </p>
+        </div>
+      </div>
     </div>
   )
+}
+
+function referenceViewerButtonStyle(floating = false) {
+  return {
+    position: floating ? 'absolute' : 'static',
+    top: floating ? '50%' : 'auto',
+    transform: floating ? 'translateY(-50%)' : 'none',
+    width: floating ? 38 : 28,
+    height: floating ? 52 : 28,
+    borderRadius: 6,
+    border: `1px solid rgba(220,100,30,0.28)`,
+    background: 'rgba(8,6,4,0.78)',
+    color: T.text,
+    fontSize: floating ? 30 : 16,
+    lineHeight: 1,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: floating ? '0 8px 24px rgba(0,0,0,0.35)' : 'none',
+  }
 }
 
 // ── Error screens ─────────────────────────────────────────────────────────────
@@ -2030,6 +2352,67 @@ function MobilePortraitShell(props) {
         refCount={(props.activeSlide?.references ?? []).filter(r => r.visibleToClient).length}
       />
       <MobileTabPanel {...props} />
+      <MobileFeedbackSheet {...props} />
+      <ReferenceViewerModal
+        viewer={props.referenceViewer}
+        onClose={props.closeReferenceViewer}
+        onStep={props.stepReferenceViewer}
+      />
+    </div>
+  )
+}
+
+function MobileLandscapeShell(props) {
+  return (
+    <div style={{
+      width: '100%', height: '100svh', background: T.bg, color: T.text,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
+    }}>
+      <MobileFontLinks />
+      <BrandedLoadingScreen isLoaded={props.sceneReady} progress={props.progress} status={props.status} />
+      <MobileTopBar
+        compact
+        projectName={props.projectName}
+        versionBadge={props.versionBadge}
+        slideCount={props.displayClips.length}
+        activeSlideIndex={props.displayClips.findIndex(s => s.id === props.activeSlide?.id)}
+      />
+      {props.isPreviewingVersion && <VersionPreviewBanner version={props.previewVersion} />}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <MobileStageViewport {...props} />
+        </div>
+        {props.panelCollapsed ? (
+          <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">Tabs</button>
+        ) : (
+          <aside style={{
+            width: 'clamp(280px, 30vw, 340px)',
+            flexShrink: 0,
+            borderLeft: `1px solid ${T.border}`,
+            background: 'rgba(8,6,4,0.96)',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}>
+            <button onClick={props.onTogglePanel} style={mobilePanelCollapseButtonStyle()}>Hide Panel</button>
+            <MobileBottomTabBar
+              activeTab={props.activeMobileTab}
+              onTabChange={props.setActiveMobileTab}
+              clipCount={props.displayClips.length}
+              feedbackCount={props.slideFeedback.length}
+              refCount={(props.activeSlide?.references ?? []).filter(r => r.visibleToClient).length}
+            />
+            <MobileTabPanel {...props} landscape />
+          </aside>
+        )}
+      </div>
+      <MobileFeedbackSheet {...props} landscape />
+      <ReferenceViewerModal
+        viewer={props.referenceViewer}
+        onClose={props.closeReferenceViewer}
+        onStep={props.stepReferenceViewer}
+      />
     </div>
   )
 }
@@ -2038,7 +2421,14 @@ function MobileStageViewport(props) {
   return (
     <div ref={props.stageViewportRef} style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
       <StageCanvas {...props.stageProps} />
-      {props.activeSlide?.title && <StageTitleBadge title={props.activeSlide.title} />}
+      {props.activeSlide?.title && <StageTitleBadge title={props.activeSlide.title} compact />}
+      {!props.noteFocusNote && props.cameraPresets.length > 0 && (
+        <MobileCameraPresetDock
+          presets={props.cameraPresets}
+          activePresetId={props.activePresetId}
+          onSelect={props.onCameraSelect}
+        />
+      )}
       {props.noteFocusNote?.annotation && (
         <AnnotationLayer
           annotation={props.noteFocusNote.annotation}
@@ -2073,7 +2463,7 @@ function MobileTransportBar({ isPlaying, currentTime, activeDuration, onPlayPaus
         onClick={onPlayPause}
         style={{ background: 'none', border: 'none', color: T.text, cursor: 'pointer', fontSize: 13 }}
       >
-        {isPlaying ? 'Pause' : 'Play'}
+        {isPlaying ? '⏸' : '▶'}
       </button>
       <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative' }}>
         <div style={{ width: `${activeDuration > 0 ? Math.min(100, (currentTime / activeDuration) * 100) : 0}%`, height: '100%', background: T.ember, borderRadius: 2 }} />
@@ -2085,15 +2475,64 @@ function MobileTransportBar({ isPlaying, currentTime, activeDuration, onPlayPaus
   )
 }
 
+function MobileCameraPresetDock({ presets = [], activePresetId, onSelect }) {
+  const visiblePresets = presets.slice(0, 3)
+  if (!visiblePresets.length) return null
+  return (
+    <div style={{
+      position: 'absolute', left: 10, bottom: 36, zIndex: 15,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 2,
+      maxWidth: 'min(236px, calc(100% - 20px))',
+      overflowX: 'auto',
+      padding: 3,
+      borderRadius: 999,
+      background: 'rgba(12,10,9,0.82)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      boxShadow: '0 8px 18px rgba(0,0,0,0.26)',
+      backdropFilter: 'blur(10px)',
+    }}>
+      {visiblePresets.map((preset, index) => {
+        const active = String(activePresetId) === String(preset.id)
+        return (
+          <button
+            key={preset.id ?? preset.name ?? index}
+            type="button"
+            onClick={() => onSelect?.(preset)}
+            style={{
+              minHeight: 20,
+              minWidth: 60,
+              padding: '0 9px',
+              borderRadius: 999,
+              border: 'none',
+              background: active ? `linear-gradient(180deg, ${T.ember2}, ${T.ember})` : 'transparent',
+              color: active ? '#fff' : T.text3,
+              fontSize: 8,
+              fontWeight: active ? 800 : 700,
+              fontFamily: 'Chakra Petch, sans-serif',
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              boxShadow: active ? '0 0 10px rgba(232,83,26,0.22), inset 0 1px 0 rgba(255,255,255,0.18)' : 'none',
+            }}
+          >
+            {preset.name || `View ${index + 1}`}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function MobileTabPanel(props) {
   return (
     <div style={{
-      height: 220,
-      minHeight: 180,
+      height: props.landscape ? '100%' : 220,
+      minHeight: props.landscape ? 0 : 180,
       overflowY: 'auto',
       padding: '12px 14px calc(14px + env(safe-area-inset-bottom))',
       background: 'rgba(10,7,5,0.98)',
-      borderTop: `1px solid ${T.border}`,
+      borderTop: props.landscape ? 'none' : `1px solid ${T.border}`,
       flexShrink: 0,
     }}>
       {props.activeMobileTab === 'clips' && (
@@ -2107,15 +2546,174 @@ function MobileTabPanel(props) {
         <MobileContextContent
           slide={props.activeSlide}
           feedbackItems={props.slideFeedback}
+          readOnly={props.isPreviewingVersion}
+          onLeaveFeedback={props.onOpenFeedback}
           onNoteClick={props.onNoteClick}
         />
       )}
       {props.activeMobileTab === 'refs' && (
-        <MobileReferencesContent slide={props.activeSlide} />
+        <MobileReferencesContent
+          slide={props.activeSlide}
+          onOpenReference={props.onOpenReference}
+        />
       )}
     </div>
   )
 }
+
+function MobileFeedbackSheet(props) {
+  if (!props.mobileFeedbackSheet) return null
+  const canSubmit = props.mobileFeedbackName.trim() && props.mobileFeedbackComment.trim() && !props.isSubmitting
+  const ctx = props.mobileFeedbackSheet
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: props.landscape ? '44px 0 0 auto' : 'auto 0 0 0',
+      width: props.landscape ? 'min(360px, 42vw)' : '100%',
+      zIndex: 60,
+      background: 'rgba(8,5,3,0.98)',
+      borderTop: props.landscape ? 'none' : `1px solid ${T.border}`,
+      borderLeft: props.landscape ? `1px solid ${T.border}` : 'none',
+      boxShadow: props.landscape ? '-12px 0 30px rgba(0,0,0,0.45)' : '0 -12px 30px rgba(0,0,0,0.55)',
+      padding: '14px 16px calc(16px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      maxHeight: props.landscape ? 'calc(100svh - 44px)' : '72svh',
+      overflowY: 'auto',
+    }}>
+      <Row gap={8}>
+        <Col gap={2} style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Leave Feedback</span>
+          <span style={{ fontSize: 10, color: T.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {[ctx.slideTitle, ctx.camName, ctx.clipTime != null ? formatDuration(ctx.clipTime) : null, ctx.versionLabel].filter(Boolean).join(' - ')}
+          </span>
+        </Col>
+        <button onClick={props.onCloseFeedback} style={mobileGhostButtonStyle()}>Cancel</button>
+      </Row>
+      <label style={mobileFieldLabelStyle()}>
+        Your name
+        <input
+          value={props.mobileFeedbackName}
+          onChange={e => props.onFeedbackNameChange(e.target.value)}
+          placeholder="Enter your name"
+          style={mobileInputStyle()}
+        />
+      </label>
+      <label style={mobileFieldLabelStyle()}>
+        Feedback
+        <textarea
+          value={props.mobileFeedbackComment}
+          onChange={e => props.onFeedbackCommentChange(e.target.value)}
+          placeholder="Write objective feedback for this clip"
+          rows={4}
+          style={{ ...mobileInputStyle(), minHeight: 104, resize: 'vertical', lineHeight: 1.5 }}
+        />
+      </label>
+      {props.submitError && (
+        <span style={{ fontSize: 11, color: '#FF9B75', lineHeight: 1.45 }}>{props.submitError}</span>
+      )}
+      <button
+        onClick={props.onSubmitFeedback}
+        disabled={!canSubmit}
+        style={mobilePrimaryButtonStyle(Boolean(canSubmit))}
+      >
+        {props.isSubmitting ? 'Submitting...' : 'Submit Feedback'}
+      </button>
+    </div>
+  )
+}
+
+function mobilePanelRailStyle() {
+  return {
+    width: 48,
+    flexShrink: 0,
+    border: 'none',
+    borderLeft: `1px solid ${T.border}`,
+    background: 'rgba(8,6,4,0.96)',
+    color: T.ember2,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+  }
+}
+
+function mobilePanelCollapseButtonStyle() {
+  return {
+    height: 32,
+    flexShrink: 0,
+    border: 'none',
+    borderBottom: `1px solid rgba(220,100,30,0.14)`,
+    background: 'rgba(255,255,255,0.03)',
+    color: T.text3,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 10,
+    fontWeight: 700,
+    cursor: 'pointer',
+  }
+}
+
+function mobileFieldLabelStyle() {
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 5,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: T.text3,
+  }
+}
+
+function mobileInputStyle() {
+  return {
+    minHeight: 42,
+    width: '100%',
+    borderRadius: 7,
+    border: `1px solid ${T.border}`,
+    background: 'rgba(0,0,0,0.35)',
+    color: T.text,
+    padding: '9px 10px',
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 13,
+    outline: 'none',
+  }
+}
+
+function mobileGhostButtonStyle() {
+  return {
+    minHeight: 34,
+    padding: '0 10px',
+    borderRadius: 6,
+    border: `1px solid ${T.border}`,
+    background: T.glass,
+    color: T.text2,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  }
+}
+
+function mobilePrimaryButtonStyle(enabled) {
+  return {
+    minHeight: 42,
+    borderRadius: 7,
+    border: `1px solid ${enabled ? T.ember2 : 'rgba(255,255,255,0.08)'}`,
+    background: enabled ? `linear-gradient(180deg, ${T.ember2}, ${T.ember})` : 'rgba(255,255,255,0.04)',
+    color: enabled ? '#fff' : T.text4,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 12,
+    fontWeight: 800,
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    boxShadow: enabled ? T.emberGlow : 'none',
+  }
+}
+
 function MobileTopBar({ projectName, versionBadge }) {
   return (
     <div style={{
@@ -2275,7 +2873,8 @@ function MobileClipList({ clips, activeId, onSelect }) {
   )
 }
 
-function MobileContextContent({ slide, feedbackItems = [] }) {
+function MobileContextContent({ slide, feedbackItems = [], readOnly = false, onLeaveFeedback, onNoteClick }) {
+  const notes = (slide?.directorNotes ?? []).filter(n => n.visibleToClient && n.text?.trim())
   return (
     <Col gap={16}>
       {slide?.title && (
@@ -2296,12 +2895,52 @@ function MobileContextContent({ slide, feedbackItems = [] }) {
           </p>
         </Col>
       )}
+      {notes.length > 0 && (
+        <Col gap={7}>
+          <SectionLabel>Director's Notes</SectionLabel>
+          {notes.map(note => (
+            <button
+              key={note.id}
+              type="button"
+              onClick={note.annotation ? () => onNoteClick?.(note) : undefined}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                borderRadius: 7,
+                border: `1px solid ${note.annotation ? 'rgba(232,83,26,0.35)' : 'rgba(232,83,26,0.18)'}`,
+                background: 'rgba(232,83,26,0.075)',
+                color: T.text,
+                padding: '11px 12px',
+                fontFamily: 'Chakra Petch, sans-serif',
+                cursor: note.annotation ? 'pointer' : 'default',
+              }}
+            >
+              {note.annotation && (
+                <span style={{ display: 'block', marginBottom: 5, color: T.ember2, fontSize: 9, fontWeight: 800, textTransform: 'uppercase' }}>
+                  Annotated
+                </span>
+              )}
+              <span style={{ fontSize: 13, lineHeight: 1.55 }}>{note.text}</span>
+            </button>
+          ))}
+        </Col>
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={onLeaveFeedback}
+          disabled={!onLeaveFeedback}
+          style={mobilePrimaryButtonStyle(Boolean(onLeaveFeedback))}
+        >
+          Leave Feedback
+        </button>
+      )}
       <FeedbackHistoryList items={feedbackItems} />
     </Col>
   )
 }
 
-function MobileReferencesContent({ slide }) {
+function MobileReferencesContent({ slide, onOpenReference }) {
   const refs = (slide?.references ?? []).filter(r => r.visibleToClient)
   if (!refs.length) {
     return (
@@ -2315,7 +2954,14 @@ function MobileReferencesContent({ slide }) {
   }
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-      {refs.map(ref => <RefThumb key={ref.id} caption={ref.caption} url={ref.url} />)}
+      {refs.map((ref, index) => (
+        <RefThumb
+          key={ref.id}
+          caption={ref.caption}
+          url={ref.url}
+          onOpen={() => onOpenReference?.(refs, index)}
+        />
+      ))}
     </div>
   )
 }

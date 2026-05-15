@@ -44,20 +44,26 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #12121a;
+  background: rgba(18, 18, 26, 0.82);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #8b5cf6;
-  border-radius: 3px;
+  background: #ff5a1f;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a78bfa;
+  background: #ff7a2f;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #ff5a1f rgba(18, 18, 26, 0.82);
 }
 
 /* Range slider styling */
