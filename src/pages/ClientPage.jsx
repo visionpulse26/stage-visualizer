@@ -134,7 +134,17 @@ function ClientPage() {
   // ── Note focus mode (click director note with annotation) ────────────────
   const [noteFocusNote, setNoteFocusNote] = useState(null)   // DirectorNote | null
 
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1024,
+    height: typeof window !== 'undefined' ? window.innerHeight : 768,
+  }))
+  const isMobile = viewport.width < 768 || viewport.height < 520
+  const isMobileLandscape = isMobile && viewport.width > viewport.height
+  const [activeMobileTab, setActiveMobileTab] = useState('context')
+  const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
+  const [mobileFeedbackSheet, setMobileFeedbackSheet] = useState(null)
+  const [mobileFeedbackName, setMobileFeedbackName] = useState('')
+  const [mobileFeedbackComment, setMobileFeedbackComment] = useState('')
   const [activeDrawerTab, setActiveDrawerTab] = useState(null)
   const isPreviewingVersion = Boolean(previewVersion)
 
@@ -157,7 +167,13 @@ function ClientPage() {
   }, [LS_NAME_KEY])
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
+    const onResize = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      })
+    }
+    onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -585,6 +601,92 @@ function ClientPage() {
     setSubmitError(null)
   }, [])
 
+
+  const openMobileFeedbackSheet = useCallback(() => {
+    if (isPreviewingVersion || !activeSlide?.id) return
+
+    videoRef.current?.pause()
+    setIsPlaying(false)
+
+    const clipTime = videoRef.current?.currentTime ?? currentTime ?? 0
+    const camPreset = findPreset(cameraPresets, activePresetId)
+    const vLabel = publishedVersion ? `v${publishedVersion.version_number}` : null
+
+    setMobileFeedbackName(reviewerName)
+    setMobileFeedbackComment('')
+    setSubmitError(null)
+    setMobileFeedbackSheet({
+      slideTitle: activeSlide?.title ?? null,
+      slideId: activeSlide?.id ?? null,
+      clipId: activeSlide?.clipId ?? null,
+      clipTime,
+      camName: camPreset?.name ?? currentCameraRef.current ?? null,
+      versionId: publishedVersion?.id ?? null,
+      versionLabel: vLabel,
+    })
+  }, [
+    activePresetId,
+    activeSlide,
+    cameraPresets,
+    currentTime,
+    isPreviewingVersion,
+    publishedVersion,
+    reviewerName,
+  ])
+
+  const closeMobileFeedbackSheet = useCallback(() => {
+    setMobileFeedbackSheet(null)
+    setMobileFeedbackComment('')
+    setSubmitError(null)
+  }, [])
+
+  const handleSubmitMobileFeedback = useCallback(async () => {
+    if (isPreviewingVersion || !mobileFeedbackSheet) return
+    const draftReviewerName = mobileFeedbackName.trim()
+    const draftComment = mobileFeedbackComment.trim()
+    if (!draftReviewerName || !draftComment) return
+
+    setIsSubmitting(true)
+    setSubmitError(null)
+    try {
+      await submitFeedback({
+        project_id: projectId,
+        presentation_version_id: mobileFeedbackSheet.versionId ?? null,
+        slide_id: mobileFeedbackSheet.slideId ?? null,
+        clip_id: mobileFeedbackSheet.clipId ?? null,
+        clip_time_seconds: mobileFeedbackSheet.clipTime ?? null,
+        camera_snapshot_json: mobileFeedbackSheet.camName ? { name: mobileFeedbackSheet.camName } : null,
+        annotation_json: null,
+        reviewer_name: draftReviewerName,
+        comment: draftComment,
+        status: 'pending',
+      })
+
+      localStorage.setItem(LS_NAME_KEY, draftReviewerName)
+      setReviewerName(draftReviewerName)
+      setReviewerNameLocked(true)
+      await refreshSlideFeedback(mobileFeedbackSheet.slideId)
+      closeMobileFeedbackSheet()
+    } catch (err) {
+      const msg = String(err?.message ?? '')
+      if (msg.includes("Could not find the table 'public.client_feedback_items'")) {
+        setSubmitError("Feedback table missing. Run `supabase/presentation_versions_schema.sql` on this Supabase project.")
+      } else {
+        setSubmitError(msg || 'Failed to submit. Please try again.')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [
+    LS_NAME_KEY,
+    closeMobileFeedbackSheet,
+    isPreviewingVersion,
+    mobileFeedbackComment,
+    mobileFeedbackName,
+    mobileFeedbackSheet,
+    projectId,
+    refreshSlideFeedback,
+  ])
   const enterNoteFocusMode = useCallback((note) => {
     if (!note?.annotation) return
     // Exit feedback mode first if active
