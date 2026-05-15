@@ -48,6 +48,50 @@ The mobile tabs should render content inline below the transport bar, not inside
 
 Feedback entry should be a bottom sheet launched from the `Context` tab. This keeps the main three-tab information architecture intact while giving feedback a focused form state.
 
+## Orientation Behavior
+
+Mobile must support both portrait and landscape orientation. The layout should choose by viewport shape, not only device type:
+
+- Portrait: `height >= width`, use the handoff demo layout.
+- Landscape: `width > height`, prioritize the widest possible stage visualizer panel.
+
+### Portrait Layout
+
+Portrait keeps the demo structure:
+
+```txt
+Top Bar
+Stage Viewer
+Transport Bar
+Tabs
+Tab Content
+```
+
+The stage should receive the largest flexible height available, but the tab content remains visible enough for context reading and feedback entry. This is the normal phone-review mode.
+
+### Landscape Layout
+
+Landscape should favor stage inspection over reading. The target structure is:
+
+```txt
+Top Bar
+Main Row:
+  Stage Viewer + Transport
+  Compact Side Panel
+```
+
+Landscape rules:
+
+- Stage viewer takes the full remaining height and at least 65-72% of the width.
+- Side panel is compact, right-aligned, and width-limited around 280-340px.
+- If viewport height is very short, top bar and transport should be compacted before shrinking the stage.
+- `Clips`, `Context`, and `References` stay available as segmented tabs inside the side panel.
+- The side panel can collapse to an icon rail so the stage can occupy nearly the full screen.
+- Feedback bottom sheet in landscape should become a right-side sheet or modal panel so it does not cover the central stage.
+- Camera preset controls should stay over the stage but use pills only while they fit; otherwise use a compact dropdown.
+
+Landscape is not a separate feature set. It supports the same text-only feedback flow, required reviewer name, note focus, clip switching, and references. The difference is spatial priority: stage first, supporting information second.
+
 ## Feedback Flow
 
 1. Reviewer opens the mobile client view.
@@ -102,6 +146,7 @@ Planned component responsibilities:
 - `MobileStageSection`: stage canvas, title/camera badges, camera preset pills/dropdown, transport.
 - `MobileTabBar`: `Clips`, `Context`, `References`.
 - `MobileTabPanel`: fixed-height or flex content area below tabs.
+- `MobileLandscapeShell`: horizontal layout with dominant stage area and compact side panel.
 - `MobileContextContent`: slide title, subtitle, director notes, visible feedback history, `Leave Feedback` action.
 - `MobileFeedbackSheet`: name gate, comment field, locked context summary, submit/cancel states.
 
@@ -147,12 +192,16 @@ Recommended behavior: while the sheet is open, backdrop taps do not submit or di
 - Text should wrap cleanly inside tab labels, buttons, and feedback history rows.
 - No viewport-width font scaling.
 - The stage remains the primary visual area. The content panel should not permanently shrink it below a useful height.
+- Landscape must not trap key controls offscreen on short phone heights. Stage, play/pause, active tab selector, and feedback cancel/submit controls must remain reachable.
 
 ## Testing Plan
 
 Manual verification:
 
 - Mobile viewport opens with demo-like layout: top bar, stage, transport, inline tabs.
+- Portrait viewport uses stacked demo layout.
+- Landscape viewport uses stage-dominant layout with compact side panel.
+- Landscape side panel can collapse or otherwise avoid taking excessive stage width.
 - `Context` tab is selected by default.
 - Clip switching works from `Clips`.
 - References open from `References`.
@@ -176,6 +225,7 @@ The current mobile code in `ClientPage.jsx` can be refactored in place:
 - replace `activeDrawerTab` with an inline active tab defaulting to `context`,
 - remove `MobileDrawer` from the mobile happy path,
 - add a mobile-only feedback sheet state and submit handler,
+- derive a simple mobile orientation flag from viewport dimensions and render portrait or landscape shell from the same state/data,
 - reuse `reviewerName`, `reviewerNameLocked`, `comment`, `isSubmitting`, and `submitError` carefully or split mobile-specific draft state to avoid conflicting with desktop feedback mode,
 - keep `annotation` unset and submit `annotation_json: null` for mobile text feedback.
 
