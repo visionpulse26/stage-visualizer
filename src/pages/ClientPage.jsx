@@ -145,7 +145,6 @@ function ClientPage() {
   const [mobileFeedbackSheet, setMobileFeedbackSheet] = useState(null)
   const [mobileFeedbackName, setMobileFeedbackName] = useState('')
   const [mobileFeedbackComment, setMobileFeedbackComment] = useState('')
-  const [activeDrawerTab, setActiveDrawerTab] = useState(null)
   const isPreviewingVersion = Boolean(previewVersion)
 
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
@@ -825,105 +824,71 @@ function ClientPage() {
 
   // ── Mobile render ─────────────────────────────────────────────────────────
   if (isMobile) {
+    const commonMobileProps = {
+      projectName,
+      versionBadge: vBadge,
+      previewVersion,
+      isPreviewingVersion,
+      sceneReady,
+      progress,
+      status,
+      activeSlide,
+      activeDuration,
+      activeMobileTab,
+      setActiveMobileTab,
+      displayClips,
+      slideFeedback,
+      hasSnapshot,
+      noteFocusNote,
+      stageViewportRef,
+      isPlaying,
+      currentTime,
+      isSwitchingClip,
+      clipTransitionName,
+      onPlayPause: isPlaying ? handlePause : handlePlay,
+      onClipSelect: (id) => {
+        if (hasSnapshot) activateSlide(id)
+        else {
+          const c = videoPlaylist.find(v => String(v.id) === String(id))
+          if (c) activateRawClip(c)
+        }
+      },
+      onNoteClick: enterNoteFocusMode,
+      stageProps: {
+        modelUrl,
+        loadingManager: modelUrl ? loadingManager : null,
+        videoElement,
+        activeImageUrl,
+        onLedMaterialStatus: () => {},
+        sunPosition,
+        sunIntensity,
+        gridCellSize,
+        modelLoaded: !!modelUrl,
+        cameraControlsRef,
+        cameraTargetPresetRef,
+        cameraFlyDurationSeconds,
+        hdriPreset,
+        customHdriUrl,
+        hdriFileExt,
+        onHdriLoading: () => {},
+        onHdriLoadError: handleHdriLoadError,
+        onHdriClearRequest: handleClearAllHdri,
+        envIntensity,
+        bgBlur,
+        showHdriBackground,
+        bloomStrength,
+        bloomThreshold,
+        protectLed,
+        transparentLedConfig,
+        onImageTextureLoaded: handleImageTextureLoaded,
+        freezeRenderLoop: !!noteFocusNote,
+      },
+    }
+
     return (
-      <div style={{
-        width: '100%', height: '100svh', background: T.bg, color: T.text,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
-      }}>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-
-        <BrandedLoadingScreen isLoaded={sceneReady} progress={progress} status={status} />
-
-        <MobileTopBar projectName={projectName} versionBadge={vBadge} />
-        {isPreviewingVersion && <VersionPreviewBanner version={previewVersion} />}
-
-        <div ref={stageViewportRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          <StageCanvas
-            modelUrl={modelUrl}
-            loadingManager={modelUrl ? loadingManager : null}
-            videoElement={videoElement}
-            activeImageUrl={activeImageUrl}
-            onLedMaterialStatus={() => {}}
-            sunPosition={sunPosition}
-            sunIntensity={sunIntensity}
-            gridCellSize={gridCellSize}
-            modelLoaded={!!modelUrl}
-            cameraControlsRef={cameraControlsRef}
-            cameraTargetPresetRef={cameraTargetPresetRef}
-            cameraFlyDurationSeconds={cameraFlyDurationSeconds}
-            hdriPreset={hdriPreset}
-            customHdriUrl={customHdriUrl}
-            hdriFileExt={hdriFileExt}
-            onHdriLoading={() => {}}
-            onHdriLoadError={handleHdriLoadError}
-            onHdriClearRequest={handleClearAllHdri}
-            envIntensity={envIntensity}
-            bgBlur={bgBlur}
-            showHdriBackground={showHdriBackground}
-            bloomStrength={bloomStrength}
-            bloomThreshold={bloomThreshold}
-            protectLed={protectLed}
-            transparentLedConfig={transparentLedConfig}
-            onImageTextureLoaded={handleImageTextureLoaded}
-            freezeRenderLoop={false}
-          />
-          {activeSlide?.title && <StageTitleBadge title={activeSlide.title} />}
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            height: 36, background: 'rgba(5,4,3,0.92)', borderTop: `1px solid rgba(220,100,30,0.12)`,
-            display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px',
-          }}>
-            <button
-              onClick={isPlaying ? handlePause : handlePlay}
-              style={{ background: 'none', border: 'none', color: T.text, cursor: 'pointer', fontSize: 13 }}
-            >
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-              <div style={{ width: `${activeDuration > 0 ? Math.min(100, (currentTime / activeDuration) * 100) : 0}%`, height: '100%', background: T.ember, borderRadius: 2 }} />
-            </div>
-          </div>
-          <NextSceneLoadingPopup show={sceneReady && isSwitchingClip} clipName={clipTransitionName} />
-        </div>
-
-        <MobileBottomTabBar
-          activeTab={activeDrawerTab}
-          onTabChange={(tab) => setActiveDrawerTab(prev => prev === tab ? null : tab)}
-          clipCount={displayClips.length}
-          feedbackCount={slideFeedback.length}
-          refCount={(activeSlide?.references ?? []).filter(r => r.visibleToClient).length}
-        />
-
-        {activeDrawerTab && (
-          <MobileDrawer
-            onClose={() => setActiveDrawerTab(null)}
-            title={activeDrawerTab === 'clips' ? 'Scenes' : activeDrawerTab === 'context' ? 'Context' : 'References'}
-          >
-            {activeDrawerTab === 'clips' && (
-              <MobileClipList
-                clips={displayClips}
-                activeId={activeSlide?.id ?? null}
-                onSelect={(id) => {
-                  if (hasSnapshot) activateSlide(id)
-                  else { const c = videoPlaylist.find(v => String(v.id) === String(id)); if (c) activateRawClip(c) }
-                  setActiveDrawerTab(null)
-                }}
-              />
-            )}
-            {activeDrawerTab === 'context' && (
-              <MobileContextContent slide={activeSlide} feedbackItems={slideFeedback} />
-            )}
-            {activeDrawerTab === 'refs' && (
-              <MobileReferencesContent slide={activeSlide} />
-            )}
-          </MobileDrawer>
-        )}
-      </div>
+      <MobilePortraitShell {...commonMobileProps} />
     )
   }
-
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{
@@ -2031,6 +1996,126 @@ function FeedbackHistoryItem({ item, onUpdateFeedback, onDeleteFeedback }) {
 }
 
 // ── Mobile components ─────────────────────────────────────────────────────────
+function MobileFontLinks() {
+  return (
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    </>
+  )
+}
+
+function MobilePortraitShell(props) {
+  return (
+    <div style={{
+      width: '100%', height: '100svh', background: T.bg, color: T.text,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
+    }}>
+      <MobileFontLinks />
+      <BrandedLoadingScreen isLoaded={props.sceneReady} progress={props.progress} status={props.status} />
+      <MobileTopBar
+        projectName={props.projectName}
+        versionBadge={props.versionBadge}
+        slideCount={props.displayClips.length}
+        activeSlideIndex={props.displayClips.findIndex(s => s.id === props.activeSlide?.id)}
+      />
+      {props.isPreviewingVersion && <VersionPreviewBanner version={props.previewVersion} />}
+      <MobileStageViewport {...props} />
+      <MobileBottomTabBar
+        activeTab={props.activeMobileTab}
+        onTabChange={props.setActiveMobileTab}
+        clipCount={props.displayClips.length}
+        feedbackCount={props.slideFeedback.length}
+        refCount={(props.activeSlide?.references ?? []).filter(r => r.visibleToClient).length}
+      />
+      <MobileTabPanel {...props} />
+    </div>
+  )
+}
+
+function MobileStageViewport(props) {
+  return (
+    <div ref={props.stageViewportRef} style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+      <StageCanvas {...props.stageProps} />
+      {props.activeSlide?.title && <StageTitleBadge title={props.activeSlide.title} />}
+      {props.noteFocusNote?.annotation && (
+        <AnnotationLayer
+          annotation={props.noteFocusNote.annotation}
+          activeTool={null}
+          onAnnotationChange={() => {}}
+          readOnly
+        />
+      )}
+      {props.noteFocusNote && (
+        <StageLockBadge camName="Center" clipTime={props.noteFocusNote.clipTimeSeconds} />
+      )}
+      <MobileTransportBar
+        isPlaying={props.isPlaying}
+        currentTime={props.currentTime}
+        activeDuration={props.activeDuration}
+        onPlayPause={props.onPlayPause}
+      />
+      <NextSceneLoadingPopup show={props.sceneReady && props.isSwitchingClip} clipName={props.clipTransitionName} />
+    </div>
+  )
+}
+
+function MobileTransportBar({ isPlaying, currentTime, activeDuration, onPlayPause }) {
+  return (
+    <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0,
+      height: 36, background: 'rgba(5,4,3,0.92)', borderTop: `1px solid rgba(220,100,30,0.12)`,
+      display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px',
+      zIndex: 12,
+    }}>
+      <button
+        onClick={onPlayPause}
+        style={{ background: 'none', border: 'none', color: T.text, cursor: 'pointer', fontSize: 13 }}
+      >
+        {isPlaying ? 'Pause' : 'Play'}
+      </button>
+      <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative' }}>
+        <div style={{ width: `${activeDuration > 0 ? Math.min(100, (currentTime / activeDuration) * 100) : 0}%`, height: '100%', background: T.ember, borderRadius: 2 }} />
+      </div>
+      <span style={{ fontSize: 10, color: T.text2, minWidth: 74, textAlign: 'right' }}>
+        {formatDuration(currentTime)} / {formatDuration(activeDuration)}
+      </span>
+    </div>
+  )
+}
+
+function MobileTabPanel(props) {
+  return (
+    <div style={{
+      height: 220,
+      minHeight: 180,
+      overflowY: 'auto',
+      padding: '12px 14px calc(14px + env(safe-area-inset-bottom))',
+      background: 'rgba(10,7,5,0.98)',
+      borderTop: `1px solid ${T.border}`,
+      flexShrink: 0,
+    }}>
+      {props.activeMobileTab === 'clips' && (
+        <MobileClipList
+          clips={props.displayClips}
+          activeId={props.activeSlide?.id ?? null}
+          onSelect={props.onClipSelect}
+        />
+      )}
+      {props.activeMobileTab === 'context' && (
+        <MobileContextContent
+          slide={props.activeSlide}
+          feedbackItems={props.slideFeedback}
+          onNoteClick={props.onNoteClick}
+        />
+      )}
+      {props.activeMobileTab === 'refs' && (
+        <MobileReferencesContent slide={props.activeSlide} />
+      )}
+    </div>
+  )
+}
 function MobileTopBar({ projectName, versionBadge }) {
   return (
     <div style={{
