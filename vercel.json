@@ -126,11 +126,23 @@
   ],
   "rewrites": [
     {
-      "source": "/embed/:projectId",
+      "source": "/embed/:embedToken",
       "destination": "/index.html"
     },
     {
       "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/data",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:projectId",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:projectId/:tab",
       "destination": "/index.html"
     },
     {
