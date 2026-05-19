@@ -2,6 +2,8 @@
 
 Canonical roadmap: [`docs/roadmap.md`](docs/roadmap.md).
 
+Admin presentation roadmap: [`docs/admin-presentation-roadmap.md`](admin-presentation-roadmap.md).
+
 ## Current Main Release Scope
 
 - EPIC #1 POV is released to Admin and Collab only.

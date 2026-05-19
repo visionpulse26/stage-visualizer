@@ -1,5 +1,23 @@
 # Roadmap - Stage Visualizer
 
+## EPIC #0 - Admin Presentation System
+
+The admin presentation editor is tracked separately from the legacy project
+publish panel, POV, and embed work.
+
+- Detailed roadmap: [`docs/admin-presentation-roadmap.md`](admin-presentation-roadmap.md)
+- Product source: [`docs/Client Roadmap.md`](Client%20Roadmap.md)
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **A** | Protected presentation/feedback routes and 3-column editor shell | Planned |
+| **B** | Draft editor MVP from existing media playlist | Planned |
+| **C** | Per-slide references | Planned |
+| **D** | Publish modal and immutable `presentation_versions` snapshot | Planned |
+| **E** | Client fallback migration to latest published presentation | Planned |
+| **F** | Admin feedback review queue | Planned |
+| **G** | Cleanup, migration helpers, legacy compatibility | Planned |
+
 ## EPIC #1 - Immersive Audience POV (Admin / Collab)
 
 Release scope for `main`: bring over the stable POV stack only. Public client route stays orbit-only.
