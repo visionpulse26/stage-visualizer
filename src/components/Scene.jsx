@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import * as THREE from 'three'
-import { scanStageMeshes } from './pov/scanStageMeshes'
+import { scanStageMeshes, scanStageMeshesAsync } from './pov/scanStageMeshes'
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const TRANSPARENT_LED_MATERIAL_NAME = 'LED_TRANSPARENT_MAT'
@@ -698,7 +698,14 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     const normalizedSize = normalizedBox.getSize(new THREE.Vector3())
     const normalizedCenter = normalizedBox.getCenter(new THREE.Vector3())
     const radius = normalizedSize.length() * 0.5
-    onMeshScan?.(scanStageMeshes(clonedScene))
+    if (onMeshScan) {
+      // Idle-chunked scan so a 5000+ raycast pass doesn't freeze the first frame
+      // after model load. Fall back to sync if the async loop throws.
+      scanStageMeshesAsync(clonedScene).then(onMeshScan).catch((err) => {
+        if (import.meta.env.DEV) console.warn('[Scene] async mesh scan failed; falling back', err)
+        try { onMeshScan(scanStageMeshes(clonedScene)) } catch (_) { /* ignore */ }
+      })
+    }
     onModelMetrics?.({
       box: normalizedBox.clone(),
       center: normalizedCenter.clone(),

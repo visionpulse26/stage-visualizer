@@ -35,6 +35,28 @@ Phases tracked in code comments (`EmbedPage.jsx`, `App.jsx`). Status reflects th
 | **P9** | **Embed token** — column `embed_token`, public `/embed/:token` without login, legacy project UUID in URL still works when embed_enabled; admin regenerate token + iframe-only UI for anonymous | **Done** (beta worktree) |
 | **P10** | Optional: analytics for embed views, rate limits, signed short-lived URLs | Future |
 
+## EPIC #3 - Client Review & Feedback System
+
+Versioned presentation delivery to end-clients with structured feedback capture.
+Design reference: `docs/Stage Visualizer Hi-Fi v2.html` (adjusted to include Publish Checklist).
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **Phase 0** | Supabase schema: `presentation_versions` + `client_feedback_items` tables, RLS, triggers, lib helpers | **Done** |
+| **Phase 1** | Admin Presentation Editor: `/admin/:projectId/presentation` — slide list, stage canvas, context panel, publish modal, publish checklist | **Done** |
+| **Phase 2** | Desktop Client Presentation View: `/view/:projectId` redesign — `ClientTopBar`, `ClipStrip`, collapsible `ContextPanel`, clip title header, camera fly, client zoom guard, version badge | **Done** |
+| **Phase 3** | Desktop Feedback Draft: feedback mode lock (clip + camera + timestamp), `FeedbackDraftPanel`, `AnnotationLayer` (circle/region SVG), `AnnotationToolbar`, `FeedbackTopBar`, reviewer name gate + localStorage, submit to Supabase | **Done** |
+| **Phase 4** | Admin Feedback Review: full queue page at `/admin/:projectId/feedback` — list items, resolve/reopen, admin note, filter by status/slide; + Feedback Jump / View Restore (jump from review queue → exact slide + camera + timestamp in Presentation Editor) | **Done** (beta worktree) |
+| **Phase 5** | Mobile View-Only Client: bottom tabs (Clips / Context / References), no feedback | **Done** (beta worktree) |
+
+### Epic #3 Notes
+
+- Feedback items attach to `presentation_version_id + slide_id + clip_id + clip_time_seconds + camera_snapshot_json + annotation_json`.
+- Screen-space annotations stored as normalized 0-1 coords plus viewport/snapshot metadata: `{ type: 'circle'|'region', bounds: { x, y, width, height }, viewport: { width, height }, snapshot: { dataUrl, width, height } }`.
+- Client zoom guard: `minDistance = 8`, `maxDistance = 220` world units.
+- Reviewer name persisted at `localStorage` key `stageviz:reviewer-name:{projectId}`.
+- `FeedbackDraftPanel`, `AnnotationLayer`, `AnnotationToolbar`, `FeedbackTopBar`, `FeedbackLockBanner`, `StageLockBadge` all exported from `src/components/FeedbackDraftPanel.jsx`.
+
 ### Epic #2 Notes
 
 - **Admin preview**: logged-in users opening `/embed/:token` see chrome + iframe snippet; anonymous visitors see the stage canvas only.

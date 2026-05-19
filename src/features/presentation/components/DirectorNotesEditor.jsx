@@ -66,7 +66,7 @@ export function DirectorNotesEditor({ notes = [], cameraPresets = [], defaultCam
   }, [update])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
@@ -77,9 +77,9 @@ export function DirectorNotesEditor({ notes = [], cameraPresets = [], defaultCam
           onClick={addNote}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
-            fontFamily: 'Chakra Petch, sans-serif', fontSize: 10, fontWeight: 600,
-            background: T.glass, border: `1px solid ${T.border}`, color: T.text2,
+            padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
+            fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontSize: 10, fontWeight: 650,
+            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: T.text2,
           }}
         >
           + Add note
@@ -89,8 +89,8 @@ export function DirectorNotesEditor({ notes = [], cameraPresets = [], defaultCam
       {/* Empty state */}
       {notes.length === 0 && (
         <div style={{
-          background: 'rgba(0,0,0,0.2)', border: `1px dashed rgba(220,100,30,0.18)`,
-          borderRadius: 7, padding: '12px 12px', textAlign: 'center',
+          background: 'rgba(255,255,255,0.035)',
+          borderRadius: 6, padding: '12px 12px', textAlign: 'center',
         }}>
           <span style={{ fontSize: 10, color: T.text4, fontFamily: 'Chakra Petch, sans-serif' }}>
             No director notes yet — add one above

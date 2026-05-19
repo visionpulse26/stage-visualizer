@@ -17,26 +17,41 @@ export function captureOrbitState(controls) {
   }
 }
 
-function waitForControlsRest(controls, msFallback = 2000) {
-  return new Promise((resolve) => {
+function waitForControlsRest(controls, { msFallback = 2000, signal } = {}) {
+  return new Promise((resolve, reject) => {
     let done = false
+    let tid = null
     const finish = () => {
       if (done) return
       done = true
       controls.removeEventListener?.('rest', onRest)
+      signal?.removeEventListener?.('abort', onAbort)
       clearTimeout(tid)
       resolve()
     }
+    const abort = () => {
+      if (done) return
+      done = true
+      controls.removeEventListener?.('rest', onRest)
+      clearTimeout(tid)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
     const onRest = () => finish()
+    const onAbort = () => abort()
+    if (signal?.aborted) {
+      abort()
+      return
+    }
     controls.addEventListener?.('rest', onRest)
-    const tid = window.setTimeout(finish, msFallback)
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+    tid = window.setTimeout(finish, msFallback)
   })
 }
 
 /**
  * Animate camera to standing "audience" eye height (model is normalized: floor ≈ y=0).
  */
-export async function enterPovMode(controls, modelMetrics, povHeightOffset, { animate = true } = {}) {
+export async function enterPovMode(controls, modelMetrics, povHeightOffset, { animate = true, signal } = {}) {
   if (!controls || !modelMetrics) return
   const { center, radius } = modelMetrics
   const eyeY = povHeightOffset
@@ -45,13 +60,13 @@ export async function enterPovMode(controls, modelMetrics, povHeightOffset, { an
   const camZ = cz + radius * 0.6
   controls.setLookAt(cx, eyeY, camZ, cx, eyeY, cz, animate)
   if (animate) {
-    await waitForControlsRest(controls)
+    await waitForControlsRest(controls, { signal })
   } else {
     controls.update?.(0)
   }
 }
 
-export async function restoreOrbitState(controls, saved, { animate = false } = {}) {
+export async function restoreOrbitState(controls, saved, { animate = false, signal } = {}) {
   if (!controls || !saved) return
   const { position, target } = saved
   controls.setLookAt(
@@ -64,7 +79,7 @@ export async function restoreOrbitState(controls, saved, { animate = false } = {
     animate,
   )
   if (animate) {
-    await waitForControlsRest(controls)
+    await waitForControlsRest(controls, { signal })
   } else {
     controls.update?.(0)
   }

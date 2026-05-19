@@ -8,12 +8,14 @@ import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { recordClientPageView, recordClientInteraction } from '../lib/analyticsTracker'
+import { useAnalyticsConsent } from '../hooks/useAnalyticsConsent'
 import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { deleteFeedback, loadPublishedVersion, loadVersionById, submitFeedback, loadFeedback, updateFeedback, hydrateSnapshot } from '../lib/presentationVersions'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl } from '../utils/r2Upload'
 import { FeedbackDraftPanel, AnnotationLayer, AnnotationToolbar, FeedbackTopBar, FeedbackLockBanner, StageLockBanner, StageLockBadge } from '../components/FeedbackDraftPanel'
+import GuestGate, { getStoredGuest } from '../components/GuestGate'
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
@@ -36,6 +38,42 @@ const T = {
   text2:     '#C8B8A8',
   text3:     '#8E7E70',
   text4:     '#5A4E45',
+}
+
+const FEEDBACK_PENDING_PREFIX = 'stageviz:feedback-pending'
+
+function safeLocalStorageGet(key) {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeLocalStorageRemove(key) {
+  try {
+    localStorage.removeItem(key)
+  } catch {}
+}
+
+function readPendingFeedbackDraft(key) {
+  const raw = safeLocalStorageGet(key)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    safeLocalStorageRemove(key)
+    return null
+  }
 }
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
@@ -61,6 +99,17 @@ function ClientPage() {
   const [searchParams] = useSearchParams()
   const previewVersionId = searchParams.get('versionId')
   useSecurityLockdown()
+
+  // ── Guest identity gate ───────────────────────────────────────────────────
+  const [isAdmin,        setIsAdmin]        = useState(false)
+  const [gateConfirmed,  setGateConfirmed]  = useState(false)
+  const [guestIdentity,  setGuestIdentity]  = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) { setIsAdmin(true); setGateConfirmed(true) }
+    })
+  }, [])
 
   const { loadingManager, progress, status, loaded: stageLoaded, reset: resetStageLoading } = useStageLoading()
 
@@ -154,28 +203,68 @@ function ClientPage() {
   const currentCameraRef = useRef(null)
   const stageViewportRef = useRef(null)
   const LS_NAME_KEY = `stageviz:reviewer-name:${projectId}`
+  const { consent: analyticsConsent, grant: grantConsent, deny: denyConsent, isUnset: consentUnset } = useAnalyticsConsent()
+  const getPendingFeedbackKey = useCallback((slideId) => (
+    slideId ? `${FEEDBACK_PENDING_PREFIX}:${projectId}:${slideId}` : null
+  ), [projectId])
 
-  // Load persisted reviewer name
+  const savePendingFeedbackDraft = useCallback((slideId, draft) => {
+    const key = getPendingFeedbackKey(slideId)
+    if (!key) return
+    safeLocalStorageSet(key, JSON.stringify({ ...draft, savedAt: new Date().toISOString() }))
+  }, [getPendingFeedbackKey])
+
+  const clearPendingFeedbackDraft = useCallback((slideId) => {
+    const key = getPendingFeedbackKey(slideId)
+    if (key) safeLocalStorageRemove(key)
+  }, [getPendingFeedbackKey])
+
+  const loadPendingFeedbackDraft = useCallback((slideId) => {
+    const key = getPendingFeedbackKey(slideId)
+    return key ? readPendingFeedbackDraft(key) : null
+  }, [getPendingFeedbackKey])
+
+  // Load persisted reviewer name (only when reviewer has granted consent)
   useEffect(() => {
-    const saved = localStorage.getItem(LS_NAME_KEY)
+    if (analyticsConsent !== 'granted') {
+      setReviewerNameLocked(false)
+      return
+    }
+    const saved = safeLocalStorageGet(LS_NAME_KEY)
     if (saved) {
       setReviewerName(saved)
       setReviewerNameLocked(true)
     } else {
       setReviewerNameLocked(false)
     }
-  }, [LS_NAME_KEY])
+  }, [LS_NAME_KEY, analyticsConsent])
 
   useEffect(() => {
+    if (!guestIdentity?.name || isAdmin) return
+    setReviewerName(guestIdentity.name)
+    setReviewerNameLocked(true)
+  }, [guestIdentity, isAdmin])
+
+  useEffect(() => {
+    const readViewport = () => {
+      const vv = window.visualViewport
+      return {
+        width: Math.round(vv?.width ?? window.innerWidth),
+        height: Math.round(vv?.height ?? window.innerHeight),
+      }
+    }
     const onResize = () => {
-      setViewport({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      })
+      setViewport(readViewport())
     }
     onResize()
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.visualViewport?.addEventListener('resize', onResize)
+    window.visualViewport?.addEventListener('scroll', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.visualViewport?.removeEventListener('resize', onResize)
+      window.visualViewport?.removeEventListener('scroll', onResize)
+    }
   }, [])
 
   const sceneReady = !isDbLoading && !!modelUrl && stageLoaded
@@ -199,6 +288,7 @@ function ClientPage() {
       const items = await loadFeedback(projectId, {
         slideId,
         versionId: publishedVersion?.id,
+        guestToken: guestIdentity?.guest_token,
       })
       setSlideFeedback(items)
       return items
@@ -206,7 +296,7 @@ function ClientPage() {
       setSlideFeedback([])
       return []
     }
-  }, [activeSlide?.id, projectId, publishedVersion?.id])
+  }, [activeSlide?.id, guestIdentity?.guest_token, projectId, publishedVersion?.id])
 
   useEffect(() => {
     refreshSlideFeedback(activeSlide?.id)
@@ -346,6 +436,7 @@ function ClientPage() {
 
   // ── Load project ──────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!gateConfirmed) return
     let cancelled = false
 
     async function fetchProject() {
@@ -368,22 +459,39 @@ function ClientPage() {
       setSlideFeedback([])
 
       try {
-        const { data, error } = await supabase
-          .from('projects')
-          .select('*')
+        let { data, error } = await supabase
+          .from('projects_client_public')
+          .select('id, name, stage_url, video_url, media_playlist, camera_presets, grid_cell_size, scene_config, group_id, is_client_locked')
           .eq('id', projectId)
           .single()
 
         if (cancelled) return
+        if (error || !data) {
+          const fallback = await supabase
+            .from('projects')
+            .select('id, name, stage_url, video_url, media_playlist, camera_presets, grid_cell_size, scene_config, group_id, is_client_locked')
+            .eq('id', projectId)
+            .single()
+          data = fallback.data
+          error = fallback.error
+        }
         if (error || !data) { setProjectNotFound(true); return }
 
         // Client lock check
         if (data.is_client_locked) {
           const { data: { session } } = await supabase.auth.getSession()
           if (!session) { setClientLocked(true); setIsDbLoading(false); return }
+          const { data: ownedProject } = await supabase
+            .from('projects')
+            .select('id')
+            .eq('id', projectId)
+            .maybeSingle()
+          if (!ownedProject) { setClientLocked(true); setIsDbLoading(false); return }
         }
         setClientLocked(false)
-        recordClientPageView(projectId)
+        if (analyticsConsent === 'granted') {
+          recordClientPageView(projectId)
+        }
 
         // Model
         setModelUrl(data.stage_url || null)
@@ -489,7 +597,7 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
+  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
 
   // ── Apply client zoom guard once stage is ready ───────────────────────────
   useEffect(() => {
@@ -623,14 +731,19 @@ function ClientPage() {
     setNoteFocusNote(null)
     setAnnotation(null)
     setAnnotTool(null)
-    setComment('')
-    setSubmitError(null)
+    const pendingDraft = loadPendingFeedbackDraft(activeSlide?.id)
+    if (pendingDraft?.reviewerName) {
+      setReviewerName(pendingDraft.reviewerName)
+      setReviewerNameLocked(true)
+    }
+    setComment(pendingDraft?.comment ?? '')
+    setSubmitError(pendingDraft ? 'Unsaved feedback draft restored. Submit again when ready.' : null)
     setFeedbackMode(true)
 
     // Load previous feedback for this slide
     const items = slideFeedback.length ? slideFeedback : await refreshSlideFeedback(activeSlide?.id)
     setPrevFeedback(items)
-  }, [activePresetId, activeSlide, cameraPresets, isPreviewingVersion, projectId, publishedVersion, refreshSlideFeedback, slideFeedback])
+  }, [activePresetId, activeSlide, cameraPresets, isPreviewingVersion, loadPendingFeedbackDraft, publishedVersion, refreshSlideFeedback, slideFeedback])
 
   const exitFeedbackMode = useCallback(() => {
     if (cameraControlsRef.current) cameraControlsRef.current.enabled = true
@@ -653,9 +766,10 @@ function ClientPage() {
     const camPreset = findPreset(cameraPresets, activePresetId)
     const vLabel = publishedVersion ? `v${publishedVersion.version_number}` : null
 
-    setMobileFeedbackName(reviewerName)
-    setMobileFeedbackComment('')
-    setSubmitError(null)
+    const pendingDraft = loadPendingFeedbackDraft(activeSlide?.id)
+    setMobileFeedbackName(pendingDraft?.reviewerName ?? reviewerName)
+    setMobileFeedbackComment(pendingDraft?.comment ?? '')
+    setSubmitError(pendingDraft ? 'Unsaved feedback draft restored. Submit again when ready.' : null)
     setMobileFeedbackSheet({
       slideTitle: activeSlide?.title ?? null,
       slideId: activeSlide?.id ?? null,
@@ -671,6 +785,7 @@ function ClientPage() {
     cameraPresets,
     currentTime,
     isPreviewingVersion,
+    loadPendingFeedbackDraft,
     publishedVersion,
     reviewerName,
   ])
@@ -681,18 +796,27 @@ function ClientPage() {
     setSubmitError(null)
   }, [])
 
-  const handleSubmitMobileFeedback = useCallback(async () => {
+  const handleSubmitMobileFeedback = useCallback(async (nameArg, commentArg) => {
     if (isPreviewingVersion || !mobileFeedbackSheet) return
-    const draftReviewerName = mobileFeedbackName.trim()
-    const draftComment = mobileFeedbackComment.trim()
+    const fallbackName = typeof nameArg === 'string' ? nameArg : mobileFeedbackName
+    const fallbackComment = typeof commentArg === 'string' ? commentArg : mobileFeedbackComment
+    const draftReviewerName = fallbackName.trim()
+    const draftComment = fallbackComment.trim()
     if (!draftReviewerName || !draftComment) return
 
     setIsSubmitting(true)
     setSubmitError(null)
+    savePendingFeedbackDraft(mobileFeedbackSheet.slideId, {
+      reviewerName: draftReviewerName,
+      comment: draftComment,
+      mode: 'mobile',
+    })
     try {
       await submitFeedback({
         project_id: projectId,
         presentation_version_id: mobileFeedbackSheet.versionId ?? null,
+        guest_id: guestIdentity?.id ?? null,
+        guest_token: guestIdentity?.guest_token ?? null,
         slide_id: mobileFeedbackSheet.slideId ?? null,
         clip_id: mobileFeedbackSheet.clipId ?? null,
         clip_time_seconds: mobileFeedbackSheet.clipTime ?? null,
@@ -703,9 +827,10 @@ function ClientPage() {
         status: 'pending',
       })
 
-      localStorage.setItem(LS_NAME_KEY, draftReviewerName)
+      if (analyticsConsent === 'granted') safeLocalStorageSet(LS_NAME_KEY, draftReviewerName)
       setReviewerName(draftReviewerName)
-      setReviewerNameLocked(true)
+      setReviewerNameLocked(analyticsConsent === 'granted')
+      clearPendingFeedbackDraft(mobileFeedbackSheet.slideId)
       await refreshSlideFeedback(mobileFeedbackSheet.slideId)
       closeMobileFeedbackSheet()
     } catch (err) {
@@ -713,15 +838,19 @@ function ClientPage() {
       if (msg.includes("Could not find the table 'public.client_feedback_items'")) {
         setSubmitError("Feedback table missing. Run `supabase/presentation_versions_schema.sql` on this Supabase project.")
       } else {
-        setSubmitError(msg || 'Failed to submit. Please try again.')
+        setSubmitError(msg || 'Failed to submit. Draft saved on this device; please try again.')
       }
     } finally {
       setIsSubmitting(false)
     }
   }, [
     LS_NAME_KEY,
+    analyticsConsent,
     closeMobileFeedbackSheet,
     isPreviewingVersion,
+    guestIdentity,
+    savePendingFeedbackDraft,
+    clearPendingFeedbackDraft,
     mobileFeedbackComment,
     mobileFeedbackName,
     mobileFeedbackSheet,
@@ -761,7 +890,7 @@ function ClientPage() {
     const onPointerDown = (e) => { startX = e.clientX; startY = e.clientY }
     const onPointerMove = (e) => {
       if (startX == null) return
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 6) exitNoteFocusMode()
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 18) exitNoteFocusMode()
     }
     const onWheel = () => exitNoteFocusMode()
     el.addEventListener('pointerdown', onPointerDown)
@@ -781,6 +910,11 @@ function ClientPage() {
     if (!draftReviewerName || !draftComment) return
     setIsSubmitting(true)
     setSubmitError(null)
+    savePendingFeedbackDraft(activeSlide?.id, {
+      reviewerName: draftReviewerName,
+      comment: draftComment,
+      mode: 'desktop',
+    })
     try {
       const canvas = stageViewportRef.current?.querySelector('canvas')
       const snapshot = annotation && canvas
@@ -791,6 +925,8 @@ function ClientPage() {
       await submitFeedback({
         project_id:              projectId,
         presentation_version_id: publishedVersion?.id ?? null,
+        guest_id:                guestIdentity?.id ?? null,
+        guest_token:             guestIdentity?.guest_token ?? null,
         slide_id:                activeSlide?.id ?? null,
         clip_id:                 activeSlide?.clipId ?? null,
         clip_time_seconds:       lockedCtx?.clipTime ?? null,
@@ -800,9 +936,10 @@ function ClientPage() {
         comment:                 draftComment,
         status:                  'pending',
       })
-      localStorage.setItem(LS_NAME_KEY, draftReviewerName)
+      if (analyticsConsent === 'granted') safeLocalStorageSet(LS_NAME_KEY, draftReviewerName)
       setReviewerName(draftReviewerName)
-      setReviewerNameLocked(true)
+      setReviewerNameLocked(analyticsConsent === 'granted')
+      clearPendingFeedbackDraft(activeSlide?.id)
       await refreshSlideFeedback(activeSlide?.id)
       exitFeedbackMode()
     } catch (err) {
@@ -810,12 +947,12 @@ function ClientPage() {
       if (msg.includes("Could not find the table 'public.client_feedback_items'")) {
         setSubmitError("Feedback table missing. Run `supabase/presentation_versions_schema.sql` on this Supabase project.")
       } else {
-        setSubmitError(msg || 'Failed to submit. Please try again.')
+        setSubmitError(msg || 'Failed to submit. Draft saved on this device; please try again.')
       }
     } finally {
       setIsSubmitting(false)
     }
-  }, [reviewerName, comment, projectId, publishedVersion, activeSlide, lockedCtx, annotation, LS_NAME_KEY, refreshSlideFeedback, exitFeedbackMode, isPreviewingVersion])
+  }, [reviewerName, comment, projectId, publishedVersion, activeSlide, lockedCtx, annotation, guestIdentity, savePendingFeedbackDraft, clearPendingFeedbackDraft, refreshSlideFeedback, exitFeedbackMode, isPreviewingVersion, analyticsConsent, LS_NAME_KEY])
 
   const handleUpdateClientFeedback = useCallback(async (item, patch) => {
     if (isPreviewingVersion) return
@@ -823,14 +960,14 @@ function ClientPage() {
     if (!item?.id || !nextComment) return
     setSubmitError(null)
     try {
-      const updated = await updateFeedback(item.id, { comment: nextComment })
+      const updated = await updateFeedback(item.id, { comment: nextComment }, { guestToken: guestIdentity?.guest_token })
       setPrevFeedback(prev => prev.map(f => f.id === item.id ? { ...f, ...updated } : f))
       setSlideFeedback(prev => prev.map(f => f.id === item.id ? { ...f, ...updated } : f))
     } catch (err) {
       setSubmitError(err?.message || 'Failed to update feedback.')
       throw err
     }
-  }, [isPreviewingVersion])
+  }, [guestIdentity, isPreviewingVersion])
 
   const handleDeleteClientFeedback = useCallback(async (item) => {
     if (isPreviewingVersion) return
@@ -839,19 +976,32 @@ function ClientPage() {
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
     setSubmitError(null)
     try {
-      await deleteFeedback(item.id)
+      await deleteFeedback(item.id, { guestToken: guestIdentity?.guest_token })
       setPrevFeedback(prev => prev.filter(f => f.id !== item.id))
       setSlideFeedback(prev => prev.filter(f => f.id !== item.id))
     } catch (err) {
       setSubmitError(err?.message || 'Failed to delete feedback.')
       throw err
     }
-  }, [isPreviewingVersion])
+  }, [guestIdentity, isPreviewingVersion])
 
   const handleHdriLoadError  = useCallback(() => {}, [])
   const handleClearAllHdri   = useCallback(() => { setCustomHdriUrl(null); setHdriPreset('none') }, [])
 
   // ── Early exits ───────────────────────────────────────────────────────────
+  if (!gateConfirmed) {
+    return (
+      <GuestGate
+        presentationId={projectId}
+        isAdmin={isAdmin}
+        onConfirmed={(guest) => {
+          setGuestIdentity(guest || getStoredGuest(projectId))
+          setGateConfirmed(true)
+        }}
+      />
+    )
+  }
+
   if (projectNotFound) return <ClientProjectNotFound projectId={projectId} />
   if (clientLocked)    return <ClientLinkLocked />
 
@@ -863,7 +1013,6 @@ function ClientPage() {
   const vBadge = publishedVersion
     ? `v${publishedVersion.version_number}${isPreviewingVersion ? ` ${publishedVersion.status}` : ''}`
     : (versionStatus || null)
-
   // ── Mobile render ─────────────────────────────────────────────────────────
   if (isMobile) {
     const commonMobileProps = {
@@ -885,8 +1034,9 @@ function ClientPage() {
       activePresetId,
       noteFocusNote,
       mobileFeedbackSheet,
-      mobileFeedbackName,
-      mobileFeedbackComment,
+      mobileFeedbackInitialName: mobileFeedbackName,
+      mobileFeedbackInitialComment: mobileFeedbackComment,
+      viewportHeight: viewport.height,
       reviewerNameLocked,
       isSubmitting,
       submitError,
@@ -907,8 +1057,6 @@ function ClientPage() {
       onOpenReference: openReferenceViewer,
       onOpenFeedback: openMobileFeedbackSheet,
       onCloseFeedback: closeMobileFeedbackSheet,
-      onFeedbackNameChange: setMobileFeedbackName,
-      onFeedbackCommentChange: setMobileFeedbackComment,
       onSubmitFeedback: handleSubmitMobileFeedback,
       onNoteClick: enterNoteFocusMode,
       referenceViewer,
@@ -946,15 +1094,15 @@ function ClientPage() {
     }
 
     return (
-      isMobileLandscape ? (
-        <MobileLandscapeShell
-          {...commonMobileProps}
-          panelCollapsed={mobilePanelCollapsed}
-          onTogglePanel={() => setMobilePanelCollapsed(v => !v)}
-        />
-      ) : (
-        <MobilePortraitShell {...commonMobileProps} />
-      )
+      <>
+      <MobileResponsiveShell
+        {...commonMobileProps}
+        landscape={isMobileLandscape}
+        panelCollapsed={mobilePanelCollapsed}
+        onTogglePanel={() => setMobilePanelCollapsed(v => !v)}
+      />
+      <ConsentBanner visible={consentUnset} onGrant={grantConsent} onDeny={denyConsent} />
+      </>
     )
   }
 
@@ -1206,6 +1354,7 @@ function ClientPage() {
         onClose={closeReferenceViewer}
         onStep={stepReferenceViewer}
       />
+      <ConsentBanner visible={consentUnset} onGrant={grantConsent} onDeny={denyConsent} />
     </div>
   )
 }
@@ -1338,6 +1487,7 @@ function ClientTopBar({ projectName, versionBadge, publishedAt, slideCount, acti
 // ── Clip strip ────────────────────────────────────────────────────────────────
 function VersionPreviewBanner({ version }) {
   if (!version) return null
+  const isPublishedPreview = version.status === 'published'
   return (
     <div style={{
       minHeight: 34,
@@ -1358,7 +1508,9 @@ function VersionPreviewBanner({ version }) {
       position: 'relative',
       zIndex: 9,
     }}>
-      Previewing v{version.version_number} ({version.status}) - not the live published version
+      {isPublishedPreview
+        ? `Previewing current published version v${version.version_number}`
+        : `Previewing v${version.version_number} (${version.status}) - not the live published version`}
     </div>
   )
 }
@@ -1604,6 +1756,7 @@ async function captureFeedbackSnapshot(canvas, { projectId = '', slideId = '' } 
     const { putUrl, publicUrl, key } = await getPresignedUploadUrl({
       filename,
       contentType: 'image/jpeg',
+      contentLength: blob.size,
       projectId,
       type: 'snapshot',
     })
@@ -2188,7 +2341,7 @@ function FeedbackHistoryItem({ item, onUpdateFeedback, onDeleteFeedback }) {
     item.camera_snapshot_json?.name,
     item.clip_time_seconds != null ? formatDuration(item.clip_time_seconds) : null,
   ].filter(Boolean).join(' / ')
-  const canEdit = Boolean(onUpdateFeedback && onDeleteFeedback)
+  const canEdit = Boolean(onUpdateFeedback && onDeleteFeedback && item.can_edit === true)
   const canSave = draftComment.trim().length > 0 && draftComment.trim() !== (item.comment ?? '').trim() && !isBusy
 
   useEffect(() => {
@@ -2269,6 +2422,7 @@ function FeedbackHistoryItem({ item, onUpdateFeedback, onDeleteFeedback }) {
           <textarea
             value={draftComment}
             onChange={e => setDraftComment(e.target.value)}
+            maxLength={2000}
             rows={3}
             style={{
               width: '100%',
@@ -2317,6 +2471,49 @@ function FeedbackHistoryItem({ item, onUpdateFeedback, onDeleteFeedback }) {
   )
 }
 
+// ── Privacy / analytics consent banner ────────────────────────────────────────
+function ConsentBanner({ visible, onGrant, onDeny }) {
+  if (!visible) return null
+  return (
+    <div style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 90,
+      padding: '10px 16px calc(10px + env(safe-area-inset-bottom))',
+      background: 'rgba(8,6,4,0.97)',
+      borderTop: `1px solid ${T.border}`,
+      display: 'flex', flexWrap: 'nowrap', gap: 12, alignItems: 'center',
+      fontFamily: 'Chakra Petch, sans-serif',
+    }}>
+      <span style={{ fontSize: 12, lineHeight: 1.45, flex: '1 1 0', minWidth: 0, color: T.text2 }}>
+        Trang này dùng cookies để ghi nhớ tên của bạn và đo lượt xem ẩn danh, giúp bạn để lại feedback nhanh hơn.
+      </span>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+        <button
+          onClick={onDeny}
+          style={{
+            padding: '6px 14px', borderRadius: 6, border: `1px solid ${T.border}`,
+            background: 'transparent', color: T.text2, cursor: 'pointer',
+            fontSize: 12, fontFamily: 'Chakra Petch, sans-serif', fontWeight: 500,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Từ chối
+        </button>
+        <button
+          onClick={onGrant}
+          style={{
+            padding: '6px 16px', borderRadius: 6, border: 'none',
+            background: T.ember, color: '#fff', cursor: 'pointer',
+            fontSize: 12, fontFamily: 'Chakra Petch, sans-serif', fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Chấp nhận
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Mobile components ─────────────────────────────────────────────────────────
 function MobileFontLinks() {
   return (
@@ -2327,10 +2524,85 @@ function MobileFontLinks() {
   )
 }
 
+function MobileResponsiveShell(props) {
+  const landscape = Boolean(props.landscape)
+  const panelVisible = !landscape || !props.panelCollapsed
+  return (
+    <div style={{
+      width: '100%', height: '100dvh', background: T.bg, color: T.text,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
+    }}>
+      <MobileFontLinks />
+      <BrandedLoadingScreen isLoaded={props.sceneReady} progress={props.progress} status={props.status} />
+      <MobileTopBar
+        compact={landscape}
+        projectName={props.projectName}
+        versionBadge={props.versionBadge}
+        slideCount={props.displayClips.length}
+        activeSlideIndex={props.displayClips.findIndex(s => s.id === props.activeSlide?.id)}
+      />
+      {props.isPreviewingVersion && <VersionPreviewBanner version={props.previewVersion} />}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: landscape ? 'row' : 'column',
+      }}>
+        <div style={{
+          flex: '1 1 auto',
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <MobileStageViewport {...props} />
+        </div>
+
+        {landscape && props.panelCollapsed ? (
+          <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">
+            <span style={mobilePanelRailLabelStyle()}>Show</span>
+          </button>
+        ) : (
+          <div style={{
+            width: landscape ? 'clamp(280px, 30vw, 340px)' : '100%',
+            maxHeight: landscape ? 'none' : '44dvh',
+            flex: landscape ? '0 0 auto' : '0 0 auto',
+            borderLeft: landscape ? `1px solid ${T.border}` : 'none',
+            borderTop: landscape ? 'none' : `1px solid ${T.border}`,
+            background: 'rgba(8,6,4,0.96)',
+            display: panelVisible ? 'flex' : 'none',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}>
+            {landscape && (
+              <button onClick={props.onTogglePanel} style={mobilePanelCollapseButtonStyle()}>Hide Panel</button>
+            )}
+            <MobileBottomTabBar
+              activeTab={props.activeMobileTab}
+              onTabChange={props.setActiveMobileTab}
+              clipCount={props.displayClips.length}
+              feedbackCount={props.slideFeedback.length}
+              refCount={(props.activeSlide?.references ?? []).filter(r => r.visibleToClient).length}
+            />
+            <MobileTabPanel {...props} landscape={landscape} />
+          </div>
+        )}
+      </div>
+      <MobileFeedbackSheet {...props} landscape={landscape} />
+      <ReferenceViewerModal
+        viewer={props.referenceViewer}
+        onClose={props.closeReferenceViewer}
+        onStep={props.stepReferenceViewer}
+      />
+    </div>
+  )
+}
+
 function MobilePortraitShell(props) {
   return (
     <div style={{
-      width: '100%', height: '100svh', background: T.bg, color: T.text,
+      width: '100%', height: '100dvh', background: T.bg, color: T.text,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
     }}>
@@ -2365,7 +2637,7 @@ function MobilePortraitShell(props) {
 function MobileLandscapeShell(props) {
   return (
     <div style={{
-      width: '100%', height: '100svh', background: T.bg, color: T.text,
+      width: '100%', height: '100dvh', background: T.bg, color: T.text,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
     }}>
@@ -2384,7 +2656,9 @@ function MobileLandscapeShell(props) {
           <MobileStageViewport {...props} />
         </div>
         {props.panelCollapsed ? (
-          <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">Tabs</button>
+          <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">
+            <span style={mobilePanelRailLabelStyle()}>Show</span>
+          </button>
         ) : (
           <aside style={{
             width: 'clamp(280px, 30vw, 340px)',
@@ -2562,9 +2836,24 @@ function MobileTabPanel(props) {
 }
 
 function MobileFeedbackSheet(props) {
-  if (!props.mobileFeedbackSheet) return null
-  const canSubmit = props.mobileFeedbackName.trim() && props.mobileFeedbackComment.trim() && !props.isSubmitting
+  const isOpen = !!props.mobileFeedbackSheet
   const ctx = props.mobileFeedbackSheet
+  const sheetKey = ctx ? `${ctx.slideId ?? ''}::${ctx.clipId ?? ''}::${ctx.versionId ?? ''}` : null
+  const [name, setName] = useState(props.mobileFeedbackInitialName ?? '')
+  const [comment, setComment] = useState(props.mobileFeedbackInitialComment ?? '')
+  const lastKeyRef = useRef(null)
+  useEffect(() => {
+    if (!isOpen) { lastKeyRef.current = null; return }
+    if (lastKeyRef.current === sheetKey) return
+    lastKeyRef.current = sheetKey
+    setName(props.mobileFeedbackInitialName ?? '')
+    setComment(props.mobileFeedbackInitialComment ?? '')
+  }, [isOpen, sheetKey, props.mobileFeedbackInitialName, props.mobileFeedbackInitialComment])
+  if (!isOpen) return null
+  const canSubmit = name.trim() && comment.trim() && !props.isSubmitting
+  const sheetMaxHeight = props.viewportHeight
+    ? (props.landscape ? `calc(${props.viewportHeight}px - 44px)` : `min(86dvh, calc(${props.viewportHeight}px - 12px))`)
+    : (props.landscape ? 'calc(100dvh - 44px)' : '86dvh')
   return (
     <div style={{
       position: 'fixed',
@@ -2579,7 +2868,7 @@ function MobileFeedbackSheet(props) {
       display: 'flex',
       flexDirection: 'column',
       gap: 10,
-      maxHeight: props.landscape ? 'calc(100svh - 44px)' : '72svh',
+      maxHeight: sheetMaxHeight,
       overflowY: 'auto',
     }}>
       <Row gap={8}>
@@ -2594,18 +2883,20 @@ function MobileFeedbackSheet(props) {
       <label style={mobileFieldLabelStyle()}>
         Your name
         <input
-          value={props.mobileFeedbackName}
-          onChange={e => props.onFeedbackNameChange(e.target.value)}
+          value={name}
+          onChange={e => setName(e.target.value)}
           placeholder="Enter your name"
+          maxLength={100}
           style={mobileInputStyle()}
         />
       </label>
       <label style={mobileFieldLabelStyle()}>
         Feedback
         <textarea
-          value={props.mobileFeedbackComment}
-          onChange={e => props.onFeedbackCommentChange(e.target.value)}
+          value={comment}
+          onChange={e => setComment(e.target.value)}
           placeholder="Write objective feedback for this clip"
+          maxLength={2000}
           rows={4}
           style={{ ...mobileInputStyle(), minHeight: 104, resize: 'vertical', lineHeight: 1.5 }}
         />
@@ -2614,7 +2905,7 @@ function MobileFeedbackSheet(props) {
         <span style={{ fontSize: 11, color: '#FF9B75', lineHeight: 1.45 }}>{props.submitError}</span>
       )}
       <button
-        onClick={props.onSubmitFeedback}
+        onClick={() => props.onSubmitFeedback(name, comment)}
         disabled={!canSubmit}
         style={mobilePrimaryButtonStyle(Boolean(canSubmit))}
       >
@@ -2632,12 +2923,24 @@ function mobilePanelRailStyle() {
     borderLeft: `1px solid ${T.border}`,
     background: 'rgba(8,6,4,0.96)',
     color: T.ember2,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     fontFamily: 'Chakra Petch, sans-serif',
     fontSize: 10,
     fontWeight: 800,
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
     cursor: 'pointer',
+  }
+}
+
+function mobilePanelRailLabelStyle() {
+  return {
+    display: 'block',
+    transform: 'rotate(-90deg)',
+    whiteSpace: 'nowrap',
+    transformOrigin: 'center',
   }
 }
 

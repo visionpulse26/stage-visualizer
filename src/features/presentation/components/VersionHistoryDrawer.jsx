@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Eye, MessageSquare, MoreVertical, Pencil, RotateCcw, Trash2 } from 'lucide-react'
 
 const T = {
   bg: '#080604',
@@ -54,6 +55,35 @@ function GhostBtn({ children, onClick, danger = false, disabled = false, style =
   )
 }
 
+function PrimaryBtn({ children, onClick, disabled = false, style = {} }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        padding: '5px 10px',
+        borderRadius: 6,
+        border: `1px solid ${disabled ? 'rgba(255,255,255,0.08)' : 'rgba(232,83,26,0.55)'}`,
+        background: disabled ? 'rgba(255,255,255,0.035)' : 'rgba(232,83,26,0.16)',
+        color: disabled ? T.text4 : T.text,
+        fontFamily: 'Chakra Petch, sans-serif',
+        fontSize: 10,
+        fontWeight: 700,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        whiteSpace: 'nowrap',
+        boxShadow: disabled ? 'none' : '0 0 14px rgba(232,83,26,0.12)',
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 function StatusPill({ status }) {
   const color = status === 'published' ? T.green : status === 'draft' ? T.amber : T.text3
   return (
@@ -73,7 +103,7 @@ function StatusPill({ status }) {
   )
 }
 
-function TextInput({ value, onChange, multiline = false, placeholder = '' }) {
+function TextInput({ value, onChange, multiline = false, placeholder = '', style = {} }) {
   const common = {
     width: '100%',
     border: `1px solid ${T.border}`,
@@ -85,6 +115,7 @@ function TextInput({ value, onChange, multiline = false, placeholder = '' }) {
     fontSize: 11,
     outline: 'none',
     resize: 'vertical',
+    ...style,
   }
   if (multiline) {
     return <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={common} />
@@ -99,7 +130,126 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
-function VersionCard({ version, feedbackCount, onPreview, onRestore, onRename, onDelete }) {
+function FeedbackBadge({ count }) {
+  const active = count > 0
+  return (
+    <span
+      title={`${count} feedback item${count === 1 ? '' : 's'}`}
+      style={{
+        position: 'relative',
+        width: 28,
+        height: 22,
+        borderRadius: 6,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: active ? '#FFB15E' : T.text4,
+        background: active ? 'rgba(232,83,26,0.16)' : 'rgba(255,255,255,0.035)',
+        border: `1px solid ${active ? 'rgba(232,83,26,0.38)' : 'rgba(255,255,255,0.07)'}`,
+        flexShrink: 0,
+      }}
+    >
+      <MessageSquare size={13} strokeWidth={2.1} />
+      <span style={{
+        position: 'absolute',
+        top: -5,
+        right: -5,
+        minWidth: 14,
+        height: 14,
+        padding: '0 4px',
+        borderRadius: 999,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: active ? 'linear-gradient(180deg, #FF7A2F, #E8531A)' : 'rgba(255,255,255,0.08)',
+        color: active ? '#160704' : T.text4,
+        fontSize: 8,
+        fontWeight: 800,
+        lineHeight: 1,
+        boxShadow: active ? '0 0 10px rgba(232,83,26,0.32)' : 'none',
+      }}>
+        {count}
+      </span>
+    </span>
+  )
+}
+
+function MoreMenu({ version, onRestore, onRenameStart, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const itemStyle = (danger = false) => ({
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '7px 9px',
+    border: 0,
+    background: 'transparent',
+    color: danger ? T.ember2 : T.text2,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 10,
+    textAlign: 'left',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  })
+
+  const run = (fn) => {
+    setOpen(false)
+    fn()
+  }
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-label={`More actions for version ${version.version_number}`}
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 6,
+          border: '1px solid transparent',
+          background: open ? 'rgba(255,255,255,0.075)' : 'transparent',
+          color: T.text3,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+        }}
+      >
+        <MoreVertical size={15} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          right: 0,
+          top: 30,
+          zIndex: 5,
+          minWidth: 154,
+          padding: 5,
+          borderRadius: 8,
+          background: 'rgba(16,12,9,0.98)',
+          border: '1px solid rgba(255,255,255,0.10)',
+          boxShadow: '0 14px 34px rgba(0,0,0,0.48)',
+        }}>
+          {version.status !== 'draft' && (
+            <button style={itemStyle()} onClick={() => run(() => onRestore(version))}>
+              <RotateCcw size={13} /> Restore as draft
+            </button>
+          )}
+          <button style={itemStyle()} onClick={() => run(onRenameStart)}>
+            <Pencil size={13} /> Rename
+          </button>
+          {version.status === 'archived' && (
+            <button style={itemStyle(true)} onClick={() => run(() => onDelete(version))}>
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VersionRow({ version, feedbackCount, compact = false, onPreview, onRestore, onRename, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [versionName, setVersionName] = useState(version.version_name || '')
   const [releaseNotes, setReleaseNotes] = useState(version.release_notes || '')
@@ -112,35 +262,18 @@ function VersionCard({ version, feedbackCount, onPreview, onRestore, onRename, o
 
   return (
     <div style={{
-      border: `1px solid ${T.border}`,
-      background: 'rgba(0,0,0,0.24)',
-      borderRadius: 8,
-      padding: '9px 10px',
+      position: 'relative',
+      borderBottom: '1px solid rgba(255,255,255,0.055)',
+      background: version.status === 'published' ? 'rgba(43,199,130,0.035)' : 'transparent',
+      padding: compact ? '6px 2px' : '10px 2px',
     }}>
-      <Col gap={8}>
-        <Row>
-          <StatusPill status={version.status} />
-          <span style={{ color: T.text, fontSize: 12, fontWeight: 700 }}>v{version.version_number}</span>
-          <span style={{ color: T.text2, fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {version.version_name || 'Untitled version'}
-          </span>
-          <Spacer />
-          <span style={{ color: T.text4, fontSize: 9 }}>{feedbackCount} feedback</span>
-        </Row>
-
-        <span style={{ color: T.text3, fontSize: 9 }}>
-          {version.status === 'published' ? 'published' : 'created'} {formatDate(stamp)}
-          {version.status === 'published' && version.published_by ? ` by ${version.published_by}` : ''}
-          {version.status !== 'published' && version.created_by ? ` by ${version.created_by}` : ''}
-        </span>
-
-        {version.restored_from && (
-          <span style={{ color: T.amber, fontSize: 9 }}>Restored from another version</span>
-        )}
-
-        {editing ? (
-          <Col gap={7}>
+      {editing ? (
+        <Col gap={7} style={{ padding: compact ? '2px 0 6px' : '0 0 4px' }}>
+          <Row gap={7}>
+            <span style={{ color: T.text, fontSize: 12, fontWeight: 800, minWidth: 30 }}>v{version.version_number}</span>
             <TextInput value={versionName} onChange={setVersionName} placeholder="Version name" />
+          </Row>
+          <Col gap={7} style={{ paddingLeft: 37 }}>
             <TextInput value={releaseNotes} onChange={setReleaseNotes} multiline placeholder="Release notes" />
             <Row>
               <GhostBtn onClick={() => {
@@ -152,15 +285,50 @@ function VersionCard({ version, feedbackCount, onPreview, onRestore, onRename, o
               <GhostBtn onClick={() => setEditing(false)}>Cancel</GhostBtn>
             </Row>
           </Col>
-        ) : (
-          <Row gap={6} style={{ flexWrap: 'wrap' }}>
-            <GhostBtn onClick={() => onPreview(version.id)}>Preview</GhostBtn>
-            {version.status !== 'draft' && <GhostBtn onClick={() => onRestore(version)}>Restore as draft</GhostBtn>}
-            <GhostBtn onClick={() => setEditing(true)}>Rename</GhostBtn>
-            {version.status === 'archived' && <GhostBtn danger onClick={() => onDelete(version)}>Delete</GhostBtn>}
-          </Row>
-        )}
-      </Col>
+        </Col>
+      ) : (
+        <Row gap={10} align="center">
+          <Col gap={compact ? 2 : 4} style={{ minWidth: 0, flex: 1 }}>
+            <Row gap={7} style={{ minWidth: 0 }}>
+              {!compact && <StatusPill status={version.status} />}
+              <span style={{ color: T.text, fontSize: compact ? 11 : 12, fontWeight: 800, flexShrink: 0 }}>v{version.version_number}</span>
+              <span style={{
+                color: compact ? T.text3 : T.text2,
+                fontSize: compact ? 10 : 11,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: compact ? 500 : 650,
+              }}>
+                {version.version_name || 'Untitled version'}
+              </span>
+            </Row>
+            <span style={{
+              color: T.text4,
+              fontSize: compact ? 8 : 9,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {version.status === 'published' ? 'Published' : 'Created'} {formatDate(stamp)}
+              {version.status === 'published' && version.published_by ? ` by ${version.published_by}` : ''}
+              {version.status !== 'published' && version.created_by ? ` by ${version.created_by}` : ''}
+              {version.restored_from ? ' - restored' : ''}
+            </span>
+          </Col>
+          <FeedbackBadge count={feedbackCount} />
+          <PrimaryBtn onClick={() => onPreview(version.id)} style={{ padding: compact ? '4px 8px' : '5px 10px' }}>
+            <Eye size={13} /> Preview
+          </PrimaryBtn>
+          <MoreMenu
+            version={version}
+            onRestore={onRestore}
+            onRenameStart={() => setEditing(true)}
+            onDelete={onDelete}
+          />
+        </Row>
+      )}
     </div>
   )
 }
@@ -178,6 +346,7 @@ export default function VersionHistoryDrawer({
   pruneArchivedVersions,
   onClose,
   onChanged,
+  hasUnsavedChanges = false,
 }) {
   const [versions, setVersions] = useState([])
   const [feedbackCounts, setFeedbackCounts] = useState({})
@@ -220,6 +389,12 @@ export default function VersionHistoryDrawer({
   useEffect(() => { refresh() }, [refresh])
 
   const runAction = async (action, { reload = false } = {}) => {
+    if (reload && hasUnsavedChanges) {
+      const ok = window.confirm(
+        'You have unsaved editor changes. This version action will reload the editor and discard those local edits. Continue?'
+      )
+      if (!ok) return
+    }
     setBusy(true)
     setError('')
     try {
@@ -266,6 +441,10 @@ export default function VersionHistoryDrawer({
   }
 
   const cleanupArchived = () => {
+    if (keepLatest < 1 || olderThanDays <= 0) {
+      setError('Cleanup must keep at least 1 archived version and use an age greater than 0 days.')
+      return
+    }
     if (!window.confirm(`Delete archived versions older than ${olderThanDays} days while keeping the newest ${keepLatest}?`)) return
     runAction(() => pruneArchivedVersions(projectId, { keepLatest, olderThanDays }))
   }
@@ -291,27 +470,70 @@ export default function VersionHistoryDrawer({
         display: 'flex',
         flexDirection: 'column',
       }}>
-        <Row style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}` }}>
+        <Row style={{ padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.075)' }}>
           <Col gap={2} style={{ minWidth: 0 }}>
             <span style={{ color: T.text, fontSize: 15, fontWeight: 800 }}>Version History</span>
             <span style={{ color: T.text3, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{projectName}</span>
           </Col>
           <Spacer />
-          <GhostBtn onClick={onClose}>Close</GhostBtn>
+          <button
+            onClick={onClose}
+            aria-label="Close version history"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.045)',
+              color: T.text2,
+              fontFamily: 'Chakra Petch, sans-serif',
+              fontSize: 15,
+              cursor: 'pointer',
+            }}
+          >
+            x
+          </button>
         </Row>
 
-        <Col gap={8} style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}` }}>
-          <Row gap={8} style={{ flexWrap: 'wrap' }}>
-            <GhostBtn onClick={discardCurrentDraft} disabled={busy || !grouped.draft.length}>Discard draft</GhostBtn>
-            <GhostBtn onClick={revertToPublished} disabled={busy || !grouped.published.length}>Revert draft to published</GhostBtn>
-          </Row>
-          <Row gap={8} style={{ flexWrap: 'wrap' }}>
-            <span style={{ color: T.text3, fontSize: 9 }}>Cleanup archived</span>
-            <TextInput value={String(keepLatest)} onChange={v => setKeepLatest(Number(v) || 0)} placeholder="Keep" />
-            <TextInput value={String(olderThanDays)} onChange={v => setOlderThanDays(Number(v) || 0)} placeholder="Days" />
-            <GhostBtn onClick={cleanupArchived} disabled={busy || !grouped.archived.length}>Run</GhostBtn>
-          </Row>
-        </Col>
+        <details style={{
+          margin: '10px 16px 0',
+          borderBottom: '1px solid rgba(255,255,255,0.055)',
+          paddingBottom: 10,
+        }}>
+          <summary style={{
+            cursor: 'pointer',
+            color: T.text3,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            listStyle: 'none',
+          }}>
+            Management
+          </summary>
+          <Col gap={9} style={{ paddingTop: 10 }}>
+            <Row gap={8} style={{ flexWrap: 'wrap' }}>
+              <GhostBtn onClick={discardCurrentDraft} disabled={busy || !grouped.draft.length}>Discard draft</GhostBtn>
+              <GhostBtn onClick={revertToPublished} disabled={busy || !grouped.published.length}>Revert draft to published</GhostBtn>
+            </Row>
+            <Row gap={8} style={{ flexWrap: 'wrap' }}>
+              <span style={{ color: T.text3, fontSize: 9, minWidth: 90 }}>Cleanup archived</span>
+              <TextInput
+                value={String(keepLatest)}
+                onChange={v => setKeepLatest(Number(v) || 0)}
+                placeholder="Keep"
+                style={{ width: 68, textAlign: 'center' }}
+              />
+              <TextInput
+                value={String(olderThanDays)}
+                onChange={v => setOlderThanDays(Number(v) || 0)}
+                placeholder="Days"
+                style={{ width: 76, textAlign: 'center' }}
+              />
+              <GhostBtn onClick={cleanupArchived} disabled={busy || !grouped.archived.length}>Run</GhostBtn>
+            </Row>
+          </Col>
+        </details>
 
         {error && (
           <div style={{ margin: '10px 16px 0', color: T.ember2, fontSize: 10, border: '1px solid rgba(232,83,26,0.3)', padding: 8, borderRadius: 6 }}>
@@ -319,25 +541,34 @@ export default function VersionHistoryDrawer({
           </div>
         )}
 
-        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px 18px' }}>
           {loading ? (
             <span style={{ color: T.text3, fontSize: 11 }}>Loading history...</span>
           ) : (
-            <Col gap={16}>
+            <Col gap={18}>
               {[
-                ['Draft', grouped.draft],
-                ['Published', grouped.published],
-                [`Archived (${grouped.archived.length})`, grouped.archived],
-              ].map(([label, items]) => (
-                <Col key={label} gap={8}>
-                  <Row>
-                    <span style={{ color: T.text3, fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
-                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                ['Draft', grouped.draft, false],
+                ['Published', grouped.published, false],
+                [`Archived (${grouped.archived.length})`, grouped.archived, true],
+              ].map(([label, items, compact]) => (
+                <Col key={label} gap={compact ? 4 : 7}>
+                  <Row gap={9}>
+                    <span style={{
+                      color: compact ? T.text4 : T.text3,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                    }}>
+                      {label}
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
                   </Row>
                   {items.length ? items.map(version => (
-                    <VersionCard
+                    <VersionRow
                       key={version.id}
                       version={version}
+                      compact={compact}
                       feedbackCount={feedbackCounts[version.id] || 0}
                       onPreview={previewVersion}
                       onRestore={restoreAsDraft}

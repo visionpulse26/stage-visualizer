@@ -6,6 +6,18 @@ const GLOBAL_FLOOR_TOP_Y = 0
 const MAX_MOUSE_DELTA = 160
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
 
+function getValidRigidBody(ref) {
+  const body = ref?.current
+  if (!body) return null
+  try {
+    if (body.isValid && !body.isValid()) return null
+    if (body.isInvalid?.()) return null
+  } catch {
+    return null
+  }
+  return body
+}
+
 function normalizeRadians(value) {
   return THREE.MathUtils.euclideanModulo(value + Math.PI, Math.PI * 2) - Math.PI
 }
@@ -62,6 +74,12 @@ export function usePovController({
   useEffect(() => {
     if (!enabled) return
 
+    const clearKeys = () => {
+      keysRef.current = {}
+      velRef.current.set(0, 0, 0)
+      prevJumpRef.current = false
+    }
+
     const down = (ev) => {
       if (gl && document.pointerLockElement !== gl.domElement) return
       if (ev.code === 'Space') ev.preventDefault()
@@ -75,9 +93,13 @@ export function usePovController({
 
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
+    window.addEventListener('blur', clearKeys)
+    document.addEventListener('pointerlockchange', clearKeys)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', clearKeys)
+      document.removeEventListener('pointerlockchange', clearKeys)
     }
   }, [enabled, gl])
 
@@ -130,55 +152,70 @@ export function usePovController({
     camera.quaternion.setFromEuler(_euler)
   }, [enabled, camera])
 
+  // Pure subroutines extracted from tick(). Each operates on the refs above so
+  // they remain hot-path friendly (no per-call allocations).
+
+  const readMoveDirection = useCallback(() => {
+    const yaw = yawRef.current
+    const forward = tempForwardRef.current.set(-Math.sin(yaw), 0, -Math.cos(yaw))
+    const right = tempRightRef.current.set(Math.cos(yaw), 0, -Math.sin(yaw))
+    const keys = keysRef.current
+    const dir = tempDirRef.current.set(0, 0, 0)
+    if (keys.KeyW || keys.ArrowUp) dir.add(forward)
+    if (keys.KeyS || keys.ArrowDown) dir.addScaledVector(forward, -1)
+    if (keys.KeyA || keys.ArrowLeft) dir.addScaledVector(right, -1)
+    if (keys.KeyD || keys.ArrowRight) dir.addScaledVector(right, 1)
+    if (dir.lengthSq() > 0) dir.normalize()
+    return dir
+  }, [])
+
+  const applyVelocityToRigidBody = useCallback((rb) => {
+    const current = rb.linvel()
+    const wantsJump = !!keysRef.current.Space
+    const canJump = wantsJump && !prevJumpRef.current && isGrounded(rb)
+    prevJumpRef.current = wantsJump
+    rb.setLinvel({
+      x: velRef.current.x,
+      y: canJump ? jumpSpeed : current.y,
+      z: velRef.current.z,
+    }, true)
+  }, [isGrounded, jumpSpeed])
+
+  const clampToGeofence = useCallback((dt) => {
+    if (!camera) return
+    camera.position.addScaledVector(velRef.current, dt)
+    camera.position.y = floorY
+    if (expandedGeofence?.isBox3) {
+      camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
+      camera.position.z = Math.max(expandedGeofence.min.z, Math.min(expandedGeofence.max.z, camera.position.z))
+    }
+  }, [camera, expandedGeofence, floorY])
+
+  const resetMotionState = useCallback(() => {
+    keysRef.current = {}
+    velRef.current.set(0, 0, 0)
+    prevJumpRef.current = false
+  }, [])
+
   // tick: called in useBeforePhysicsStep at fixed 60hz — drives velocity only
   const tick = useCallback(
-    (_delta) => {
+    (dt) => {
       if (!enabled || !camera) return
       const isLocked = !gl || document.pointerLockElement === gl.domElement
+      if (!isLocked) { resetMotionState(); return }
 
-      if (!isLocked) {
-        keysRef.current = {}
-        velRef.current.set(0, 0, 0)
-        prevJumpRef.current = false
-        return
-      }
-
-      const yaw = yawRef.current
-      const forward = tempForwardRef.current.set(-Math.sin(yaw), 0, -Math.cos(yaw))
-      const right = tempRightRef.current.set(Math.cos(yaw), 0, -Math.sin(yaw))
-
-      const keys = keysRef.current
-      const dir = tempDirRef.current.set(0, 0, 0)
-      if (keys.KeyW || keys.ArrowUp) dir.add(forward)
-      if (keys.KeyS || keys.ArrowDown) dir.addScaledVector(forward, -1)
-      if (keys.KeyA || keys.ArrowLeft) dir.addScaledVector(right, -1)
-      if (keys.KeyD || keys.ArrowRight) dir.addScaledVector(right, 1)
-
-      if (dir.lengthSq() > 0) dir.normalize()
+      const dir = readMoveDirection()
       velRef.current.copy(dir).multiplyScalar(moveSpeed)
 
-      const rb = rigidBodyRef?.current
+      const rb = getValidRigidBody(rigidBodyRef)
       if (rb) {
-        const current = rb.linvel()
-        const wantsJump = !!keys.Space
-        const canJump = wantsJump && !prevJumpRef.current && isGrounded(rb)
-        prevJumpRef.current = wantsJump
-        rb.setLinvel({
-          x: velRef.current.x,
-          y: canJump ? jumpSpeed : current.y,
-          z: velRef.current.z,
-        }, true)
+        applyVelocityToRigidBody(rb)
       } else {
         prevJumpRef.current = false
-        camera.position.addScaledVector(velRef.current, _delta)
-        camera.position.y = floorY
-        if (expandedGeofence?.isBox3) {
-          camera.position.x = Math.max(expandedGeofence.min.x, Math.min(expandedGeofence.max.x, camera.position.x))
-          camera.position.z = Math.max(expandedGeofence.min.z, Math.min(expandedGeofence.max.z, camera.position.z))
-        }
+        clampToGeofence(dt)
       }
     },
-    [enabled, camera, floorY, expandedGeofence, gl, isGrounded, jumpSpeed, moveSpeed, rigidBodyRef],
+    [enabled, camera, gl, moveSpeed, rigidBodyRef, readMoveDirection, applyVelocityToRigidBody, clampToGeofence, resetMotionState],
   )
 
   return { tick, applyLook }

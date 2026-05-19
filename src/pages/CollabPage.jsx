@@ -61,6 +61,7 @@ function CollabPage() {
   const savedOrbitRef = useRef(null)
   const povModeRef = useRef(false)
   const povExitInProgressRef = useRef(false)
+  const povTransitionAbortRef = useRef(null)
   useEffect(() => {
     povModeRef.current = povMode
   }, [povMode])
@@ -142,6 +143,8 @@ function CollabPage() {
         localCameraStream.getTracks().forEach(t => t.stop())
       }
     }
+  // Intentional: this is an unmount-only cleanup. Adding deps would re-run cleanup
+  // each time customHdriUrl/localCameraStream changes, prematurely revoking live blobs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -265,6 +268,8 @@ function CollabPage() {
 
   // Defined here so the project-load useEffect can reference it without TDZ.
   const resetPovSession = useCallback(() => {
+    povTransitionAbortRef.current?.abort()
+    povTransitionAbortRef.current = null
     if (document.pointerLockElement) {
       try { document.exitPointerLock() } catch (_) {}
     }
@@ -550,6 +555,8 @@ function CollabPage() {
 
   const exitPovMode = useCallback(async () => {
     if (!povModeRef.current || povExitInProgressRef.current) return
+    povTransitionAbortRef.current?.abort()
+    povTransitionAbortRef.current = null
     povExitInProgressRef.current = true
     try {
       if (document.pointerLockElement) document.exitPointerLock()
@@ -598,10 +605,20 @@ function CollabPage() {
     const snap = captureOrbitState(ctrl)
     if (!snap) return
     savedOrbitRef.current = snap
-    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
-    ctrl.disconnect()
-    povModeRef.current = true
-    setPovMode(true)
+    povTransitionAbortRef.current?.abort()
+    const transition = new AbortController()
+    povTransitionAbortRef.current = transition
+    try {
+      await enterPovMode(ctrl, modelMetrics, povHeightOffset, { signal: transition.signal })
+      if (transition.signal.aborted) return
+      ctrl.disconnect()
+      povModeRef.current = true
+      setPovMode(true)
+    } catch (err) {
+      if (err?.name !== 'AbortError') throw err
+    } finally {
+      if (povTransitionAbortRef.current === transition) povTransitionAbortRef.current = null
+    }
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
   useEffect(() => {

@@ -36,9 +36,10 @@ function normalizeSaveDraftOptions(versionNameOrOptions = '') {
       releaseNotes: versionNameOrOptions.releaseNotes ?? '',
       expectedToken: versionNameOrOptions.expectedToken ?? null,
       createdBy: versionNameOrOptions.createdBy ?? '',
+      createdByUserId: versionNameOrOptions.createdByUserId ?? null,
     }
   }
-  return { versionName: versionNameOrOptions || '', releaseNotes: '', expectedToken: null, createdBy: '' }
+  return { versionName: versionNameOrOptions || '', releaseNotes: '', expectedToken: null, createdBy: '', createdByUserId: null }
 }
 
 function normalizePublishOptions(versionNameOrOptions = '', releaseNotes = '') {
@@ -49,6 +50,8 @@ function normalizePublishOptions(versionNameOrOptions = '', releaseNotes = '') {
       expectedToken: versionNameOrOptions.expectedToken ?? null,
       publishedBy: versionNameOrOptions.publishedBy ?? '',
       createdBy: versionNameOrOptions.createdBy ?? '',
+      publishedByUserId: versionNameOrOptions.publishedByUserId ?? null,
+      createdByUserId: versionNameOrOptions.createdByUserId ?? null,
     }
   }
   return {
@@ -57,6 +60,8 @@ function normalizePublishOptions(versionNameOrOptions = '', releaseNotes = '') {
     expectedToken: null,
     publishedBy: '',
     createdBy: '',
+    publishedByUserId: null,
+    createdByUserId: null,
   }
 }
 
@@ -64,6 +69,28 @@ function assertExpectedToken(currentVersion, expectedToken) {
   if (expectedToken && currentVersion?.version_token !== expectedToken) {
     throw new VersionConflictError(currentVersion)
   }
+}
+
+function isMissingFunctionError(error) {
+  const msg = String(error?.message ?? '')
+  return error?.code === '42883' || msg.includes('function') && msg.includes('does not exist')
+}
+
+function isMissingColumnError(error, column) {
+  const msg = String(error?.message ?? '')
+  if (error?.code === '42703') return true
+  return msg.includes(column) && (msg.includes('does not exist') || msg.includes('could not find'))
+}
+
+function isVersionConflictError(error) {
+  return String(error?.message ?? '').includes('version_conflict')
+}
+
+function throwVersionLifecycleError(error) {
+  if (isVersionConflictError(error)) {
+    throw new VersionConflictError(null)
+  }
+  throw error
 }
 
 // ── Types (JSDoc) ─────────────────────────────────────────────────────────────
@@ -230,7 +257,43 @@ export async function loadAllVersions(projectId) {
  * @returns {Promise<PresentationVersion>}
  */
 export async function saveDraft(projectId, snapshotJson, versionNameOrOptions = '') {
-  const { versionName, releaseNotes, expectedToken, createdBy } = normalizeSaveDraftOptions(versionNameOrOptions)
+  const { versionName, releaseNotes, expectedToken, createdBy, createdByUserId } = normalizeSaveDraftOptions(versionNameOrOptions)
+
+  if (createdByUserId) {
+    const v2 = await supabase.rpc('save_draft_version_v2', {
+      p_project_id: projectId,
+      p_snapshot: snapshotJson,
+      p_version_name: versionName,
+      p_release_notes: releaseNotes,
+      p_expected_token: expectedToken,
+      p_created_by: createdBy,
+      p_created_by_user_id: createdByUserId,
+    })
+    if (!v2.error) return v2.data
+    if (!isMissingFunctionError(v2.error)) throwVersionLifecycleError(v2.error)
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('save_draft_version', {
+    p_project_id: projectId,
+    p_snapshot_json: snapshotJson,
+    p_version_name: versionName,
+    p_release_notes: releaseNotes,
+    p_expected_token: expectedToken,
+    p_created_by: createdBy,
+  })
+
+  if (!rpcError) {
+    if (createdByUserId && rpcData?.id) {
+      await supabase
+        .from('presentation_versions')
+        .update({ created_by_user_id: createdByUserId })
+        .eq('id', rpcData.id)
+        .then(() => null, () => null)
+    }
+    return rpcData
+  }
+  if (!isMissingFunctionError(rpcError)) throwVersionLifecycleError(rpcError)
+
   const existing = await loadDraft(projectId)
 
   if (existing) {
@@ -247,10 +310,12 @@ export async function saveDraft(projectId, snapshotJson, versionNameOrOptions = 
       .from('presentation_versions')
       .update(patch)
       .eq('id', existing.id)
+      .eq('version_token', expectedToken || existing.version_token)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+    if (!data) throw new VersionConflictError(null)
     return data
   }
 
@@ -282,6 +347,48 @@ export async function saveDraft(projectId, snapshotJson, versionNameOrOptions = 
  */
 export async function publishVersion(projectId, snapshotJson, versionNameOrOptions, releaseNotes = '') {
   const opts = normalizePublishOptions(versionNameOrOptions, releaseNotes)
+
+  if (opts.publishedByUserId || opts.createdByUserId) {
+    const v2 = await supabase.rpc('publish_presentation_version_v2', {
+      p_project_id: projectId,
+      p_snapshot: snapshotJson,
+      p_version_name: opts.versionName,
+      p_release_notes: opts.releaseNotes,
+      p_expected_token: opts.expectedToken,
+      p_published_by: opts.publishedBy,
+      p_created_by: opts.createdBy,
+      p_published_by_user_id: opts.publishedByUserId,
+      p_created_by_user_id: opts.createdByUserId,
+    })
+    if (!v2.error) return v2.data
+    if (!isMissingFunctionError(v2.error)) throwVersionLifecycleError(v2.error)
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('publish_presentation_version', {
+    p_project_id: projectId,
+    p_snapshot_json: snapshotJson,
+    p_version_name: opts.versionName,
+    p_release_notes: opts.releaseNotes,
+    p_expected_token: opts.expectedToken,
+    p_published_by: opts.publishedBy,
+    p_created_by: opts.createdBy,
+  })
+
+  if (!rpcError) {
+    if ((opts.publishedByUserId || opts.createdByUserId) && rpcData?.id) {
+      const patch = {}
+      if (opts.publishedByUserId) patch.published_by_user_id = opts.publishedByUserId
+      if (opts.createdByUserId)   patch.created_by_user_id   = opts.createdByUserId
+      await supabase
+        .from('presentation_versions')
+        .update(patch)
+        .eq('id', rpcData.id)
+        .then(() => null, () => null)
+    }
+    return rpcData
+  }
+  if (!isMissingFunctionError(rpcError)) throwVersionLifecycleError(rpcError)
+
   const draft = await loadDraft(projectId)
   if (draft) assertExpectedToken(draft, opts.expectedToken)
 
@@ -310,10 +417,12 @@ export async function publishVersion(projectId, snapshotJson, versionNameOrOptio
       .from('presentation_versions')
       .update(patch)
       .eq('id', draft.id)
+      .eq('version_token', opts.expectedToken || draft.version_token)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+    if (!data) throw new VersionConflictError(null)
     return data
   }
 
@@ -346,6 +455,12 @@ export async function publishVersion(projectId, snapshotJson, versionNameOrOptio
  */
 /** Delete the current draft row for a project. Published and archived history is untouched. */
 export async function discardDraft(projectId) {
+  const { error: rpcError } = await supabase.rpc('discard_draft_version', {
+    p_project_id: projectId,
+  })
+  if (!rpcError) return
+  if (!isMissingFunctionError(rpcError)) throw rpcError
+
   const { error } = await supabase
     .from('presentation_versions')
     .delete()
@@ -360,6 +475,36 @@ export async function discardDraft(projectId) {
  * so local work is not silently deleted.
  */
 export async function restoreVersion(projectId, sourceVersionId, opts = {}) {
+  const createdByUserId = opts.createdByUserId ?? null
+
+  if (createdByUserId) {
+    const v2 = await supabase.rpc('restore_presentation_version_v2', {
+      p_project_id: projectId,
+      p_source_version_id: sourceVersionId,
+      p_created_by: opts.createdBy || '',
+      p_created_by_user_id: createdByUserId,
+    })
+    if (!v2.error) return v2.data
+    if (!isMissingFunctionError(v2.error)) throw v2.error
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('restore_presentation_version', {
+    p_project_id: projectId,
+    p_source_version_id: sourceVersionId,
+    p_created_by: opts.createdBy || '',
+  })
+  if (!rpcError) {
+    if (createdByUserId && rpcData?.id) {
+      await supabase
+        .from('presentation_versions')
+        .update({ created_by_user_id: createdByUserId })
+        .eq('id', rpcData.id)
+        .then(() => null, () => null)
+    }
+    return rpcData
+  }
+  if (!isMissingFunctionError(rpcError)) throw rpcError
+
   const source = await loadVersionById(sourceVersionId)
   if (!source || source.project_id !== projectId) {
     throw new Error('Source version not found for this project.')
@@ -375,22 +520,31 @@ export async function restoreVersion(projectId, sourceVersionId, opts = {}) {
     if (archiveDraftError) throw archiveDraftError
   }
 
-  const { data, error } = await supabase
+  const basePayload = {
+    project_id: projectId,
+    version_name: source.version_name ? `${source.version_name} (restored)` : `Restored v${source.version_number}`,
+    release_notes: source.release_notes || '',
+    status: 'draft',
+    snapshot_json: source.snapshot_json,
+    created_by: opts.createdBy || '',
+  }
+
+  let attempt = await supabase
     .from('presentation_versions')
-    .insert({
-      project_id: projectId,
-      version_name: source.version_name ? `${source.version_name} (restored)` : `Restored v${source.version_number}`,
-      release_notes: source.release_notes || '',
-      status: 'draft',
-      snapshot_json: source.snapshot_json,
-      restored_from: source.id,
-      created_by: opts.createdBy || '',
-    })
+    .insert({ ...basePayload, restored_from: source.id })
     .select()
     .single()
 
-  if (error) throw error
-  return data
+  if (attempt.error && isMissingColumnError(attempt.error, 'restored_from')) {
+    attempt = await supabase
+      .from('presentation_versions')
+      .insert(basePayload)
+      .select()
+      .single()
+  }
+
+  if (attempt.error) throw attempt.error
+  return attempt.data
 }
 
 /** Restore the current published version as a new draft. */
@@ -436,6 +590,12 @@ export async function deleteVersion(id) {
 
 /** Delete archived versions older than a threshold while keeping the newest K archived rows. */
 export async function pruneArchivedVersions(projectId, { keepLatest = 10, olderThanDays = 90 } = {}) {
+  const keepCount = Number(keepLatest)
+  const days = Number(olderThanDays)
+  if (!Number.isFinite(keepCount) || keepCount < 1 || !Number.isFinite(days) || days <= 0) {
+    throw new Error('Invalid archive cleanup settings. Keep at least 1 version and use an age greater than 0 days.')
+  }
+
   const { data, error } = await supabase
     .from('presentation_versions')
     .select('id, created_at')
@@ -446,8 +606,6 @@ export async function pruneArchivedVersions(projectId, { keepLatest = 10, olderT
   if (error) throw error
 
   const archived = data ?? []
-  const keepCount = Math.max(0, Number(keepLatest) || 0)
-  const days = Math.max(0, Number(olderThanDays) || 0)
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   const deletableIds = archived
     .slice(keepCount)
@@ -465,10 +623,29 @@ export async function pruneArchivedVersions(projectId, { keepLatest = 10, olderT
   return deletableIds
 }
 
-export async function loadFeedback(projectId, { slideId, status, versionId } = {}) {
-  const data = await runFeedbackQuery((table) => {
+export async function loadFeedback(projectId, { slideId, status, versionId, guestToken } = {}) {
+  const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: null }))
+
+  if (guestToken && !sessionData?.session) {
+    const { data, error } = await supabase.rpc('load_guest_feedback', {
+      p_guest_token: guestToken,
+      p_project_id: projectId,
+      p_slide_id: slideId ?? null,
+      p_status: status ?? null,
+      p_presentation_version_id: versionId ?? null,
+    })
+    if (!error) return data ?? []
+    if (!isMissingTableError(error) && error?.code !== '42883') throw error
+  }
+
+  const tableNames = sessionData?.session
+    ? ['client_feedback_items']
+    : ['client_feedback_public', ...FEEDBACK_TABLE_CANDIDATES]
+
+  let lastError = null
+  for (const tableName of tableNames) {
     let q = supabase
-      .from(table)
+      .from(tableName)
       .select('*')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
@@ -476,9 +653,16 @@ export async function loadFeedback(projectId, { slideId, status, versionId } = {
     if (slideId) q = q.eq('slide_id', slideId)
     if (status) q = q.eq('status', status)
     if (versionId) q = q.eq('presentation_version_id', versionId)
-    return q
-  })
-  return data ?? []
+    const { data, error } = await q
+    if (!error) return data ?? []
+    if (isMissingTableError(error)) {
+      lastError = error
+      continue
+    }
+    throw error
+  }
+
+  throw lastError ?? new Error('No feedback table available in database schema.')
 }
 
 /**
@@ -486,14 +670,29 @@ export async function loadFeedback(projectId, { slideId, status, versionId } = {
  * @param {Omit<FeedbackItem, 'id'|'created_at'|'updated_at'|'resolved_at'|'admin_note'>} item
  */
 export async function submitFeedback(item) {
-  const data = await runFeedbackQuery((table) =>
+  if (item.guest_token) {
+    const { data, error } = await supabase.rpc('submit_guest_feedback', {
+      p_guest_token: item.guest_token,
+      p_presentation_version_id: item.presentation_version_id,
+      p_slide_id: item.slide_id ?? '',
+      p_clip_id: item.clip_id ?? '',
+      p_clip_time_seconds: item.clip_time_seconds ?? null,
+      p_camera_snapshot_json: item.camera_snapshot_json ?? null,
+      p_annotation_json: item.annotation_json ?? null,
+      p_reviewer_name: item.reviewer_name ?? '',
+      p_comment: item.comment ?? '',
+    })
+    if (error) throw error
+    return data
+  }
+
+  const { guest_token, ...insertItem } = item
+  await runFeedbackQuery((table) =>
     supabase
       .from(table)
-      .insert(item)
-      .select()
-      .single()
+      .insert(insertItem)
   )
-  return data
+  return insertItem
 }
 
 /**
@@ -502,12 +701,50 @@ export async function submitFeedback(item) {
  * @param {'pending'|'resolved'} newStatus
  * @param {string} [resolvedBy]
  */
-export async function setFeedbackStatus(itemId, newStatus, resolvedBy = '') {
+export async function setFeedbackStatus(itemId, newStatus, resolvedByOrOpts = '') {
+  const opts = typeof resolvedByOrOpts === 'object' && resolvedByOrOpts !== null
+    ? resolvedByOrOpts
+    : { resolvedBy: resolvedByOrOpts }
+  const resolvedBy = opts.resolvedBy ?? ''
+  const resolvedByUserId = opts.resolvedByUserId ?? null
+
   const patch = newStatus === 'resolved'
     ? { status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: resolvedBy }
     : { status: 'pending', resolved_at: null, resolved_by: '' }
 
-  const data = await runFeedbackQuery((table) =>
+  const tryWithUuid = newStatus === 'resolved' && resolvedByUserId
+  let data
+  if (tryWithUuid) {
+    try {
+      data = await runFeedbackQuery((table) =>
+        supabase
+          .from(table)
+          .update({ ...patch, resolved_by_user_id: resolvedByUserId })
+          .eq('id', itemId)
+          .select()
+          .single()
+      )
+      return data
+    } catch (err) {
+      if (!isMissingColumnError(err, 'resolved_by_user_id')) throw err
+    }
+  } else if (newStatus !== 'resolved') {
+    // Always also clear uuid when un-resolving (best-effort).
+    try {
+      return await runFeedbackQuery((table) =>
+        supabase
+          .from(table)
+          .update({ ...patch, resolved_by_user_id: null })
+          .eq('id', itemId)
+          .select()
+          .single()
+      )
+    } catch (err) {
+      if (!isMissingColumnError(err, 'resolved_by_user_id')) throw err
+    }
+  }
+
+  data = await runFeedbackQuery((table) =>
     supabase
       .from(table)
       .update(patch)
@@ -519,7 +756,16 @@ export async function setFeedbackStatus(itemId, newStatus, resolvedBy = '') {
 }
 
 /** Permanently delete a feedback item. */
-export async function deleteFeedback(itemId) {
+export async function deleteFeedback(itemId, { guestToken } = {}) {
+  if (guestToken) {
+    const { error } = await supabase.rpc('delete_guest_feedback', {
+      p_guest_token: guestToken,
+      p_feedback_id: itemId,
+    })
+    if (error) throw error
+    return
+  }
+
   await runFeedbackQuery((table) =>
     supabase
       .from(table)
@@ -533,10 +779,20 @@ export async function deleteFeedback(itemId) {
  * @param {string} itemId
  * @param {{ reviewer_name?: string, comment?: string }} patch
  */
-export async function updateFeedback(itemId, patch) {
+export async function updateFeedback(itemId, patch, { guestToken } = {}) {
   const allowedPatch = {}
   if (patch.reviewer_name != null) allowedPatch.reviewer_name = patch.reviewer_name
   if (patch.comment != null) allowedPatch.comment = patch.comment
+
+  if (guestToken) {
+    const { data, error } = await supabase.rpc('update_guest_feedback', {
+      p_guest_token: guestToken,
+      p_feedback_id: itemId,
+      p_comment: allowedPatch.comment ?? '',
+    })
+    if (error) throw error
+    return data
+  }
 
   const data = await runFeedbackQuery((table) =>
     supabase
@@ -654,6 +910,55 @@ export function snapshotSummary(snapshot) {
     refsHidden: allRefs.length - visibleRefs.length,
     camerasEnabled: (snapshot.cameraPresets ?? []).length,
     totalRuntime: `${mins}:${secs}`,
+  }
+}
+
+function snapshotRuntimeSeconds(snapshot) {
+  return (snapshot?.slides ?? []).reduce((acc, slide) => acc + (Number(slide.durationSeconds) || 0), 0)
+}
+
+function snapshotReferenceCount(snapshot) {
+  return (snapshot?.slides ?? []).reduce((acc, slide) => acc + (slide.references?.length ?? 0), 0)
+}
+
+function slideDisplayName(slide) {
+  return slide?.title?.trim() || slide?.clipId || slide?.id || 'Untitled clip'
+}
+
+/**
+ * Compute a small textual diff between the current snapshot and a previous snapshot.
+ * @param {SnapshotJson} currentSnapshot
+ * @param {SnapshotJson|null} previousSnapshot
+ */
+export function snapshotDiff(currentSnapshot, previousSnapshot) {
+  if (!previousSnapshot?.slides) return null
+
+  const currentSlides = currentSnapshot?.slides ?? []
+  const previousSlides = previousSnapshot.slides ?? []
+  const currentById = new Map(currentSlides.map(slide => [slide.id, slide]))
+  const previousById = new Map(previousSlides.map(slide => [slide.id, slide]))
+
+  const addedSlides = currentSlides
+    .filter(slide => !previousById.has(slide.id))
+    .map(slideDisplayName)
+  const removedSlides = previousSlides
+    .filter(slide => !currentById.has(slide.id))
+    .map(slideDisplayName)
+
+  const currentRefs = snapshotReferenceCount(currentSnapshot)
+  const previousRefs = snapshotReferenceCount(previousSnapshot)
+  const currentRuntimeSeconds = snapshotRuntimeSeconds(currentSnapshot)
+  const previousRuntimeSeconds = snapshotRuntimeSeconds(previousSnapshot)
+
+  return {
+    addedSlides,
+    removedSlides,
+    refDelta: currentRefs - previousRefs,
+    currentRefs,
+    previousRefs,
+    runtimeDeltaSeconds: currentRuntimeSeconds - previousRuntimeSeconds,
+    currentRuntimeSeconds,
+    previousRuntimeSeconds,
   }
 }
 

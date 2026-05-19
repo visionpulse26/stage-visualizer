@@ -68,6 +68,7 @@ function UIPanel({
   cameraFlyDurationSeconds, onCameraFlyDurationChange,
   onSaveAutoplayConfig,
   onPublish, canPublish, isPublishing, publishStatus, publishError, publishedId,
+  onOpenPresentation,
   projectName, onProjectNameChange,
   versionStatus, onVersionStatusChange,
   onOpenDashboard,
@@ -113,6 +114,7 @@ function UIPanel({
   const nasHdriInputRef    = useRef(null)
   const [presetName,       setPresetName]       = useState('')
   const [copied,           setCopied]           = useState(null)
+  const [revealedSecrets,  setRevealedSecrets]  = useState({})
   const [activeSection,    setActiveSection]    = useState('media')
   const [editingClipId,    setEditingClipId]    = useState(null)
   const [editingName,      setEditingName]      = useState('')
@@ -265,12 +267,25 @@ function UIPanel({
               </div>
             </Section>
 
-            <Section icon={<IconVideo />} title="Video Playlist" badge={videoPlaylist.length ? `${videoPlaylist.length} clips` : null}>
+            <Section icon={<IconVideo />} title="Default Preview Clip">
               <div className="space-y-2" style={{ fontFamily: "'Chakra Petch', sans-serif" }}>
+                <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white/80">{videoPlaylist[0]?.name || 'Default LED Preview'}</p>
+                      <p className="mt-1 text-[9px] leading-snug text-white/35">
+                        Stage Setup uses one fixed preview clip for LED/material checks. Upload and sequence real show clips in Presentation after publishing.
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-md border border-violet-500/25 bg-violet-500/15 px-2 py-1 text-[8px] font-bold uppercase tracking-widest text-violet-300">
+                      Active
+                    </span>
+                  </div>
+                </div>
                 <button
                   onClick={handleNasVideoClick}
                   disabled={isR2Uploading}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
+                  className="hidden w-full items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
                   >
                     {isR2Uploading ? (
                       <>
@@ -278,7 +293,7 @@ function UIPanel({
                         {r2UploadProgress != null ? `Uploading… ${r2UploadProgress}%` : 'Uploading…'}
                       </>
                     ) : (
-                      <><IconServer /><span>Upload to Cloud (R2)</span></>
+                      <><IconServer /><span>Cloud media disabled in Stage Setup</span></>
                     )}
                   </button>
                   {isR2Uploading && r2UploadProgress != null && (
@@ -296,8 +311,8 @@ function UIPanel({
                       <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
                     </div>
                   )}
-                  <p className="text-[9px] text-[#FF5F1F]/70 bg-[#FF5F1F]/5 border border-[#FF5F1F]/20 rounded-lg px-2.5 py-1.5 leading-snug">
-                    Files upload directly to Cloud (R2). Requires a saved project name.
+                  <p className="hidden text-[9px] text-[#FF5F1F]/70 bg-[#FF5F1F]/5 border border-[#FF5F1F]/20 rounded-lg px-2.5 py-1.5 leading-snug">
+                    Stage clip uploads moved to Presentation.
                   </p>
                 </div>
 
@@ -367,7 +382,7 @@ function UIPanel({
               </div>
 
               {/* Playlist — drag to reorder, double-click name to rename */}
-              {videoPlaylist.length > 0 && (
+              {false && videoPlaylist.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {videoPlaylist.map((clip, idx) => (
                     <div
@@ -472,13 +487,13 @@ function UIPanel({
                     onClick={onClearPlaylist}
                     className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
                   >
-                    Clear Playlist
+                    Clear disabled media list
                   </button>
                 </div>
               )}
 
               {/* Playback controls */}
-              {videoLoaded && (
+              {false && videoLoaded && (
                 <div className="flex gap-1 mt-2">
                   <button onClick={isPlaying ? onPause : onPlay}
                     className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs transition-all"
@@ -1143,36 +1158,63 @@ function UIPanel({
                 <div className="space-y-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
                   <p className="text-emerald-400 text-xs font-semibold">✓ Published successfully!</p>
                   <p className="text-white/40 text-[10px] font-mono break-all">ID: {publishedId}</p>
+                  <button
+                    type="button"
+                    onClick={onOpenPresentation}
+                    disabled={!publishedId}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2.5 text-xs font-semibold text-emerald-200 transition-all hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Continue to Presentation
+                  </button>
 
                   <div className="space-y-1.5 mt-2">
                     {[
                       { label: 'Collab Link', path: `/collab/${publishedId}` },
                       { label: 'View Link',   path: `/view/${publishedId}` },
                       ...(embedEnabled && embedToken
-                        ? [{ label: 'Embed Link', path: `/embed/${embedToken}` }]
-                        : embedEnabled
-                          ? [{ label: 'Embed Link', path: `/embed/${publishedId}`, warn: true }]
-                          : []),
-                    ].map(({ label, path, warn }) => (
-                      <div key={path} className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(`${baseUrl}${path}`, label)}
-                            className="flex-1 flex items-center justify-between gap-1 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] text-white/50 hover:text-white/70 font-mono transition-all truncate"
-                          >
-                            <span className="truncate">{path}</span>
-                            {copied === label ? <span className="text-emerald-400 flex-shrink-0 text-[9px]">Copied!</span> : <IconCopy />}
-                          </button>
+                        ? [{ label: 'Embed Link', path: `/embed/${embedToken}`, secret: true }]
+                        : []),
+                    ].map(({ label, path, warn, secret }) => {
+                      const isRevealed = !secret || !!revealedSecrets[label]
+                      const displayPath = isRevealed
+                        ? path
+                        : path.replace(/\/embed\/(.+)$/, (_, tok) => `/embed/${'•'.repeat(Math.max(8, tok.length - 4))}${tok.slice(-4)}`)
+                      return (
+                        <div key={path} className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-white/30 w-16 flex-shrink-0">{label}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`${baseUrl}${path}`, label)}
+                              className="flex-1 flex items-center justify-between gap-1 bg-white/5 hover:bg-white/8 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] text-white/50 hover:text-white/70 font-mono transition-all truncate"
+                            >
+                              <span className="truncate">{displayPath}</span>
+                              {copied === label ? <span className="text-emerald-400 flex-shrink-0 text-[9px]">Copied!</span> : <IconCopy />}
+                            </button>
+                            {secret && (
+                              <button
+                                type="button"
+                                onClick={() => setRevealedSecrets(prev => ({ ...prev, [label]: !prev[label] }))}
+                                title={isRevealed ? 'Hide token' : 'Reveal token'}
+                                className="px-1.5 py-1 rounded-lg border border-white/10 text-white/40 hover:text-white/70 hover:border-white/20 transition-all text-[9px] flex-shrink-0"
+                              >
+                                {isRevealed ? 'Hide' : 'Show'}
+                              </button>
+                            )}
+                          </div>
+                          {secret && isRevealed && (
+                            <p className="text-[9px] text-amber-400/60 pl-[4.5rem]">
+                              ⚠ Token visible — avoid screen-sharing.
+                            </p>
+                          )}
+                          {warn && (
+                            <p className="text-[9px] text-amber-400/70 pl-[4.5rem]">
+                              Run SQL migration <code className="font-mono">embed_token</code> to get a public token URL.
+                            </p>
+                          )}
                         </div>
-                        {warn && (
-                          <p className="text-[9px] text-amber-400/70 pl-[4.5rem]">
-                            Run SQL migration <code className="font-mono">embed_token</code> to get a public token URL.
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

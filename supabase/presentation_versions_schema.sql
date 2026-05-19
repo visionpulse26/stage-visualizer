@@ -125,6 +125,12 @@ CREATE POLICY "anon read client_feedback_items"
 CREATE POLICY "anon insert client_feedback_items"
   ON client_feedback_items FOR INSERT TO anon WITH CHECK (true);
 
+CREATE POLICY "anon update client_feedback_items"
+  ON client_feedback_items FOR UPDATE TO anon USING (true) WITH CHECK (true);
+
+CREATE POLICY "anon delete client_feedback_items"
+  ON client_feedback_items FOR DELETE TO anon USING (true);
+
 -- Authenticated users get full access (admin operations)
 CREATE POLICY "auth all presentation_versions"
   ON presentation_versions FOR ALL TO authenticated USING (true) WITH CHECK (true);

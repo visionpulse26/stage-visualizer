@@ -10,13 +10,6 @@ import { recordClientPageView } from '../lib/analyticsTracker'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 
-/** Legacy URLs used project UUID in /embed/:id — still accepted when embed_enabled. */
-function looksLikeUuid(s) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(s || '').trim()
-  )
-}
-
 /**
  * Public embed (P9): `/embed/:embedToken` — opaque token, no login.
  * Logged-in users still see admin preview chrome + iframe snippet sidebar.
@@ -167,24 +160,10 @@ export default function EmbedPage() {
         let data = null
 
         const byToken = await supabase
-          .from('projects')
-          .select('*')
-          .eq('embed_token', slug)
-          .eq('embed_enabled', true)
-          .maybeSingle()
+          .rpc('resolve_embed_project', { p_token: slug })
 
         if (cancelled) return
-        data = byToken.data
-
-        if (!data && looksLikeUuid(slug)) {
-          const legacy = await supabase
-            .from('projects')
-            .select('*')
-            .eq('id', slug)
-            .eq('embed_enabled', true)
-            .maybeSingle()
-          if (!cancelled) data = legacy.data
-        }
+        data = Array.isArray(byToken.data) ? byToken.data[0] : byToken.data
 
         if (cancelled) return
 
@@ -320,8 +299,7 @@ export default function EmbedPage() {
   }, [])
 
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
-  const tokenForPublicUrl = project?.embed_token ?? slug
-  const embedUrl = `${baseUrl}/embed/${tokenForPublicUrl}`
+  const embedUrl = `${baseUrl}/embed/${slug}`
 
   function copyEmbedCode() {
     const code = `<iframe\n  src="${embedUrl}"\n  width="100%"\n  height="500"\n  frameborder="0"\n  allow="fullscreen"\n  style="border-radius:8px"\n></iframe>`
@@ -506,7 +484,7 @@ export default function EmbedPage() {
             </p>
             <p className="text-white/20 text-[10px] font-mono break-all">{project?.id ?? ''}</p>
             <p className="text-white/15 text-[9px] font-mono break-all">
-              embed_token: {project?.embed_token ?? '…'}
+              embed_token: {slug ?? '...'}
             </p>
           </div>
 

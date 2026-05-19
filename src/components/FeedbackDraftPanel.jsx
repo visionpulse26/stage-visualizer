@@ -67,6 +67,7 @@ function StatusTag({ type, children }) {
 function PrevFeedbackItem({ item, onUpdate, onDelete, isBusy }) {
   const [isEditing, setIsEditing] = useState(false)
   const [draftComment, setDraftComment] = useState(item.comment ?? '')
+  const canEdit = Boolean(onUpdate && onDelete && item.can_edit === true)
 
   useEffect(() => {
     if (!isEditing) setDraftComment(item.comment ?? '')
@@ -101,6 +102,7 @@ function PrevFeedbackItem({ item, onUpdate, onDelete, isBusy }) {
           <textarea
             value={draftComment}
             onChange={e => setDraftComment(e.target.value)}
+            maxLength={2000}
             rows={3}
             style={{
               width: '100%',
@@ -150,7 +152,7 @@ function PrevFeedbackItem({ item, onUpdate, onDelete, isBusy }) {
           </div>
         </Row>
       )}
-      {!isEditing && (
+      {canEdit && !isEditing && (
         <Row gap={6} style={{ marginTop: 6, paddingLeft: 24 }}>
           <button onClick={() => setIsEditing(true)} disabled={isBusy} style={miniBtnStyle(true)}>Edit</button>
           <button onClick={() => onDelete(item)} disabled={isBusy} style={miniBtnStyle(true, true)}>Delete</button>
@@ -242,6 +244,7 @@ export function FeedbackDraftPanel({
               value={draftReviewerName}
               onChange={setDraftReviewerName}
               placeholder="Your name…"
+              maxLength={100}
               hasError={!draftReviewerName.trim()}
               disabled={reviewerNameLocked}
             />
@@ -267,6 +270,7 @@ export function FeedbackDraftPanel({
               placeholder="What needs attention here?"
               multiline
               rows={4}
+              maxLength={2000}
               hasError={!draftComment.trim()}
               autoFocus
             />
@@ -412,28 +416,37 @@ export function AnnotationLayer({ annotation, activeTool, onAnnotationChange, re
     }
   }, [])
 
-  const handleMouseDown = useCallback((e) => {
+  const sameViewport = (a, b) => (
+    a?.width === b?.width && a?.height === b?.height
+  )
+
+  const handlePointerDown = useCallback((e) => {
     if (!activeTool) return
     e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
     const p = normalize(e)
-    setDrawing({ startX: p.x, startY: p.y, currentX: p.x, currentY: p.y })
+    setDrawing({ startX: p.x, startY: p.y, currentX: p.x, currentY: p.y, viewport: p.viewport })
   }, [activeTool, normalize])
 
-  const handleMouseMove = useCallback((e) => {
+  const handlePointerMove = useCallback((e) => {
     if (!drawing) return
     const p = normalize(e)
     setDrawing(prev => ({ ...prev, currentX: p.x, currentY: p.y }))
   }, [drawing, normalize])
 
-  const handleMouseUp = useCallback((e) => {
+  const handlePointerUp = useCallback((e) => {
     if (!drawing || !activeTool) return
     const p = normalize(e)
+    if (!sameViewport(drawing.viewport, p.viewport)) {
+      setDrawing(null)
+      return
+    }
     const x = Math.min(drawing.startX, p.x)
     const y = Math.min(drawing.startY, p.y)
     const w = Math.abs(p.x - drawing.startX)
     const h = Math.abs(p.y - drawing.startY)
     if (w > 0.01 || h > 0.01) {
-      onAnnotationChange({ type: activeTool, bounds: { x, y, width: w, height: h }, viewport: p.viewport })
+      onAnnotationChange({ type: activeTool, bounds: { x, y, width: w, height: h }, viewport: drawing.viewport })
     }
     setDrawing(null)
   }, [drawing, activeTool, normalize, onAnnotationChange])
@@ -484,15 +497,17 @@ export function AnnotationLayer({ annotation, activeTool, onAnnotationChange, re
       ref={svgRef}
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => setDrawing(null)}
+      onPointerLeave={handlePointerUp}
       style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%',
         cursor: activeTool ? 'crosshair' : 'default',
         zIndex: 5,
         pointerEvents: readOnly ? 'none' : (activeTool || annotation ? 'all' : 'none'),
+        touchAction: activeTool ? 'none' : 'auto',
       }}
     >
       {renderAnnotation(annotation)}
@@ -699,7 +714,7 @@ function fmtTime(s) {
   return `${String(m).padStart(2, '0')}:${sec}`
 }
 
-function DraftInput({ value, onChange, placeholder, multiline = false, rows = 2, hasError = false, autoFocus = false, disabled = false }) {
+function DraftInput({ value, onChange, placeholder, multiline = false, rows = 2, hasError = false, autoFocus = false, disabled = false, maxLength }) {
   const [focused, setFocused] = useState(false)
   const style = {
     width: '100%',
@@ -718,6 +733,7 @@ function DraftInput({ value, onChange, placeholder, multiline = false, rows = 2,
     onChange: e => onChange(e.target.value),
     autoFocus,
     disabled,
+    maxLength,
   }
   if (multiline) return <textarea value={value} placeholder={placeholder} rows={rows} style={style} {...handlers} />
   return <input type="text" value={value} placeholder={placeholder} style={style} {...handlers} />

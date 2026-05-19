@@ -166,15 +166,13 @@ function PovClipGuard({ enabled, modelMetrics }) {
   useEffect(() => {
     if (!enabled || !modelMetrics) return
 
-    const prevNear = camera.near
-    const prevFar = camera.far
-    const prevFogNear = scene.fog?.near
-    const prevFogFar = scene.fog?.far
+    const prevCamera = { near: camera.near, far: camera.far }
+    const prevFog = scene.fog ? { near: scene.fog.near, far: scene.fog.far } : null
     const radius = Math.max(modelMetrics.radius || 0, 1)
     const maxDim = Math.max(modelMetrics.size?.x || 0, modelMetrics.size?.y || 0, modelMetrics.size?.z || 0, 1)
 
-    camera.near = 0.02
-    camera.far = Math.max(prevFar, radius * 120, maxDim * 120, 5000)
+    camera.near = 0.1
+    camera.far = Math.max(prevCamera.far, radius * 120, maxDim * 120, 5000)
     camera.updateProjectionMatrix()
 
     if (scene.fog) {
@@ -183,12 +181,12 @@ function PovClipGuard({ enabled, modelMetrics }) {
     }
 
     return () => {
-      camera.near = prevNear
-      camera.far = prevFar
+      camera.near = prevCamera.near
+      camera.far = prevCamera.far
       camera.updateProjectionMatrix()
-      if (scene.fog && prevFogNear != null && prevFogFar != null) {
-        scene.fog.near = prevFogNear
-        scene.fog.far = prevFogFar
+      if (scene.fog && prevFog) {
+        scene.fog.near = prevFog.near
+        scene.fog.far = prevFog.far
       }
     }
   }, [enabled, modelMetrics, camera, scene])
@@ -562,6 +560,8 @@ function StageCanvas({
   stageColliders = [],
   /** Shows wireframe colliders while in POV (debug only). */
   povDebug = false,
+  /** When true, stops continuous WebGL frames and renders only on invalidation. */
+  freezeRenderLoop = false,
   children,
 }) {
   const internalPresetRef = useRef(null)
@@ -643,6 +643,7 @@ function StageCanvas({
       )}
       <StageErrorBoundary>
       <Canvas
+        frameloop={freezeRenderLoop ? 'demand' : 'always'}
         camera={{ position: [5, 5, 5], fov: 50, near: 0.05, far: 5000 }}
         gl={{
           antialias:             true,
@@ -810,7 +811,7 @@ function StageCanvas({
           />
         )}
 
-        {povMode && modelUrl && onPovExitRequest && (
+        {modelUrl && onPovExitRequest && (
           <PovRuntimeBoundary onError={handlePovRuntimeError} resetKey={modelUrl}>
             <Suspense fallback={null}>
               <LazyPovFpsRig

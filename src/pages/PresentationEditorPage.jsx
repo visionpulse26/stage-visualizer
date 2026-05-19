@@ -34,6 +34,7 @@ import VersionHistoryDrawer from '../features/presentation/components/VersionHis
 import { DirectorNotesEditor } from '../features/presentation/components/DirectorNotesEditor'
 import { AnnotationModeTopBar } from '../features/presentation/components/AnnotationModeOverlay'
 import { AnnotationLayer, AnnotationToolbar, StageLockBanner } from '../components/FeedbackDraftPanel'
+import { AlertTriangle, Check, Copy, Eye, EyeOff, MoreHorizontal, Plus, RotateCcw, Trash2 } from 'lucide-react'
 
 // ── Design tokens (mirror Hi-Fi v2 CSS vars) ─────────────────────────────────
 const T = {
@@ -57,6 +58,13 @@ const T = {
   text3:     '#8E7E70',
   text4:     '#5A4E45',
 }
+
+const CLIP_UPLOAD_ACCEPT = '.mp4,.webm,.mov,.webp,.png,.jpg,.jpeg,.gif'
+const DEFAULT_STAGE_PREVIEW_CLIP_ID = 'default-stage-preview'
+const CLIP_UPLOAD_VIDEO_EXT = ['mp4', 'webm', 'mov']
+const CLIP_UPLOAD_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
+const CLIP_UPLOAD_VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mov']
+const CLIP_UPLOAD_IMAGE_MIME = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
 
 // ── Tiny layout helpers ───────────────────────────────────────────────────────
 const Row = ({ children, gap = 6, align = 'center', wrap = false, style = {} }) => (
@@ -189,7 +197,7 @@ function ClipThumbnail({ src, active, width = 46, height = 30, radius = 5 }) {
   )
 }
 
-function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
+function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploading = false, uploadStatus = '', uploadError = '' }) {
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
 
@@ -200,6 +208,8 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
     if (dragging && dragging !== id) onReorder(dragging, id)
     setDragging(null); setDragOver(null)
   }
+
+  const showFooterStatus = uploading || uploadStatus || uploadError
 
   return (
     <div style={{
@@ -213,12 +223,30 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
         <Row gap={6}>
           <Label>Clips · {slides.length} total</Label>
           <Spacer f={1} />
-          <GhostBtn style={{ padding: '3px 7px', fontSize: 10 }} onClick={onAdd}>+ Clip</GhostBtn>
+          <GhostBtn style={{ padding: '3px 7px', fontSize: 10 }} onClick={onAdd} disabled={uploading}>
+            + Clip
+          </GhostBtn>
         </Row>
       </div>
 
       {/* Slide rows */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 4px' }}>
+        {slides.length === 0 && (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 10, padding: '28px 16px', textAlign: 'center',
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              border: `1.5px dashed rgba(220,100,30,0.35)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'rgba(220,100,30,0.5)', fontSize: 18, lineHeight: 1,
+            }}>+</div>
+            <span style={{ fontSize: 10, color: T.text4, fontFamily: 'Chakra Petch, sans-serif', lineHeight: 1.5 }}>
+              No clips yet.<br />Click <b style={{ color: T.text3 }}>+ Clip</b> to add.
+            </span>
+          </div>
+        )}
         {slides.map((slide, idx) => {
           const isActive = slide.id === activeSlideId
           const isDragOver = slide.id === dragOver
@@ -276,11 +304,55 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder }) {
         })}
       </div>
 
-      <div style={{ padding: '8px 10px', borderTop: 'rgba(220,100,30,0.1) 1px solid' }}>
-        <span style={{ fontSize: 9, color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
-          Drag rows to reorder
-        </span>
+      {/* Upload status footer */}
+      <div style={{
+        borderTop: `1px solid rgba(220,100,30,0.1)`,
+        padding: showFooterStatus ? '8px 10px' : '6px 10px',
+        flexShrink: 0,
+        minHeight: 28,
+        transition: 'all 0.15s',
+      }}>
+        {uploading ? (
+          <Row gap={7}>
+            {/* Spinner */}
+            <svg width="11" height="11" viewBox="0 0 24 24" style={{ flexShrink: 0, animation: 'spin 0.9s linear infinite' }}>
+              <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(232,83,26,0.3)" strokeWidth="3" />
+              <path d="M12 2a10 10 0 0 1 10 10" fill="none" stroke={T.ember} strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            <span style={{
+              fontSize: 10, color: T.text2, fontFamily: 'Chakra Petch, sans-serif',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+            }}>
+              {uploadStatus || 'Uploading…'}
+            </span>
+          </Row>
+        ) : uploadError ? (
+          <Row gap={6}>
+            <span style={{ fontSize: 13, lineHeight: 1, color: T.ember2, flexShrink: 0 }}>⚠</span>
+            <span style={{
+              fontSize: 10, color: T.ember2, fontFamily: 'Chakra Petch, sans-serif',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+            }}>
+              {uploadError}
+            </span>
+          </Row>
+        ) : uploadStatus ? (
+          <Row gap={6}>
+            <span style={{ fontSize: 11, lineHeight: 1, color: '#4caf50', flexShrink: 0 }}>✓</span>
+            <span style={{
+              fontSize: 10, color: T.text3, fontFamily: 'Chakra Petch, sans-serif',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+            }}>
+              {uploadStatus}
+            </span>
+          </Row>
+        ) : (
+          <span style={{ fontSize: 9, color: T.text4, fontFamily: 'Chakra Petch, sans-serif' }}>
+            Drag rows to reorder
+          </span>
+        )}
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
@@ -299,28 +371,55 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
 
   const checklist = slidePublishChecklist(slide)
   const issues    = checklist.filter(c => !c.ok).length
+  const panelFont = 'Inter, Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
-      <Col gap={11}>
+    <div style={{
+      flex: 1,
+      minHeight: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      background: 'rgba(8,8,9,0.56)',
+      fontFamily: panelFont,
+    }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 14px 12px' }}>
+      <Col gap={14}>
 
-        {/* Title */}
-        <Col gap={4}>
-          <Label>Clip Title</Label>
-          <TextInput
+        {/* Title + subtitle */}
+        <Col gap={3} style={{ padding: '1px 1px 4px' }}>
+          <input
             value={slide.title}
-            onChange={v => onChange({ title: v })}
-            placeholder="Enter clip title…"
+            onChange={e => onChange({ title: e.target.value })}
+            placeholder="Untitled clip"
+            style={{
+              width: '100%',
+              border: 0,
+              outline: 'none',
+              background: 'transparent',
+              color: slide.title ? T.text : T.text4,
+              fontFamily: panelFont,
+              fontSize: 19,
+              fontWeight: 750,
+              lineHeight: 1.15,
+              padding: 0,
+            }}
           />
-        </Col>
-
-        {/* Subtitle */}
-        <Col gap={4}>
-          <Label>Subtitle</Label>
-          <TextInput
+          <input
             value={slide.subtitle}
-            onChange={v => onChange({ subtitle: v })}
-            placeholder="Add subtitle or camera note…"
+            onChange={e => onChange({ subtitle: e.target.value })}
+            placeholder="Add subtitle or camera note"
+            style={{
+              width: '100%',
+              border: 0,
+              outline: 'none',
+              background: 'transparent',
+              color: slide.subtitle ? T.text3 : T.text4,
+              fontFamily: panelFont,
+              fontSize: 12,
+              fontWeight: 500,
+              lineHeight: 1.35,
+              padding: 0,
+            }}
           />
         </Col>
 
@@ -334,36 +433,59 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
         />
 
         {/* Default Camera */}
-        <Col gap={4}>
+        <Col gap={7}>
           <Label>Default Camera</Label>
-          <Row gap={5} style={{ flexWrap: 'wrap' }}>
-            {cameraPresets.map(p => (
-              <CamPill
-                key={p.id}
-                label={p.name}
-                active={slide.defaultCameraPresetId === p.id}
-                onClick={() => onChange({ defaultCameraPresetId: p.id })}
-              />
-            ))}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            padding: 3,
+            borderRadius: 999,
+            background: 'rgba(255,255,255,0.055)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            overflowX: 'auto',
+          }}>
+            {cameraPresets.map(p => {
+              const active = slide.defaultCameraPresetId === p.id
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => onChange({ defaultCameraPresetId: p.id })}
+                  style={{
+                    flex: '1 0 auto',
+                    border: 0,
+                    borderRadius: 999,
+                    padding: '5px 10px',
+                    background: active ? 'rgba(232,83,26,0.92)' : 'transparent',
+                    color: active ? '#fff' : T.text3,
+                    fontFamily: panelFont,
+                    fontSize: 10,
+                    fontWeight: active ? 750 : 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    boxShadow: active ? '0 0 14px rgba(232,83,26,0.22)' : 'none',
+                  }}
+                >
+                  {p.name}
+                </button>
+              )
+            })}
             {cameraPresets.length === 0 && (
-              <span style={{ fontSize: 10, color: T.text4, fontFamily: 'Chakra Petch, sans-serif' }}>
+              <span style={{ fontSize: 10, color: T.text4, fontFamily: panelFont, padding: '4px 6px' }}>
                 No camera presets defined
               </span>
             )}
-          </Row>
+          </div>
         </Col>
 
-        <Divider />
-
         {/* References */}
-        <Col gap={6}>
+        <Col gap={7}>
           <Row gap={6}>
             <Label>References ({(slide.references ?? []).length})</Label>
             <Spacer f={1} />
-            <span style={{ fontSize: 9, color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>drag to reorder</span>
-            <GhostBtn style={{ padding: '2px 7px', fontSize: 10 }}
+            <GhostBtn style={{ padding: '3px 7px', fontSize: 10, borderColor: 'rgba(255,255,255,0.08)' }}
               onClick={() => onChange({ references: [...(slide.references ?? []), newRef()] })}>
-              + Add
+              <Plus size={12} /> Add
             </GhostBtn>
           </Row>
 
@@ -373,7 +495,7 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
               borderRadius: 7, padding: '14px 12px', textAlign: 'center',
             }}>
               <span style={{ fontSize: 10, color: T.text4, fontFamily: 'Chakra Petch, sans-serif' }}>
-                No references yet — add a mood board, layout, or lighting plot
+                No references yet - add a mood board, layout, or lighting plot
               </span>
             </div>
           )}
@@ -396,40 +518,33 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
           ))}
         </Col>
 
-        <Divider />
-
         {/* Publish Checklist */}
-        <Col gap={6}>
-          <Row gap={6}>
+        <Col gap={7}>
+          <Row gap={7}>
             <Label>Publish Checklist</Label>
-            <Spacer f={1} />
             {issues > 0
               ? <StatusTag type="pending">{issues} {issues === 1 ? 'issue' : 'issues'}</StatusTag>
               : <StatusTag type="published">Ready</StatusTag>}
+            <Spacer f={1} />
           </Row>
           <div style={{
-            background: 'rgba(0,0,0,0.28)', border: `1px solid rgba(220,100,30,0.12)`,
-            borderRadius: 7, padding: '8px 10px',
+            background: 'rgba(255,255,255,0.035)',
+            borderRadius: 6,
+            padding: '7px 9px',
           }}>
-            <Col gap={5}>
+            <Col gap={4}>
               {checklist.map((item, i) => (
-                <Row key={i} gap={7}>
-                  <div style={{
-                    width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
-                    background: item.ok
-                      ? 'rgba(43,199,130,0.18)'
-                      : item.warn ? 'rgba(232,149,24,0.18)' : 'rgba(255,255,255,0.06)',
-                    border: `1px solid ${item.ok
-                      ? 'rgba(43,199,130,0.5)'
-                      : item.warn ? 'rgba(232,149,24,0.5)' : 'rgba(255,255,255,0.12)'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {item.ok && <span style={{ color: T.green, fontSize: 8, lineHeight: 1 }}>✓</span>}
-                    {!item.ok && item.warn && <span style={{ color: T.amber, fontSize: 8, lineHeight: 1 }}>!</span>}
+                <Row key={i} gap={7} style={{ minHeight: 18 }}>
+                  <div style={{ width: 13, height: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {item.ok && <Check size={12} color={T.green} strokeWidth={2.4} />}
+                    {!item.ok && item.warn && <AlertTriangle size={11} color={T.amber} strokeWidth={2.2} />}
+                    {!item.ok && !item.warn && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'rgba(255,255,255,0.18)' }} />}
                   </div>
                   <span style={{
-                    fontSize: 10, fontFamily: 'Chakra Petch, sans-serif',
-                    color: item.ok ? T.text2 : item.warn ? T.amber : T.text3,
+                    fontSize: 10,
+                    fontFamily: panelFont,
+                    color: item.ok ? T.text2 : item.warn ? T.amber : T.text4,
+                    fontWeight: item.ok ? 550 : 500,
                   }}>
                     {item.label}
                   </span>
@@ -439,27 +554,36 @@ function ContextPanel({ slide, cameraPresets, onChange, onDuplicate, onToggleHid
           </div>
         </Col>
 
-        <Divider />
-
-        {/* Slide Actions */}
-        <Col gap={6}>
-          <Label>Slide Actions</Label>
-          <Row gap={6} style={{ flexWrap: 'wrap' }}>
-            <GhostBtn onClick={onDuplicate}>⧉ Duplicate</GhostBtn>
-            <GhostBtn onClick={onToggleHidden}>
-              {slide.hiddenFromClient ? '👁 Show to client' : '🚫 Hide from client'}
-            </GhostBtn>
-            <GhostBtn danger onClick={onDelete}>✕ Delete</GhostBtn>
-          </Row>
-        </Col>
-
       </Col>
+      </div>
+
+      {/* Slide Actions */}
+      <div style={{
+        flexShrink: 0,
+        padding: '9px 12px',
+        borderTop: '1px solid rgba(255,255,255,0.075)',
+        background: 'rgba(8,8,9,0.82)',
+        backdropFilter: 'blur(12px)',
+      }}>
+        <Row gap={6}>
+          <GhostBtn style={{ flex: 1, justifyContent: 'center', fontFamily: panelFont }} onClick={onDuplicate}>
+            <Copy size={13} /> Duplicate
+          </GhostBtn>
+          <GhostBtn style={{ flex: 1, justifyContent: 'center', fontFamily: panelFont }} onClick={onToggleHidden}>
+            {slide.hiddenFromClient ? <Eye size={13} /> : <EyeOff size={13} />}
+            {slide.hiddenFromClient ? 'Show' : 'Hide'}
+          </GhostBtn>
+          <GhostBtn style={{ width: 34, justifyContent: 'center', padding: '5px 0' }} danger onClick={onDelete}>
+            <Trash2 size={13} />
+          </GhostBtn>
+        </Row>
+      </div>
     </div>
   )
 }
 
 // ── Right panel: Feedback tab ─────────────────────────────────────────────────
-function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onDelete, onJumpToClip, onOpenFullReview, highlightFeedbackId }) {
+function LegacyFeedbackPanel({ feedback, slideName, versionLabel, onResolve, onDelete, onJumpToClip, onOpenFullReview, highlightFeedbackId }) {
   const [filter, setFilter] = useState('all')
 
   const filtered = useMemo(() => {
@@ -539,7 +663,7 @@ function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onDelete,
   )
 }
 
-function FeedbackCard({ item, onResolve, onDelete, onJump, highlight = false }) {
+function LegacyFeedbackCard({ item, onResolve, onDelete, onJump, highlight = false }) {
   const [hov, setHov] = useState(false)
   return (
     <div
@@ -601,6 +725,148 @@ function FeedbackCard({ item, onResolve, onDelete, onJump, highlight = false }) 
 }
 
 // ── Publish Modal ─────────────────────────────────────────────────────────────
+function FeedbackPanel({ feedback, slideName, versionLabel, onResolve, onDelete, onJumpToClip, onOpenFullReview, highlightFeedbackId }) {
+  const [filter, setFilter] = useState('all')
+  const panelFont = 'Inter, Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+
+  const filtered = useMemo(() => {
+    if (filter === 'open') return feedback.filter(f => f.status === 'pending')
+    if (filter === 'resolved') return feedback.filter(f => f.status === 'resolved')
+    return feedback
+  }, [feedback, filter])
+
+  const openCount = feedback.filter(f => f.status === 'pending').length
+  const resolvedCount = feedback.filter(f => f.status === 'resolved').length
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'rgba(8,8,9,0.56)', fontFamily: panelFont }}>
+      <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid rgba(255,255,255,0.075)', flexShrink: 0 }}>
+        <Col gap={9}>
+          <Row gap={8}>
+            <span style={{ fontSize: 12, fontWeight: 750, color: T.text, fontFamily: panelFont, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {slideName ? `Feedback for "${slideName}"` : 'Feedback'}
+            </span>
+            <Spacer f={1} />
+            {versionLabel && <span style={{ fontSize: 9, color: T.text3, fontFamily: 'Chakra Petch, sans-serif', flexShrink: 0 }}>{versionLabel}</span>}
+          </Row>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            {[['all', `All (${feedback.length})`], ['open', `Open (${openCount})`], ['resolved', `Resolved (${resolvedCount})`]].map(([id, label]) => {
+              const active = filter === id
+              return (
+                <button key={id} onClick={() => setFilter(id)} style={{ flex: 1, padding: '5px 9px', fontSize: 10, fontWeight: active ? 750 : 600, borderRadius: 999, cursor: 'pointer', fontFamily: 'Chakra Petch, sans-serif', background: active ? 'rgba(232,83,26,0.92)' : 'transparent', border: 0, color: active ? '#fff' : T.text3, whiteSpace: 'nowrap', boxShadow: active ? '0 0 14px rgba(232,83,26,0.20)' : 'none' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </Col>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 14px 10px' }}>
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <span style={{ fontSize: 11, color: T.text4, fontFamily: panelFont }}>No {filter !== 'all' ? filter : ''} feedback for this clip</span>
+          </div>
+        )}
+        <Col gap={0}>
+          {filtered.map(item => (
+            <FeedbackCard
+              key={item.id}
+              item={item}
+              highlight={item.id === highlightFeedbackId}
+              onResolve={() => onResolve(item.id, item.status === 'pending' ? 'resolved' : 'pending')}
+              onDelete={() => onDelete(item)}
+              onJump={() => onJumpToClip(item)}
+              panelFont={panelFont}
+            />
+          ))}
+        </Col>
+      </div>
+
+      <div style={{ padding: '9px 12px', borderTop: '1px solid rgba(255,255,255,0.075)', background: 'rgba(8,8,9,0.82)', flexShrink: 0 }}>
+        <GhostBtn style={{ width: '100%', justifyContent: 'center', fontFamily: panelFont }} onClick={onOpenFullReview}>
+          Open full Feedback Review
+        </GhostBtn>
+      </div>
+    </div>
+  )
+}
+
+function FeedbackCard({ item, onResolve, onDelete, onJump, highlight = false, panelFont }) {
+  const [hov, setHov] = useState(false)
+  const resolved = item.status === 'resolved'
+  const statusColor = resolved ? T.green : T.amber
+  const reviewerName = item.reviewer_name || 'Reviewer'
+  const resolvedDim = resolved ? 0.38 : 1
+  const resolvedBadgeDim = resolved ? 0.50 : 1
+  const resolvedActionDim = resolved ? 0.58 : 1
+
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{ position: 'relative', background: highlight ? 'rgba(31,160,238,0.07)' : (hov ? 'rgba(255,255,255,0.035)' : 'transparent'), boxShadow: highlight ? 'inset 0 0 0 1px rgba(31,160,238,0.24)' : 'none', borderBottom: '1px solid rgba(255,255,255,0.065)', borderRadius: highlight ? 6 : 0, padding: '8px 2px', transition: 'background 0.15s, box-shadow 0.15s' }}
+    >
+      <Row gap={7} style={{ marginBottom: 6, minHeight: 26 }}>
+        <span style={{ padding: '2px 6px', borderRadius: 999, background: resolved ? 'rgba(43,199,130,0.07)' : 'rgba(232,149,24,0.13)', color: statusColor, fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Chakra Petch, sans-serif', flexShrink: 0, opacity: resolvedBadgeDim }}>
+          {resolved ? 'Resolved' : 'Pending'}
+        </span>
+        <span style={{ fontSize: 9, color: T.text4, fontFamily: 'Chakra Petch, sans-serif', flexShrink: 0, opacity: resolvedDim }}>{timeAgo(item.created_at)}</span>
+        {item.clip_time_seconds != null && (
+          <button onClick={onJump} title="Jump to clip" style={{ border: '1px solid rgba(31,160,238,0.28)', background: 'rgba(31,160,238,0.12)', color: T.cam, borderRadius: 999, padding: '2px 7px', fontSize: 9, fontWeight: 750, fontFamily: 'Chakra Petch, sans-serif', cursor: 'pointer', lineHeight: 1, flexShrink: 0, opacity: resolvedBadgeDim }}>
+            {formatTimecode(item.clip_time_seconds)}
+          </button>
+        )}
+        <Spacer f={1} />
+        <button onClick={onResolve} title={resolved ? 'Reopen feedback' : 'Resolve feedback'} style={feedbackIconBtnStyle(true, false, resolvedActionDim)}>
+          {resolved ? <RotateCcw size={13} /> : <Check size={13} />}
+        </button>
+        <button title="More actions" style={feedbackIconBtnStyle(hov, false, resolvedActionDim)}>
+          <MoreHorizontal size={13} />
+        </button>
+        <button onClick={onDelete} title="Delete feedback" style={feedbackIconBtnStyle(hov, true, resolvedActionDim)}>
+          <Trash2 size={13} />
+        </button>
+      </Row>
+
+      <span style={{ fontSize: 12, color: resolved ? T.text4 : T.text2, display: 'block', paddingLeft: 0, paddingRight: 4, lineHeight: 1.52, fontFamily: panelFont, fontWeight: 450, opacity: resolvedDim }}>
+        {item.comment}
+      </span>
+
+      <Row gap={8} style={{ marginTop: 6, minHeight: 13 }}>
+        {item.camera_snapshot_json?.name ? (
+          <span style={{ color: T.text4, fontSize: 9, fontFamily: 'Chakra Petch, sans-serif', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: resolvedDim }}>
+            {item.camera_snapshot_json.name}
+          </span>
+        ) : <span />}
+        <Spacer f={1} />
+        <span title={reviewerName} style={{ color: resolved ? T.text4 : '#fff', fontSize: 10, fontWeight: 800, fontFamily: 'Chakra Petch, sans-serif', maxWidth: '58%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: resolvedDim }}>
+          {reviewerName}
+        </span>
+      </Row>
+    </div>
+  )
+}
+
+function feedbackIconBtnStyle(visible, danger = false, dim = 1) {
+  return {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    border: '1px solid rgba(255,255,255,0.075)',
+    background: danger ? 'rgba(232,83,26,0.08)' : 'rgba(255,255,255,0.035)',
+    color: danger ? T.ember2 : T.text3,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: visible ? 'pointer' : 'default',
+    opacity: visible ? dim : 0,
+    pointerEvents: visible ? 'auto' : 'none',
+    transition: 'opacity 0.15s, background 0.15s',
+    flexShrink: 0,
+  }
+}
+
 function formatSignedSeconds(seconds) {
   const sign = seconds > 0 ? '+' : seconds < 0 ? '-' : ''
   const abs = Math.abs(seconds)
@@ -809,7 +1075,7 @@ export default function PresentationEditorPage() {
   const [activePresetId, setActivePresetId] = useState(null)
   const cameraControlsRef   = useRef(null)
   const cameraTargetPresetRef = useRef(null)
-  const thumbnailQueueRef = useRef(new Set())
+  const thumbnailQueueRef = useRef(new Map())
 
   const [sunPosition,   setSunPosition]   = useState([10.6, 10.6, 7.5])
   const [sunIntensity,  setSunIntensity]  = useState(1)
@@ -834,6 +1100,7 @@ export default function PresentationEditorPage() {
   // ── Video playlist → slides ───────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])   // raw DB playlist
   const videoPlaylistRef = useRef([])
+  const clipUploadInputRef = useRef(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
   const [currentTime,   setCurrentTime]   = useState(0)
   const [activeDuration, setActiveDuration] = useState(0)
@@ -853,7 +1120,11 @@ export default function PresentationEditorPage() {
   const [publishedVersion, setPublishedVersion] = useState(null)  // latest published
   const [versionConflict, setVersionConflict]  = useState(null)
   const [adminIdentity,   setAdminIdentity]    = useState('')
+  const [adminUserId,     setAdminUserId]      = useState(null)
   const [publishToast,    setPublishToast]     = useState(null)
+  const [isUploadingClips, setIsUploadingClips] = useState(false)
+  const [clipUploadStatus, setClipUploadStatus] = useState('')
+  const [clipUploadError,  setClipUploadError]  = useState('')
 
   // ── Annotation mode (admin drawing annotation for a director note) ─────────
   const [annotatingNoteId,    setAnnotatingNoteId]    = useState(null)
@@ -883,12 +1154,14 @@ export default function PresentationEditorPage() {
         if (!mounted) return
         const user = data?.session?.user
         setAdminIdentity(user?.email || user?.user_metadata?.full_name || user?.id || '')
+        setAdminUserId(user?.id ?? null)
       })
       .catch(() => {})
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user
       setAdminIdentity(user?.email || user?.user_metadata?.full_name || user?.id || '')
+      setAdminUserId(user?.id ?? null)
     })
 
     return () => {
@@ -934,10 +1207,11 @@ export default function PresentationEditorPage() {
     const savedDraft = await saveDraft(projectId, snapshot, {
       expectedToken: draftVersion?.version_token ?? null,
       createdBy: adminIdentity,
+      createdByUserId: adminUserId,
     })
     setDraftVersion(savedDraft)
     return nextSlides
-  }, [adminIdentity, cameraPresets, draftVersion?.version_token, projectId, projectName])
+  }, [adminIdentity, adminUserId, cameraPresets, draftVersion?.version_token, projectId, projectName])
 
   // ── Load project from DB ──────────────────────────────────────────────────
   useEffect(() => {
@@ -989,9 +1263,11 @@ export default function PresentationEditorPage() {
           setModelUrl(url)
         }
 
-        // Restore playlist → slides
-        const playlist = p.media_playlist ?? []
+        // Restore playlist → slides (strip legacy default-stage-preview clips)
+        const rawPlaylist = p.media_playlist ?? []
+        const playlist = rawPlaylist.filter(c => !isDefaultStagePreviewClip(c))
         setVideoPlaylist(playlist)
+        videoPlaylistRef.current = playlist
 
         // Load presentation draft or build from playlist
         const draft = await loadDraft(projectId)
@@ -1001,7 +1277,8 @@ export default function PresentationEditorPage() {
 
         let slidesData
         if (draft?.snapshot_json?.slides?.length) {
-          slidesData = draft.snapshot_json.slides
+          // Filter default clips from saved drafts too
+          slidesData = draft.snapshot_json.slides.filter(s => !isDefaultStagePreviewClip({ id: s.clipId }))
         } else {
           slidesData = playlist.map((clip, i) => makeSlideFromClip(clip, i, p.camera_presets))
         }
@@ -1015,14 +1292,14 @@ export default function PresentationEditorPage() {
         if (targetSlide)  setRightTab('feedback')
 
         // Activate exactly ONE clip (the jump target's clip, or first)
-        const initialIdx  = slidesData.indexOf(initialSlide)
-        const initialClip = initialSlide
-          ? (playlist.find(c =>
-              String(c.id) === String(initialSlide.clipId) ||
-              c.name === initialSlide.clipId
-            ) ?? playlist[initialIdx >= 0 ? initialIdx : 0])
-          : playlist[0]
-        if (initialClip) activatePlaylistClip(initialClip)
+        if (initialSlide && playlist.length > 0) {
+          const initialIdx  = slidesData.indexOf(initialSlide)
+          const initialClip = playlist.find(c =>
+            String(c.id) === String(initialSlide.clipId) ||
+            c.name === initialSlide.clipId
+          ) ?? playlist[initialIdx >= 0 ? initialIdx : 0]
+          if (initialClip) activatePlaylistClip(initialClip)
+        }
       } catch (err) {
         console.error('[PresentationEditor] load error', err)
       } finally {
@@ -1031,6 +1308,8 @@ export default function PresentationEditorPage() {
     }
 
     load()
+  // Intentional: this effect only loads on project switch. activatePlaylistClip et al.
+  // are stable refs/setters that would cause repeated reloads if added.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
@@ -1055,6 +1334,8 @@ export default function PresentationEditorPage() {
         .then(setSlideFeedback)
         .catch(console.error)
     }
+  // Intentional: fire only on slide/project change. videoPlaylist/cameraPresets are
+  // read freshly inside; adding them would re-fetch feedback on every clip edit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSlideId, projectId])
 
@@ -1067,27 +1348,36 @@ export default function PresentationEditorPage() {
       for (const slide of slides) {
         if (cancelled) return
         if (isPersistedThumbnailUrl(slide.thumbnailUrl || slide.thumbnail_url)) continue
-        if (thumbnailQueueRef.current.has(slide.id)) continue
 
         const slideIdx = slides.findIndex(s => s.id === slide.id)
         const clip = videoPlaylist.find(c =>
           String(c.id) === String(slide.clipId) || c.name === slide.clipId
         ) ?? videoPlaylist[slideIdx]
         if (!clip?.url) continue
+        // data: URLs cannot be fetched (CSP blocks connect-src for data: scheme)
+        // and default stage preview clips don't need a thumbnail
+        if (clip.url.startsWith('data:') || isDefaultStagePreviewClip(clip)) continue
+        const jobKey = `${slide.id}:${clip.url}`
+        const existingJob = thumbnailQueueRef.current.get(jobKey)
+        if (existingJob) {
+          await existingJob.catch(() => null)
+          continue
+        }
 
-        thumbnailQueueRef.current.add(slide.id)
+        const thumbnailJob = uploadClipThumbnail({
+          clip,
+          projectId,
+          onLocalUrl: (localUrl) => {
+            if (cancelled || !localUrl) return
+            addBlob(localUrl)
+            setSlides(prev => prev.map(s => (
+              s.id === slide.id ? { ...s, thumbnailUrl: localUrl } : s
+            )))
+          },
+        })
+        thumbnailQueueRef.current.set(jobKey, thumbnailJob)
         try {
-          const thumbnailUrl = await uploadClipThumbnail({
-            clip,
-            projectId,
-            onLocalUrl: (localUrl) => {
-              if (cancelled || !localUrl) return
-              addBlob(localUrl)
-              setSlides(prev => prev.map(s => (
-                s.id === slide.id ? { ...s, thumbnailUrl: localUrl } : s
-              )))
-            },
-          })
+          const thumbnailUrl = await thumbnailJob
           if (cancelled || !thumbnailUrl) continue
           setSlides(prev => prev.map(s => (
             s.id === slide.id ? { ...s, thumbnailUrl } : s
@@ -1098,9 +1388,8 @@ export default function PresentationEditorPage() {
             if (!cancelled) setSlides(nextSlides)
           }
         } catch (err) {
+          thumbnailQueueRef.current.delete(jobKey)
           console.warn('[PresentationEditor] thumbnail failed', clip?.name || clip?.id, err)
-        } finally {
-          thumbnailQueueRef.current.delete(slide.id)
         }
       }
     }
@@ -1191,6 +1480,87 @@ export default function PresentationEditorPage() {
     setActiveSlideId(slide.id)
     markDirty()
   }, [slides.length, markDirty])
+
+  const openClipUploadPicker = useCallback(() => {
+    if (isUploadingClips) return
+    if (!clipUploadInputRef.current) {
+      console.warn('[PresentationEditor] clip upload input not mounted')
+      return
+    }
+    clipUploadInputRef.current?.click()
+  }, [isUploadingClips])
+
+  const handleUploadClips = useCallback(async (filesLike) => {
+    const allFiles = Array.from(filesLike ?? [])
+    const files = allFiles.filter(file => validatePresentationMediaFile(file))
+    if (!files.length) {
+      setClipUploadError('Select MP4/WEBM/MOV video or WEBP/PNG/JPG/GIF image files')
+      return
+    }
+
+    setIsUploadingClips(true)
+    setClipUploadError('')
+    setClipUploadStatus(`Uploading 1/${files.length}…`)
+
+    try {
+      const uploadedClips = []
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i]
+        setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name}`)
+
+        // Infer correct MIME type — browsers (especially Windows) may report '' for .mov files.
+        // The Content-Type used to sign the presigned URL must exactly match what XHR sends
+        // to R2, otherwise R2 returns 403 SignatureDoesNotMatch.
+        const contentType = getMediaMimeType(file)
+
+        const { putUrl, publicUrl } = await getPresignedUploadUrl({
+          filename: file.name,
+          contentType,
+          contentLength: file.size,
+          projectId: projectId || undefined,
+          type: 'media',
+        })
+
+        const finalUrl = await uploadFileToPresignedUrl(putUrl, file, publicUrl,
+          (progress) => { setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${progress}%`) },
+          contentType,   // pass the same contentType so XHR header matches the signed URL
+        )
+
+        const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, uploadedClips.length) + 1
+        uploadedClips.push(makeUploadedClip(file, finalUrl, nextClipNumber))
+      }
+
+      const currentPlaylist = videoPlaylistRef.current
+      const replaceDefaultPreview = currentPlaylist.length === 1 && isDefaultStagePreviewClip(currentPlaylist[0])
+      const nextPlaylist = replaceDefaultPreview ? uploadedClips : [...currentPlaylist, ...uploadedClips]
+
+      videoPlaylistRef.current = nextPlaylist
+      setVideoPlaylist(nextPlaylist)
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
+        .eq('id', projectId)
+      if (error) throw error
+
+      setSlides(prev => {
+        const baseSlides = replaceDefaultPreview
+          ? prev.filter(slide => !isDefaultStagePreviewClip({ id: slide.clipId }))
+          : prev
+        const newSlides = uploadedClips.map((clip, i) => makeSlideFromClip(clip, baseSlides.length + i, cameraPresets))
+        return [...baseSlides, ...newSlides]
+      })
+      if (uploadedClips[0]) setActiveSlideId(`slide_${uploadedClips[0].id}`)
+      if (uploadedClips[0]) activatePlaylistClip(uploadedClips[0])
+      markDirty()
+      setClipUploadStatus(`Added ${uploadedClips.length} clip${uploadedClips.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      setClipUploadError(getUploadErrorMessage(err))
+      setClipUploadStatus('')
+    } finally {
+      setIsUploadingClips(false)
+    }
+  }, [activatePlaylistClip, cameraPresets, markDirty, projectId])
 
   const duplicateSlide = useCallback(() => {
     if (!activeSlide) return
@@ -1321,13 +1691,13 @@ export default function PresentationEditorPage() {
     const force = !!opts.force
     setIsSaving(true); setSaveError(null); setVersionConflict(null)
     try {
-      const slidesWithThumbnails = await ensureSlideThumbnails(slides)
-      const snapshot = buildSnapshot(projectName, slidesWithThumbnails, cameraPresets)
+      const snapshot = buildSnapshot(projectName, slides, cameraPresets)
       const savedDraft = await saveDraft(projectId, snapshot, {
         versionName: vName,
         releaseNotes: rNotes,
         expectedToken: force ? null : (draftVersion?.version_token ?? null),
         createdBy: adminIdentity,
+        createdByUserId: adminUserId,
       })
       setDraftVersion(savedDraft)
       setIsDirty(false)
@@ -1341,7 +1711,7 @@ export default function PresentationEditorPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, slides])
+  }, [adminIdentity, adminUserId, cameraPresets, draftVersion?.version_token, isVersionConflict, projectId, projectName, slides])
 
   // ── Publish ───────────────────────────────────────────────────────────────
   const handlePublish = useCallback(async (vName, rNotes, opts = {}) => {
@@ -1349,8 +1719,7 @@ export default function PresentationEditorPage() {
     const force = !!opts.force
     setIsSaving(true); setSaveError(null); setVersionConflict(null)
     try {
-      const slidesWithThumbnails = await ensureSlideThumbnails(slides)
-      const snapshot = buildSnapshot(projectName, slidesWithThumbnails, cameraPresets)
+      const snapshot = buildSnapshot(projectName, slides, cameraPresets)
       const previousPublishedNumber = publishedVersion?.version_number ?? null
       const published = await publishVersion(projectId, snapshot, {
         versionName: vName,
@@ -1358,6 +1727,8 @@ export default function PresentationEditorPage() {
         expectedToken: force ? null : (draftVersion?.version_token ?? null),
         publishedBy: adminIdentity,
         createdBy: adminIdentity,
+        publishedByUserId: adminUserId,
+        createdByUserId: adminUserId,
       })
       setPublishedVersion(published)
       setDraftVersion(null)
@@ -1377,7 +1748,7 @@ export default function PresentationEditorPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [adminIdentity, cameraPresets, draftVersion?.version_token, ensureSlideThumbnails, isVersionConflict, projectId, projectName, publishedVersion?.version_number, slides])
+  }, [adminIdentity, adminUserId, cameraPresets, draftVersion?.version_token, isVersionConflict, projectId, projectName, publishedVersion?.version_number, slides])
 
   const handleReloadConflictDraft = useCallback(() => {
     const current = versionConflict?.currentVersion
@@ -1407,8 +1778,8 @@ export default function PresentationEditorPage() {
   }, [])
 
   const restoreVersionWithIdentity = useCallback((projectIdArg, sourceVersionId) => (
-    restoreVersion(projectIdArg, sourceVersionId, { createdBy: adminIdentity })
-  ), [adminIdentity])
+    restoreVersion(projectIdArg, sourceVersionId, { createdBy: adminIdentity, createdByUserId: adminUserId })
+  ), [adminIdentity, adminUserId])
 
   const openClientPreview = useCallback(() => {
     window.open(`/view/${projectId}`, '_blank', 'noopener,noreferrer')
@@ -1436,6 +1807,8 @@ export default function PresentationEditorPage() {
         setCameraTargetPreset(cameraTargetPresetRef, preset)
       }
     }
+  // Intentional: one-shot seek when feedback list resolves; cameraPresets/videoRef are
+  // refs/stable and shouldn't retrigger the seek.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideFeedback, jumpFeedbackId])
 
@@ -1624,8 +1997,27 @@ export default function PresentationEditorPage() {
           }))}
           activeSlideId={activeSlideId}
           onSelect={selectSlide}
-          onAdd={addSlide}
+          onAdd={openClipUploadPicker}
           onReorder={reorderSlides}
+          uploading={isUploadingClips}
+          uploadStatus={clipUploadStatus}
+          uploadError={clipUploadError}
+        />
+        <input
+          ref={clipUploadInputRef}
+          type="file"
+          multiple
+          accept={CLIP_UPLOAD_ACCEPT}
+          onChange={(e) => {
+            // Snapshot to a real array BEFORE clearing the input: e.target.files is a
+            // live FileList — setting value='' empties it and the captured reference
+            // would then have length 0, causing a silent no-op.
+            const selectedFiles = e.target.files ? Array.from(e.target.files) : []
+            e.target.value = ''
+            if (selectedFiles.length === 0) return
+            handleUploadClips(selectedFiles)
+          }}
+          style={{ display: 'none' }}
         />
 
         {/* ── CENTER: Stage + transport ── */}
@@ -1907,6 +2299,7 @@ export default function PresentationEditorPage() {
           pruneArchivedVersions={pruneArchivedVersions}
           onClose={() => setShowHistory(false)}
           onChanged={handleHistoryChanged}
+          hasUnsavedChanges={isDirty}
         />
       )}
     </div>
@@ -1967,6 +2360,7 @@ function RefRow({ ref_, onChange, onDelete, projectId }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress]   = useState(0)
   const [error, setError]         = useState(null)
+  const [hovered, setHovered]     = useState(false)
   const inputRef = useRef(null)
 
   const handleFileSelect = async (e) => {
@@ -1982,6 +2376,7 @@ function RefRow({ ref_, onChange, onDelete, projectId }) {
       const { putUrl, publicUrl } = await getPresignedUploadUrl({
         filename: file.name,
         contentType: file.type,
+        contentLength: file.size,
         projectId: projectId || undefined,
         type: 'media',
       })
@@ -1995,16 +2390,26 @@ function RefRow({ ref_, onChange, onDelete, projectId }) {
   }
 
   return (
-    <div style={{ background: 'rgba(0,0,0,0.2)', border: `1px solid rgba(220,100,30,0.12)`, borderRadius: 7, padding: '8px 10px' }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative',
+        background: hovered ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.035)',
+        borderRadius: 6,
+        padding: '8px 9px',
+        transition: 'background 0.15s',
+      }}
+    >
       <Row gap={8} align="flex-start">
         {/* Thumbnail / upload trigger */}
         <div
           title={ref_.url ? 'Click to replace image' : 'Click to upload image'}
           onClick={() => !uploading && inputRef.current?.click()}
           style={{
-            width: 56, height: 38, borderRadius: 5, flexShrink: 0,
+            width: 58, height: 42, borderRadius: 5, flexShrink: 0,
             background: '#1a1410',
-            border: `1px solid ${ref_.url ? 'rgba(220,100,30,0.4)' : 'rgba(220,100,30,0.15)'}`,
+            border: `1px solid ${ref_.url ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)'}`,
             cursor: uploading ? 'wait' : 'pointer',
             overflow: 'hidden', position: 'relative',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2033,8 +2438,19 @@ function RefRow({ ref_, onChange, onDelete, projectId }) {
           onChange={handleFileSelect}
         />
 
-        <Col gap={5} style={{ flex: 1, minWidth: 0 }}>
-          <TextInput value={ref_.caption} onChange={v => onChange({ ...ref_, caption: v })} placeholder="Caption…" />
+        <Col gap={5} style={{ flex: 1, minWidth: 0, paddingRight: 22 }}>
+          <TextInput
+            value={ref_.caption}
+            onChange={v => onChange({ ...ref_, caption: v })}
+            placeholder="Caption"
+            style={{
+              background: 'rgba(0,0,0,0.18)',
+              borderColor: 'rgba(255,255,255,0.07)',
+              fontFamily: 'Inter, Roboto, system-ui, sans-serif',
+              fontSize: 10,
+              padding: '5px 7px',
+            }}
+          />
           {error && (
             <span style={{ fontSize: 9, color: '#e05555', fontFamily: 'Chakra Petch, sans-serif' }}>{error}</span>
           )}
@@ -2042,31 +2458,51 @@ function RefRow({ ref_, onChange, onDelete, projectId }) {
             <button
               onClick={() => onChange({ ...ref_, visibleToClient: !ref_.visibleToClient })}
               style={{
-                display: 'flex', alignItems: 'center', gap: 4, padding: '2px 7px',
+                display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0',
                 borderRadius: 4, cursor: 'pointer', border: 'none',
-                background: ref_.visibleToClient ? 'rgba(43,199,130,0.1)' : 'rgba(255,255,255,0.04)',
-                borderWidth: 1, borderStyle: 'solid',
-                borderColor: ref_.visibleToClient ? 'rgba(43,199,130,0.3)' : 'rgba(255,255,255,0.1)',
+                background: 'transparent',
               }}
             >
               {ref_.visibleToClient
                 ? <EyeIcon color={T.green} />
                 : <EyeOffIcon color={T.text3} />}
-              <span style={{ fontSize: 9, color: ref_.visibleToClient ? T.green : T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
+              <span style={{ fontSize: 9, color: ref_.visibleToClient ? T.green : T.text3, fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontWeight: 600 }}>
                 {ref_.visibleToClient ? 'Client visible' : 'Hidden'}
               </span>
             </button>
             <Spacer f={1} />
-            <GhostBtn style={{ padding: '2px 7px', fontSize: 9 }} danger onClick={onDelete}>✕</GhostBtn>
           </Row>
         </Col>
       </Row>
+      <button
+        onClick={onDelete}
+        title="Delete reference"
+        style={{
+          position: 'absolute',
+          top: 7,
+          right: 7,
+          width: 20,
+          height: 20,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 5,
+          border: 0,
+          background: hovered ? 'rgba(232,83,26,0.12)' : 'transparent',
+          color: T.ember2,
+          opacity: hovered ? 1 : 0,
+          cursor: 'pointer',
+          transition: 'opacity 0.15s, background 0.15s',
+        }}
+      >
+        <Trash2 size={12} />
+      </button>
     </div>
   )
 }
 
 // ── Text input ────────────────────────────────────────────────────────────────
-function TextInput({ value, onChange, placeholder, multiline = false, rows = 2 }) {
+function TextInput({ value, onChange, placeholder, multiline = false, rows = 2, style: styleOverride = {} }) {
   const [focused, setFocused] = useState(false)
   const style = {
     width: '100%', background: 'rgba(0,0,0,0.35)',
@@ -2076,6 +2512,7 @@ function TextInput({ value, onChange, placeholder, multiline = false, rows = 2 }
     outline: 'none', lineHeight: 1.4, resize: 'vertical',
     boxShadow: focused ? '0 0 0 2px rgba(232,83,26,0.12)' : 'none',
     transition: 'border-color 0.15s, box-shadow 0.15s',
+    ...styleOverride,
   }
   const handlers = {
     onFocus: () => setFocused(true),
@@ -2104,6 +2541,52 @@ function makeSlideFromClip(clip, index, cameraPresets = []) {
   }
 }
 
+function makeUploadedClip(file, finalUrl, nextClipNumber) {
+  const id = `clip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  // Use extension-based detection so images are correctly classified even when file.type is empty
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  const isImage = /^(png|jpe?g|webp|gif)$/.test(ext)
+    || (file.type ? file.type.startsWith('image/') : false)
+  const mediaType = isImage ? 'image' : 'video'
+  const fallbackName = isImage ? `Image ${nextClipNumber}` : `Clip ${nextClipNumber}`
+  const cleanName = file.name.replace(/\.[^.]+$/, '') || fallbackName
+  return {
+    id,
+    name: cleanName,
+    url: finalUrl,
+    type: mediaType,
+    external: true,
+    thumbnailUrl: isImage ? finalUrl : '',
+  }
+}
+
+function validatePresentationMediaFile(file) {
+  if (!file) return false
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const mime = (file.type || '').toLowerCase()
+  const isValidVideo = CLIP_UPLOAD_VIDEO_EXT.includes(ext) || CLIP_UPLOAD_VIDEO_MIME.includes(mime)
+  const isValidImage = CLIP_UPLOAD_IMAGE_EXT.includes(ext) || CLIP_UPLOAD_IMAGE_MIME.includes(mime)
+  return isValidVideo || isValidImage
+}
+
+function currentPlaylistClipCount(playlist, uploadedCount) {
+  return (Array.isArray(playlist) ? playlist.length : 0) + uploadedCount
+}
+
+function serializeMediaPlaylistForDb(playlist) {
+  return (playlist || []).map(c => ({
+    name: c.name,
+    url: c.url,
+    type: c.type,
+    external: c.external ?? true,
+    ...(c.thumbnailUrl || c.thumbnail_url ? { thumbnailUrl: c.thumbnailUrl || c.thumbnail_url } : {}),
+  }))
+}
+
+function isDefaultStagePreviewClip(clip) {
+  return String(clip?.id ?? clip?.clipId ?? '') === DEFAULT_STAGE_PREVIEW_CLIP_ID
+}
+
 function makeBlankSlide(index) {
   return {
     id:                   `slide_${Date.now()}`,
@@ -2127,6 +2610,22 @@ function newRef() {
 
 function isPersistedThumbnailUrl(url) {
   return Boolean(url && typeof url === 'string' && !url.startsWith('blob:'))
+}
+
+/**
+ * Infer a reliable MIME type for media uploads.
+ * Browsers (especially on Windows) sometimes report file.type as '' for .mov files.
+ * The presigned PUT URL is signed with a specific Content-Type, so the XHR must send
+ * the exact same value — a mismatch causes R2 to return 403 SignatureDoesNotMatch.
+ */
+function getMediaMimeType(file) {
+  if (file.type && file.type !== 'application/octet-stream') return file.type
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  const mimeMap = {
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+  }
+  return mimeMap[ext] || file.type || 'application/octet-stream'
 }
 
 function findPreset(presets, presetIdOrName) {

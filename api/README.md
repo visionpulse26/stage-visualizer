@@ -9,7 +9,7 @@ Returns a presigned PUT URL so the frontend can upload files directly to Cloudfl
 | Header | Required | Description |
 |--------|----------|-------------|
 | `Content-Type` | Yes | `application/json` |
-| `x-upload-token` | Yes | Must match server `UPLOAD_SECRET` (same value as `VITE_UPLOAD_SECRET` in the frontend env at build time). |
+| `Authorization` | Yes | `Bearer <Supabase access token>` for a signed-in user. |
 
 ## Request body
 
@@ -17,12 +17,14 @@ Returns a presigned PUT URL so the frontend can upload files directly to Cloudfl
 {
   "filename": "video.mp4",
   "contentType": "video/mp4",
+  "contentLength": 12345678,
   "projectId": "optional-uuid-or-slug",
   "type": "media"
 }
 ```
 
-- `type`: `"media"` (video/image) or `"hdri"` (`.hdr`/`.exr`)
+- `type`: `"media"` (video/image), `"hdri"` (`.hdr`/`.exr`), `"stage"` (`.glb`), or `"snapshot"` (feedback image).
+- Upload URLs expire after 5 minutes. MIME type and max size are validated before signing.
 
 ## Response
 
@@ -46,9 +48,11 @@ Returns a presigned PUT URL so the frontend can upload files directly to Cloudfl
 | `R2_SECRET_ACCESS_KEY` | R2 API token secret |
 | `R2_BUCKET` | Bucket name |
 | `R2_PUBLIC_BASE_URL` | Public URL base for the bucket (e.g. `https://pub-xxx.r2.dev` or custom domain). Trailing slash optional. |
-| `UPLOAD_SECRET` | Shared secret; must match `VITE_UPLOAD_SECRET` used when building the app (random 32+ character string). |
+| `SUPABASE_URL` | Supabase project URL. Falls back to `VITE_SUPABASE_URL` for local dev. |
+| `SUPABASE_ANON_KEY` | Supabase anon key used server-side to verify bearer tokens. Falls back to `VITE_SUPABASE_ANON_KEY` for local dev. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key used server-side to verify project ownership before signing project-scoped uploads. |
 
-Frontend (Vite): set `VITE_UPLOAD_SECRET` to the **same** value in `.env.local` and in Vercel → Environment Variables (so production builds include it).
+Do not set a `VITE_UPLOAD_SECRET`; upload authorization is based on the user's Supabase session.
 
 ## R2 CORS
 

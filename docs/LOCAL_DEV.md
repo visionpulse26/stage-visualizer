@@ -26,7 +26,7 @@ Làm lần lượt:
    npm run setup:local
    ```
 
-4. **Mở `.env.local`** và điền giá trị thật. Bạn lấy từng giá trị theo mục B bên dưới (Supabase, R2, secret upload). Hai dòng **`VITE_UPLOAD_SECRET`** và **`UPLOAD_SECRET`** phải **giống hệt nhau**.
+4. **Mở `.env.local`** và điền giá trị thật. Bạn lấy từng giá trị theo mục B bên dưới (Supabase, R2). Upload API không dùng `VITE_UPLOAD_SECRET`; frontend phải có Supabase session và gửi bearer token.
 
 5. **Chạy app kèm API upload** (bắt buộc nếu cần upload; `npm run dev` chỉ chạy UI, không có `/api/*`):
 
@@ -87,8 +87,7 @@ Làm lần lượt:
 Khi deploy từ `main`, trong **Project → Settings → Environment Variables** cần (tối thiểu cho app + upload):
 
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-- `VITE_UPLOAD_SECRET` (cùng giá trị với secret phía server)
-- `UPLOAD_SECRET` (trùng `VITE_UPLOAD_SECRET`)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only, dùng cho API upload kiểm tra owner project)
 - Toàn bộ `R2_*` như trong `.env.example`
 
 Cron / analytics (nếu dùng): `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, v.v. — xem `api/README.md`.

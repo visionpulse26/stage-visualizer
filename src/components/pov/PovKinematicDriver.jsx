@@ -10,6 +10,18 @@ const CAPSULE_RADIUS = 0.28
 const CAPSULE_REST_CENTER_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS
 const FALL_RESET_Y = -8
 
+function getValidRigidBody(ref) {
+  const body = ref.current
+  if (!body) return null
+  try {
+    if (body.isValid && !body.isValid()) return null
+    if (body.isInvalid?.()) return null
+  } catch {
+    return null
+  }
+  return body
+}
+
 function findSpawnFromFloorColliders(camera, stageColliders) {
   const floors = stageColliders.filter((s) => s.type === 'floor' || s.type === 'explicit-floor')
   if (floors.length === 0) return null
@@ -67,8 +79,9 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
 
   // Rotation runs every render frame → always smooth, independent of physics rate
   const syncCameraToBody = useCallback(() => {
-    if (!rb.current) return
-    const p = rb.current.translation()
+    const body = getValidRigidBody(rb)
+    if (!body) return
+    const p = body.translation()
     camera.position.set(p.x, p.y + eyeOffset, p.z)
   }, [camera, eyeOffset])
 
@@ -86,13 +99,15 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
   })
 
   useAfterPhysicsStep(() => {
-    if (!enabled || !rb.current) return
+    if (!enabled) return
+    const body = getValidRigidBody(rb)
+    if (!body) return
     syncCameraToBody()
-    const p = rb.current.translation()
+    const p = body.translation()
 
     if (p.y < FALL_RESET_Y) {
-      rb.current.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
-      rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      body.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
   })
 

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { ArrowDown, ArrowUp, Eye, EyeOff, PenLine, Trash2, X } from 'lucide-react'
 
 const T = {
   glass:     'rgba(255,255,255,0.045)',
@@ -84,6 +85,7 @@ export function DirectorNoteRow({
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const textRef = useRef(null)
+  const focusTextRef = useRef(note.text ?? '')
 
   const camName = cameraPresets.find(p => p.id === note.cameraPresetId)?.name ?? ''
 
@@ -97,13 +99,12 @@ export function DirectorNoteRow({
 
   return (
     <div style={{
-      background: 'rgba(0,0,0,0.28)',
-      border: `1px solid rgba(220,100,30,0.14)`,
-      borderRadius: 8,
-      padding: '9px 10px',
+      background: 'rgba(255,255,255,0.045)',
+      borderRadius: 6,
+      padding: '8px 9px',
     }}>
       {/* Note header */}
-      <Row gap={6} style={{ marginBottom: 7 }}>
+      <Row gap={6} style={{ marginBottom: 6 }}>
         <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
           Note {index + 1}
         </span>
@@ -114,43 +115,40 @@ export function DirectorNoteRow({
             background: T.emberDim, border: `1px solid rgba(232,83,26,0.25)`,
             borderRadius: 3, padding: '1px 5px',
           }}>
-            ● annotated
+            annotated
           </span>
         )}
         <div style={{ flex: 1 }} />
-        {/* Visibility */}
         <button
           onClick={() => onChange({ visibleToClient: !note.visibleToClient })}
           title={note.visibleToClient ? 'Visible to client' : 'Hidden from client'}
-          style={{
-            background: note.visibleToClient ? 'rgba(43,199,130,0.1)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${note.visibleToClient ? 'rgba(43,199,130,0.3)' : 'rgba(255,255,255,0.1)'}`,
-            borderRadius: 4, cursor: 'pointer', padding: '2px 6px',
-            fontSize: 9, color: note.visibleToClient ? T.green : T.text3,
-            fontFamily: 'Chakra Petch, sans-serif', fontWeight: 600,
-          }}
+          style={iconBtnStyle(true, false, note.visibleToClient)}
         >
-          {note.visibleToClient ? '👁 Visible' : '🚫 Hidden'}
+          {note.visibleToClient ? <Eye size={12} /> : <EyeOff size={12} />}
         </button>
-        {/* Reorder */}
-        <button disabled={index === 0} onClick={onMoveUp} style={iconBtnStyle(index !== 0)} title="Move up">↑</button>
-        <button disabled={index === total - 1} onClick={onMoveDown} style={iconBtnStyle(index !== total - 1)} title="Move down">↓</button>
-        {/* Delete */}
-        <button onClick={handleDeleteClick} style={iconBtnStyle(true, true)} title="Delete note">✕</button>
+        <button disabled={index === 0} onClick={onMoveUp} style={iconBtnStyle(index !== 0)} title="Move up"><ArrowUp size={12} /></button>
+        <button disabled={index === total - 1} onClick={onMoveDown} style={iconBtnStyle(index !== total - 1)} title="Move down"><ArrowDown size={12} /></button>
+        <button onClick={handleDeleteClick} style={iconBtnStyle(true, true)} title="Delete note"><Trash2 size={12} /></button>
       </Row>
 
       {/* Text */}
       <textarea
         ref={textRef}
         value={note.text}
-        onChange={e => onChange({ text: e.target.value, updatedAt: new Date().toISOString() })}
+        onFocus={() => { focusTextRef.current = note.text ?? '' }}
+        onChange={e => onChange({ text: e.target.value })}
+        onBlur={e => {
+          if (e.target.value !== focusTextRef.current) {
+            onChange({ updatedAt: new Date().toISOString() })
+          }
+        }}
         placeholder="Write a director's note…"
         rows={3}
         style={{
-          width: '100%', background: 'rgba(0,0,0,0.35)',
-          border: `1px solid rgba(220,100,30,0.18)`,
-          borderRadius: 6, padding: '7px 9px',
-          fontFamily: 'Chakra Petch, sans-serif', fontSize: 11,
+          width: '100%', background: 'rgba(0,0,0,0.18)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: 6, padding: '7px 8px',
+          fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontSize: 11,
           color: T.text, outline: 'none', lineHeight: 1.5, resize: 'vertical',
           boxSizing: 'border-box',
         }}
@@ -160,17 +158,17 @@ export function DirectorNoteRow({
       <Col gap={5} style={{ marginTop: 7 }}>
         {note.annotation ? (
           <Row gap={8} style={{
-            background: 'rgba(232,83,26,0.05)', border: `1px solid rgba(232,83,26,0.2)`,
-            borderRadius: 6, padding: '6px 8px',
+            background: 'rgba(232,83,26,0.06)',
+            borderRadius: 6, padding: '6px 7px',
           }}>
             <AnnotationPreview annotation={note.annotation} />
             <Col gap={2} style={{ flex: 1 }}>
               <span style={{ fontSize: 10, fontWeight: 600, color: T.ember2, fontFamily: 'Chakra Petch, sans-serif' }}>
-                {note.annotation.type === 'circle' ? '○ Circle' : '□ Region'} annotation
+                {note.annotation.type === 'circle' ? 'Circle' : 'Region'} annotation
               </span>
               <span style={{ fontSize: 9, color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
                 {camName ? `cam: ${camName}` : ''}
-                {note.clipTimeSeconds != null ? ` · @ ${fmtTime(note.clipTimeSeconds)}` : ''}
+                {note.clipTimeSeconds != null ? ` - @ ${fmtTime(note.clipTimeSeconds)}` : ''}
               </span>
             </Col>
             <Col gap={4}>
@@ -180,10 +178,10 @@ export function DirectorNoteRow({
                 title={hasCenterPreset ? 'Edit annotation' : 'Add a Center camera preset first'}
                 style={actionBtnStyle(hasCenterPreset)}
               >
-                ✎ Edit
+                <PenLine size={11} /> Edit
               </button>
               <button onClick={onRemoveAnnotation} style={actionBtnStyle(true, true)}>
-                ✕ Remove
+                <X size={11} /> Remove
               </button>
             </Col>
           </Row>
@@ -196,9 +194,11 @@ export function DirectorNoteRow({
               ...actionBtnStyle(hasCenterPreset),
               width: '100%', justifyContent: 'center', padding: '5px',
               fontSize: 10,
+              background: 'transparent',
+              borderColor: 'rgba(255,255,255,0.08)',
             }}
           >
-            {hasCenterPreset ? '+ Draw annotation' : '⚠ Center preset required for annotation'}
+            {hasCenterPreset ? <><PenLine size={11} /> Draw annotation</> : 'Center preset required for annotation'}
           </button>
         )}
       </Col>
@@ -223,14 +223,15 @@ export function DirectorNoteRow({
   )
 }
 
-function iconBtnStyle(enabled, danger = false) {
+function iconBtnStyle(enabled, danger = false, active = false) {
   return {
-    padding: '2px 6px', borderRadius: 4, fontSize: 11,
-    fontFamily: 'Chakra Petch, sans-serif', fontWeight: 600,
+    width: 24, height: 22, borderRadius: 5, fontSize: 11,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontWeight: 600,
     cursor: enabled ? 'pointer' : 'not-allowed',
-    background: danger ? 'rgba(232,83,26,0.08)' : 'rgba(255,255,255,0.04)',
-    border: `1px solid ${danger ? 'rgba(232,83,26,0.25)' : 'rgba(255,255,255,0.1)'}`,
-    color: enabled ? (danger ? T.ember2 : T.text3) : T.text4,
+    background: active ? 'rgba(43,199,130,0.10)' : danger ? 'rgba(232,83,26,0.08)' : 'rgba(255,255,255,0.035)',
+    border: '1px solid rgba(255,255,255,0.075)',
+    color: enabled ? (active ? T.green : danger ? T.ember2 : T.text3) : T.text4,
     opacity: enabled ? 1 : 0.45,
   }
 }
@@ -239,7 +240,7 @@ function actionBtnStyle(enabled, danger = false) {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 4,
     padding: '3px 8px', borderRadius: 5, fontSize: 9,
-    fontFamily: 'Chakra Petch, sans-serif', fontWeight: 600,
+    fontFamily: 'Inter, Roboto, system-ui, sans-serif', fontWeight: 650,
     cursor: enabled ? 'pointer' : 'not-allowed',
     background: danger ? 'rgba(232,83,26,0.09)' : 'rgba(255,255,255,0.04)',
     border: `1px solid ${danger ? 'rgba(232,83,26,0.3)' : 'rgba(255,255,255,0.1)'}`,

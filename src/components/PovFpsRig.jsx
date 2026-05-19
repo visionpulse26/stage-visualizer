@@ -18,6 +18,7 @@ export function PovFpsRig({
   debugEnabled = false,
 }) {
   const { gl } = useThree()
+  const [lockWarning, setLockWarning] = useState('')
 
   const [locked, setLocked] = useState(() => document.pointerLockElement === gl.domElement)
   useEffect(() => {
@@ -28,12 +29,39 @@ export function PovFpsRig({
     return () => document.removeEventListener('pointerlockchange', sync)
   }, [gl])
 
-  if (!enabled) return null
+  useEffect(() => {
+    if (!enabled) return
+    const el = gl.domElement
+    const requestLock = () => {
+      setLockWarning('')
+      try {
+        const result = el.requestPointerLock?.()
+        if (result?.catch) {
+          result.catch((err) => {
+            console.warn('[POV] pointer lock denied', err)
+            setLockWarning('Browser denied mouse capture. Click the stage again, or try Chrome.')
+          })
+        }
+      } catch (err) {
+        console.warn('[POV] pointer lock denied', err)
+        setLockWarning('Browser denied mouse capture. Click the stage again, or try Chrome.')
+      }
+    }
+    const handlePointerLockError = () => {
+      setLockWarning('Browser denied mouse capture. Click the stage again, or try Chrome.')
+    }
+    el.addEventListener('click', requestLock)
+    document.addEventListener('pointerlockerror', handlePointerLockError)
+    return () => {
+      el.removeEventListener('click', requestLock)
+      document.removeEventListener('pointerlockerror', handlePointerLockError)
+    }
+  }, [enabled, gl])
 
   return (
     <>
       <Suspense fallback={null}>
-        <Physics gravity={[0, -18, 0]} timeStep={1 / 60} interpolate={false}>
+        <Physics gravity={[0, -18, 0]} timeStep={1 / 60} interpolate={false} paused={!enabled}>
           <PovStageColliders
             geofenceBox={geofenceBox}
             geofencePadding={geofencePadding}
@@ -57,20 +85,16 @@ export function PovFpsRig({
         </Physics>
       </Suspense>
 
-      {!locked && (
+      {enabled && !locked && (
         <Html fullscreen style={{ pointerEvents: 'none' }}>
           <div className="flex h-full w-full items-center justify-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                gl.domElement.requestPointerLock?.()
-              }}
-              className="pointer-events-auto px-5 py-3 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md text-[11px] font-semibold uppercase tracking-widest text-white/85 hover:bg-black/85 hover:border-violet-500/40 transition-all"
+            <div
+              className="px-5 py-3 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md text-center text-[11px] font-semibold uppercase tracking-widest text-white/85"
               style={{ fontFamily: "'Chakra Petch', sans-serif" }}
             >
               Click to capture mouse · WASD · Space jump · Q/E clips · 1–9 slot · P screenshot · Esc exit POV
-            </button>
+              {lockWarning && <div className="mt-2 text-[10px] normal-case tracking-normal text-amber-200">{lockWarning}</div>}
+            </div>
           </div>
         </Html>
       )}
