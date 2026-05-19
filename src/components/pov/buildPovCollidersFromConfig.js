@@ -16,8 +16,11 @@
  *   override === 'ignore'           →  skip (no collider)
  */
 
-const MIN_HALF = 0.02 // guard against zero-size colliders
-const MAX_STAGE_COLLIDERS = 600
+import { MIN_HALF, buildBlockerSubdivisions } from './povColliderUtils'
+
+const MAX_BLOCKER_SPECS_TOTAL = 1200
+const MAX_STAGE_COLLIDERS = 1800
+const MAX_HALF_EXTENT = 10000
 
 function isFiniteVec3(v) {
   return Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
@@ -27,22 +30,21 @@ function pushSpec(specs, spec) {
   if (specs.length >= MAX_STAGE_COLLIDERS) return false
   if (!isFiniteVec3(spec.position) || !isFiniteVec3(spec.halfExtents)) return true
   const halfExtents = spec.halfExtents.map((n) => Math.max(Math.abs(n), MIN_HALF))
-  if (halfExtents.some((n) => n > 10000)) return true
-  specs.push({
-    ...spec,
-    halfExtents,
-  })
+  if (halfExtents.some((n) => n > MAX_HALF_EXTENT)) return true
+  specs.push({ ...spec, halfExtents })
   return true
 }
 
 export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig = {}) {
   const overrides = povColliderConfig?.overrides ?? {}
   const specs = []
+  let blockerCount = 0
 
   for (const meta of meshMetadata) {
     if (!meta || !meta.size || !isFiniteVec3(meta.center)) continue
 
     const override = overrides[meta.id]
+    const hasExplicitOverride = override === 'floor' || override === 'blocker'
     const effectiveRole =
       override === undefined || override === 'auto'
         ? meta.suggestedRole
@@ -51,35 +53,50 @@ export function buildPovCollidersFromConfig(meshMetadata = [], povColliderConfig
     if (effectiveRole !== 'floor' && effectiveRole !== 'blocker') continue
 
     if (effectiveRole === 'floor' && Array.isArray(meta.floorTiles) && meta.floorTiles.length > 0) {
-      meta.floorTiles.forEach((tile, index) => {
-        pushSpec(specs, {
-          id: `${meta.id}_tile_${index}`,
-          type: 'floor',
+      for (let i = 0; i < meta.floorTiles.length; i++) {
+        const tile = meta.floorTiles[i]
+        const ok = pushSpec(specs, {
+          id: `${meta.id}_tile_${i}`,
+          type: hasExplicitOverride ? 'explicit-floor' : 'floor',
           position: tile.position,
           halfExtents: tile.halfExtents,
         })
-      })
+        if (!ok) break
+      }
+      continue
+    }
+
+    if (effectiveRole === 'blocker') {
+      const blockerParts = buildBlockerSubdivisions(meta)
+      for (const part of blockerParts) {
+        if (blockerCount >= MAX_BLOCKER_SPECS_TOTAL) break
+        const ok = pushSpec(specs, {
+          id: part.id,
+          type: hasExplicitOverride ? 'explicit-blocker' : 'blocker',
+          position: part.position,
+          halfExtents: part.halfExtents,
+        })
+        if (!ok) break
+        blockerCount += 1
+      }
       continue
     }
 
     pushSpec(specs, {
-      id:          meta.id,
-      type:        effectiveRole,
-      position:    meta.center,               // [x, y, z]
+      id:       meta.id,
+      type:     hasExplicitOverride ? `explicit-${effectiveRole}` : effectiveRole,
+      position: meta.center,
       halfExtents: [
         Math.max(meta.size.x * 0.5, MIN_HALF),
-        Math.max(
-          effectiveRole === 'floor' ? Math.min(meta.size.y * 0.5, 0.08) : meta.size.y * 0.5,
-          MIN_HALF,
-        ),
+        Math.max(Math.min(meta.size.y * 0.5, 0.08), MIN_HALF),
         Math.max(meta.size.z * 0.5, MIN_HALF),
       ],
     })
   }
 
   if (import.meta.env.DEV) {
-    const floors   = specs.filter(s => s.type === 'floor').length
-    const blockers = specs.filter(s => s.type === 'blocker').length
+    const floors   = specs.filter(s => s.type === 'floor' || s.type === 'explicit-floor').length
+    const blockers = specs.filter(s => s.type === 'blocker' || s.type === 'explicit-blocker').length
     console.log(`[buildPovCollidersFromConfig] ${specs.length} colliders → ${floors} floor / ${blockers} blocker`)
   }
 

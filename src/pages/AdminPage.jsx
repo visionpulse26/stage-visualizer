@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { fetchAndCacheAsset } from '../utils/secureAssetLoader'
 import StageCanvas from '../components/StageCanvas'
 import UIPanel     from '../components/UIPanel'
@@ -16,7 +17,19 @@ import { buildPovCollidersFromConfig } from '../components/pov/buildPovColliders
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
 
+const DEFAULT_STAGE_PREVIEW_CLIP = {
+  id: 'default-stage-preview',
+  name: 'Default LED Preview',
+  type: 'image',
+  external: true,
+  url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1920 1080%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 x2=%221%22 y1=%220%22 y2=%221%22%3E%3Cstop stop-color=%22%23ff2d00%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%23a60000%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff7a18%22/%3E%3C/linearGradient%3E%3Cpattern id=%22p%22 width=%2280%22 height=%2280%22 patternUnits=%22userSpaceOnUse%22 patternTransform=%22rotate(18)%22%3E%3Crect width=%2280%22 height=%2280%22 fill=%22url(%23g)%22/%3E%3Cpath d=%22M0 40h80M40 0v80%22 stroke=%22%23ffffff%22 stroke-opacity=%220.13%22 stroke-width=%226%22/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=%221920%22 height=%221080%22 fill=%22%23050000%22/%3E%3Crect x=%220%22 y=%220%22 width=%221920%22 height=%221080%22 fill=%22url(%23p)%22/%3E%3Ccircle cx=%22960%22 cy=%22540%22 r=%22280%22 fill=%22%23ffffff%22 fill-opacity=%220.08%22/%3E%3Ctext x=%22960%22 y=%22570%22 text-anchor=%22middle%22 font-family=%22Arial, sans-serif%22 font-size=%2268%22 font-weight=%22700%22 fill=%22%23fff2ec%22%3ESTAGE LED PREVIEW%3C/text%3E%3C/svg%3E',
+}
+
 function AdminPage() {
+  const navigate = useNavigate()
+  const { stageProjectId } = useParams()
+  const autoOpenedProjectRef = useRef(null)
+
   // ── Stage model ──────────────────────────────────────────────────────────
   const [stageFile,    setStageFile]    = useState(null)
   const [stageUrl,     setStageUrl]     = useState(null)   // local blob preview (from file)
@@ -56,6 +69,7 @@ function AdminPage() {
   // ── Epic 1 — Audience POV ────────────────────────────────────────────────────
   const [povHeightOffset, setPovHeightOffset] = useState(1.7)
   const [povMode, setPovMode] = useState(false)
+  const [povDebug, setPovDebug] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
   // Collider manager: meshes scanned from loaded model + admin config overrides
   const [meshMetadata, setMeshMetadata]           = useState([])
@@ -63,6 +77,7 @@ function AdminPage() {
   const savedOrbitRef = useRef(null)
   const povModeRef = useRef(false)
   const povExitInProgressRef = useRef(false)
+  const povTransitionAbortRef = useRef(null)
   useEffect(() => {
     povModeRef.current = povMode
   }, [povMode])
@@ -97,6 +112,7 @@ function AdminPage() {
   const [projectName,   setProjectName]   = useState('')
   const [versionStatus, setVersionStatus] = useState('')
   const [embedEnabled,  setEmbedEnabled]  = useState(false)
+  const [embedToken,    setEmbedToken]    = useState(null)
 
   // ── Scene config — environment, HDRI, bloom ──────────────────────────────
   const [hdriPreset,    setHdriPreset]    = useState('none')
@@ -141,6 +157,16 @@ function AdminPage() {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
   const [cloneToast, setCloneToast] = useState(null)
 
+  const ensureDefaultPreviewClip = useCallback(() => {
+    setVideoPlaylist([DEFAULT_STAGE_PREVIEW_CLIP])
+    setVideoElement(null)
+    setActiveImageUrl(DEFAULT_STAGE_PREVIEW_CLIP.url)
+    setActiveVideoId(DEFAULT_STAGE_PREVIEW_CLIP.id)
+    setVideoLoaded(true)
+    setIsPlaying(false)
+    clipCountRef.current = 1
+  }, [])
+
   // ── Resolve external stage URL through cache for 3D preview ─────────────────
   const isRemote = useCallback(
     (u) => u && (u.startsWith('http://') || u.startsWith('https://')),
@@ -167,6 +193,10 @@ function AdminPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    ensureDefaultPreviewClip()
+  }, [ensureDefaultPreviewClip])
 
   // ── Enumerate available cameras on mount ─────────────────────────────────
   useEffect(() => {
@@ -496,6 +526,7 @@ function AdminPage() {
       const { putUrl, publicUrl } = await getPresignedUploadUrl({
         filename: file.name,
         contentType: file.type || 'application/octet-stream',
+        contentLength: file.size,
         projectId: publishedId || undefined,
         type: 'media',
       })
@@ -545,6 +576,7 @@ function AdminPage() {
       const { putUrl, publicUrl } = await getPresignedUploadUrl({
         filename: file.name,
         contentType: file.type || 'application/octet-stream',
+        contentLength: file.size,
         projectId: publishedId || undefined,
         type: 'hdri',
       })
@@ -613,6 +645,8 @@ function AdminPage() {
 
   const exitPovMode = useCallback(async () => {
     if (!povModeRef.current || povExitInProgressRef.current) return
+    povTransitionAbortRef.current?.abort()
+    povTransitionAbortRef.current = null
     povExitInProgressRef.current = true
     try {
       if (document.pointerLockElement) document.exitPointerLock()
@@ -661,13 +695,20 @@ function AdminPage() {
     const snap = captureOrbitState(ctrl)
     if (!snap) return
     savedOrbitRef.current = snap
+    povTransitionAbortRef.current?.abort()
+    const transition = new AbortController()
+    povTransitionAbortRef.current = transition
     try {
-      glDomElementRef.current?.requestPointerLock?.()
-    } catch (_) {}
-    await enterPovMode(ctrl, modelMetrics, povHeightOffset)
-    ctrl.disconnect()
-    povModeRef.current = true
-    setPovMode(true)
+      await enterPovMode(ctrl, modelMetrics, povHeightOffset, { signal: transition.signal })
+      if (transition.signal.aborted) return
+      ctrl.disconnect()
+      povModeRef.current = true
+      setPovMode(true)
+    } catch (err) {
+      if (err?.name !== 'AbortError') throw err
+    } finally {
+      if (povTransitionAbortRef.current === transition) povTransitionAbortRef.current = null
+    }
   }, [povMode, exitPovMode, modelMetrics, povHeightOffset])
 
   const handlePovScreenshot = useCallback(() => {
@@ -690,6 +731,8 @@ function AdminPage() {
   })
 
   const resetPovSession = useCallback(() => {
+    povTransitionAbortRef.current?.abort()
+    povTransitionAbortRef.current = null
     if (document.pointerLockElement) {
       try { document.exitPointerLock() } catch (_) {}
     }
@@ -699,6 +742,7 @@ function AdminPage() {
     povExitInProgressRef.current = false
     povModeRef.current = false
     setPovMode(false)
+    setPovDebug(false)
     setMeshMetadata([])
   }, [])
 
@@ -757,17 +801,12 @@ function AdminPage() {
     setIsPlaying(false)
     setCameraPresets(p.camera_presets || [])
     setGridCellSize(p.grid_cell_size ?? 1)
-    setPovHeightOffset(
-      typeof p.pov_height_offset === 'number'
-        ? p.pov_height_offset
-        : typeof p.scene_config?.povHeightOffset === 'number'
-          ? p.scene_config.povHeightOffset
-          : 1.7,
-    )
+    setPovHeightOffset(typeof p.pov_height_offset === 'number' ? p.pov_height_offset : 1.7)
     setPublishedId(p.id)
     setProjectName(p.name || '')
     setVersionStatus(p.scene_config?.versionStatus ?? '')
     setEmbedEnabled(p.embed_enabled ?? false)
+    setEmbedToken(p.embed_token ?? null)
     setPublishStatus(null)
     setPublishError(null)
     setIsDashboardOpen(false)
@@ -841,36 +880,14 @@ function AdminPage() {
       setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
     }
 
-    // Restore full media playlist from fresh refetch (multi-admin sync), or fall back to legacy single video_url
-    if (p.media_playlist && p.media_playlist.length > 0) {
-      const restored = p.media_playlist.map((item, i) => ({
-        id:       Date.now() + i,
-        name:     item.name,
-        url:      item.url,
-        type:     item.type,
-        external: true,
-      }))
-      clipCountRef.current = restored.length
-      setVideoPlaylist(restored)
+    ensureDefaultPreviewClip()
+  }, [stageUrl, isRemote, resetPovSession, ensureDefaultPreviewClip])
 
-      // Auto-activate the first clip
-      const first = restored[0]
-      if (first.type === 'image') {
-        setActiveImageUrl(first.url)
-        setActiveVideoId(first.id)
-        setVideoLoaded(true)
-        setIsPlaying(false)
-      } else {
-        activateVideo(first.id, first.url)
-      }
-    } else if (p.video_url) {
-      const id = Date.now()
-      clipCountRef.current = 1
-      const clip = { id, name: 'Cloud Video', url: p.video_url, type: 'video', external: true }
-      setVideoPlaylist([clip])
-      activateVideo(id, p.video_url)
-    }
-  }, [stageUrl, activateVideo, isRemote, resetPovSession])
+  useEffect(() => {
+    if (!stageProjectId || autoOpenedProjectRef.current === stageProjectId) return
+    autoOpenedProjectRef.current = stageProjectId
+    handleOpenProject({ id: stageProjectId })
+  }, [stageProjectId, handleOpenProject])
 
   // ── Clone as New Round (from Publish panel) ───────────────────────────────
   const handleCloneAsNewRound = useCallback(async () => {
@@ -914,6 +931,28 @@ function AdminPage() {
   // ── Publish ──────────────────────────────────────────────────────────────
   const canPublish = !!(stageFile || cloudStageUrl)
 
+  const handleRegenerateEmbedToken = useCallback(async () => {
+    if (!publishedId) return
+    if (!window.confirm('Regenerate embed link? Old iframe URLs will stop working.')) return
+    const newTok = crypto.randomUUID()
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ embed_token: newTok })
+      .eq('id', publishedId)
+      .select('embed_token')
+      .single()
+    if (error) {
+      alert('Failed to rotate embed token: ' + error.message)
+      return
+    }
+    setEmbedToken(data?.embed_token ?? newTok)
+  }, [publishedId])
+
+  const openPresentationEditor = useCallback(() => {
+    if (!publishedId) return
+    navigate(`/admin/${publishedId}/presentation`)
+  }, [navigate, publishedId])
+
   const handlePublish = useCallback(async ({ videoInputMode, externalVideoUrl }) => {
     if (!stageFile && !cloudStageUrl) return
 
@@ -934,43 +973,14 @@ function AdminPage() {
         const { putUrl, publicUrl } = await getPresignedUploadUrl({
           filename: stageFile.name || 'stage.glb',
           contentType: stageFile.type || 'model/gltf-binary',
+          contentLength: stageFile.size,
           projectId,
           type: 'stage',
         })
         finalStageUrl = await uploadFileToPresignedUrl(putUrl, stageFile, publicUrl, null)
       }
 
-      // 2. Upload ALL playlist items (videos + images) to Supabase Storage.
-      //    Each clip gets its own path: {projectId}/media/{index}_{sanitised_name}.{ext}
-      //    External / already-cloud URLs are kept as-is.
-      const mediaPlaylist = []
-      for (let i = 0; i < videoPlaylist.length; i++) {
-        const clip = videoPlaylist[i]
-        let cloudUrl = clip.url
-
-        if (clip.file && !clip.external) {
-          const ext       = clip.file.name.split('.').pop() || (clip.type === 'image' ? 'png' : 'mp4')
-          const safeName  = clip.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-          const mediaPath = `${projectId}/media/${i}_${safeName}`
-          const { error: mediaErr } = await supabase.storage
-            .from('projects')
-            .upload(mediaPath, clip.file, { upsert: true })
-          if (mediaErr) throw new Error(`Media upload failed (${clip.name}): ${mediaErr.message}`)
-          const { data: mediaPublic } = supabase.storage.from('projects').getPublicUrl(mediaPath)
-          cloudUrl = mediaPublic.publicUrl
-        }
-
-        mediaPlaylist.push({
-          name: clip.name,
-          url:  cloudUrl,
-          type: clip.type,
-          external: clip.external || false,
-        })
-      }
-
-      // Keep legacy video_url pointing to the first video for backwards compatibility
-      const firstVideo = mediaPlaylist.find(c => c.type === 'video')
-      const finalVideoUrl = firstVideo ? firstVideo.url : null
+      const finalVideoUrl = null
 
       // 3. HDRI
       const finalHdriUrl = (customHdriUrl && !customHdriUrl.startsWith('blob:'))
@@ -1001,7 +1011,6 @@ function AdminPage() {
         autoplayIntervalSeconds: autoplayIntervalSeconds,
         cameraFlyDurationSeconds: cameraFlyDurationSeconds,
         versionStatus: versionStatus || '',
-        povHeightOffset: povHeightOffset,
         povColliderConfig: povColliderConfig,
       }
 
@@ -1012,29 +1021,26 @@ function AdminPage() {
         id:              projectId,
         stage_url:       finalStageUrl,
         video_url:       finalVideoUrl,
-        media_playlist:  mediaPlaylist,
+        media_playlist:  [],
         camera_presets:  cameraPresets,
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
         scene_config,
-        embed_enabled:   embedEnabled,
         pov_height_offset: povHeightOffset,
+        embed_enabled:   embedEnabled,
       }
 
-      let { error: dbErr } = await supabase.from('projects').upsert(record)
-      if (dbErr && /pov_height_offset/i.test(dbErr.message || '')) {
-        const { pov_height_offset, ...recordWithoutPovColumn } = record
-        ;({ error: dbErr } = await supabase.from('projects').upsert(recordWithoutPovColumn))
-      }
+      const { error: dbErr } = await supabase.from('projects').upsert(record)
       if (dbErr) throw new Error(`Database save failed: ${dbErr.message}`)
 
-      // Mark playlist clips as cloud-backed so re-publish won't re-upload
-      setVideoPlaylist(prev => prev.map((clip, i) => ({
-        ...clip,
-        url:      mediaPlaylist[i]?.url ?? clip.url,
-        external: true,
-        file:     undefined,
-      })))
+      const { data: tokRow } = await supabase
+        .from('projects')
+        .select('embed_token')
+        .eq('id', projectId)
+        .single()
+      if (tokRow?.embed_token) setEmbedToken(tokRow.embed_token)
+
+      ensureDefaultPreviewClip()
 
       setPublishedId(projectId)
       setCloudStageUrl(finalStageUrl)
@@ -1046,10 +1052,10 @@ function AdminPage() {
     } finally {
       setIsPublishing(false)
     }
-  }, [stageFile, cloudStageUrl, publishedId, videoPlaylist, activeVideoId, cameraPresets, gridCellSize, projectName,
+  }, [stageFile, cloudStageUrl, publishedId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
       bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus,
-      embedEnabled, povHeightOffset, povColliderConfig])
+      povHeightOffset, povColliderConfig, embedEnabled, ensureDefaultPreviewClip])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))
@@ -1074,6 +1080,7 @@ function AdminPage() {
         onMeshScanChange={setMeshMetadata}
         stageColliders={povColliderSpecs}
         povMode={povMode}
+        povDebug={povDebug}
         povHeightOffset={povHeightOffset}
         onPovExitRequest={exitPovMode}
         hdriPreset={hdriPreset}
@@ -1131,6 +1138,7 @@ function AdminPage() {
           onCameraFlyDurationChange={setCameraFlyDurationSeconds}
           onSaveAutoplayConfig={handleSaveAutoplayConfig}
           onPublish={handlePublish}
+          onOpenPresentation={openPresentationEditor}
           canPublish={canPublish}
           isPublishing={isPublishing}
           publishStatus={publishStatus}
@@ -1145,6 +1153,8 @@ function AdminPage() {
           cloneToast={cloneToast}
           embedEnabled={embedEnabled}
           onEmbedEnabledChange={setEmbedEnabled}
+          embedToken={embedToken}
+          onRegenerateEmbedToken={handleRegenerateEmbedToken}
           hdriPreset={hdriPreset}          onHdriPresetChange={setHdriPreset}
           hdriLoading={hdriLoading}
           hdriError={hdriError}
@@ -1197,11 +1207,26 @@ function AdminPage() {
         )}
 
         {povMode && (
+          <button
+            type="button"
+            onClick={() => setPovDebug((v) => !v)}
+            className={`fixed top-14 right-36 z-[5000] px-3 py-2 rounded-xl border text-[10px] font-semibold uppercase tracking-widest transition-all backdrop-blur-sm ${
+              povDebug
+                ? 'bg-emerald-500/20 border-emerald-500/45 text-emerald-100'
+                : 'bg-black/45 border-white/15 text-white/65 hover:text-white hover:border-emerald-500/40'
+            }`}
+            style={{ fontFamily: "'Chakra Petch', sans-serif" }}
+          >
+            {povDebug ? 'Debug ON' : 'Debug OFF'}
+          </button>
+        )}
+
+        {povMode && (
           <div
             className="pointer-events-none fixed bottom-6 left-1/2 z-[5001] max-w-[min(100%,36rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-black/55 px-4 py-2 text-center text-[10px] text-white/50"
             style={{ fontFamily: "'Chakra Petch', sans-serif" }}
           >
-            Q / E — prev · next clip · 1–9 — slot · P — screenshot · Esc — exit POV
+            Q / E — prev · next clip · 1-9 — slot · P — screenshot · Esc — exit POV · Debug toggle on top-right
           </div>
         )}
       </StageCanvas>

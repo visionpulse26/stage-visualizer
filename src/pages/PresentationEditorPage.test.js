@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { test } from 'node:test'
+
+const root = new URL('../../', import.meta.url)
+const read = (path) => readFileSync(new URL(path, root), 'utf8')
+
+test('presentation editor + Clip uploads multiple video and image files', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /CLIP_UPLOAD_ACCEPT/)
+  assert.match(page, /\.mp4,\.webm,\.mov,\.webp,\.png,\.jpg,\.jpeg,\.gif/)
+  assert.match(page, /type="file"[\s\S]*multiple/)
+  assert.match(page, /handleUploadClips/)
+  assert.match(page, /Array\.from\(filesLike \?\? \[\]\)/)
+  assert.match(page, /validatePresentationMediaFile\(file\)/)
+  assert.match(page, /getPresignedUploadUrl\(\{[\s\S]*contentLength:\s*file\.size[\s\S]*type:\s*'media'/)
+  assert.match(page, /uploadFileToPresignedUrl\(putUrl, file, publicUrl/)
+  assert.match(page, /makeUploadedClip\(file, finalUrl, nextClipNumber\)/)
+  assert.match(page, /makeSlideFromClip\(clip, baseSlides\.length \+ i, cameraPresets\)/)
+  assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(nextPlaylist\)/)
+})
+
+test('presentation editor + Clip button opens file picker instead of adding a blank slide', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /clipUploadInputRef\.current\?\.click\(\)/)
+  assert.match(page, /onAdd=\{openClipUploadPicker\}/)
+  assert.doesNotMatch(page, /onAdd=\{addSlide\}/)
+})

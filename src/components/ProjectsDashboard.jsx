@@ -2,16 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-const IconX          = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-const IconCopy       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-const IconEdit       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-const IconTrash      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
-const IconFolderOpen = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/></svg>
-const IconClone      = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-const IconLock       = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-const IconUnlock     = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-const IconChevron    = ({ down }) => <svg className={`w-4 h-4 transition-transform ${down ? '' : '-rotate-90'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
-const IconRefresh    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+const IconX       = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+const IconCopy    = () => <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+const IconEdit    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+const IconTrash   = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+const IconClone   = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+const IconLock    = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+const IconUnlock  = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+const IconChevron = ({ down }) => <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${down ? '' : '-rotate-90'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+const IconRefresh = () => <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(str) {
@@ -35,7 +34,7 @@ function Spinner() {
   return (
     <div className="relative w-8 h-8 mx-auto">
       <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-      <div className="absolute inset-0 rounded-full border-2 border-t-violet-400 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+      <div className="absolute inset-0 rounded-full border-2 border-t-orange-400 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
     </div>
   )
 }
@@ -48,37 +47,35 @@ function ErrorBanner({ msg }) {
   )
 }
 
-// Inline toast shown above the list on delete/rename errors
 function Toast({ msg, type = 'error', onDismiss }) {
   if (!msg) return null
   const colors = type === 'error'
     ? 'bg-red-500/15 border-red-500/30 text-red-300'
     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
   return (
-    <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs mb-3 ${colors}`}>
+    <div className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-xs mb-3 ${colors}`}>
       <span className="flex-1">{msg}</span>
-      <button onClick={onDismiss} className="opacity-60 hover:opacity-100 flex-shrink-0 mt-0.5">✕</button>
+      <button onClick={onDismiss} className="opacity-60 hover:opacity-100 flex-shrink-0">✕</button>
     </div>
   )
 }
 
 // ── Projects Tab ──────────────────────────────────────────────────────────────
 function ProjectsTab({ onOpenProject, onClose }) {
-  const [projects,    setProjects]    = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState(null)
-  const [toast,       setToast]       = useState(null)   // { msg, type }
-  const [editingId,   setEditingId]   = useState(null)
-  const [editingName, setEditingName] = useState('')
-  const [confirmId,   setConfirmId]   = useState(null)
-  const [deletingId,  setDeletingId]  = useState(null)
-  const [cloningId,   setCloningId]   = useState(null)
-  const [copied,      setCopied]      = useState(null)
-  const [expandedGroups, setExpandedGroups] = useState(new Set()) // group keys
+  const [projects,       setProjects]       = useState([])
+  const [loading,        setLoading]        = useState(true)
+  const [error,          setError]          = useState(null)
+  const [toast,          setToast]          = useState(null)
+  const [editingId,      setEditingId]      = useState(null)
+  const [editingName,    setEditingName]    = useState('')
+  const [confirmId,      setConfirmId]      = useState(null)
+  const [deletingId,     setDeletingId]     = useState(null)
+  const [cloningId,      setCloningId]      = useState(null)
+  const [copied,         setCopied]         = useState(null)
+  const [expandedGroups, setExpandedGroups] = useState(new Set())
 
   const baseUrl = import.meta.env.VITE_APP_URL ?? window.location.origin
 
-  // Group projects by group_id (cloned rounds share same group)
   const groupedProjects = useMemo(() => {
     const byKey = {}
     for (const p of projects) {
@@ -107,14 +104,12 @@ function ProjectsTab({ onOpenProject, onClose }) {
     })
   }, [])
 
-  // ── Load — extracted so it can be called after mutations ─────────────────
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     const { data, error: err } = await supabase
       .from('projects')
       .select('id, name, created_at, video_url, stage_url, camera_presets, grid_cell_size, scene_config, media_playlist, group_id, is_client_locked')
       .order('created_at', { ascending: false })
-
     if (err) { setError(err.message); setLoading(false); return }
     setProjects(data || [])
     setLoading(false)
@@ -131,12 +126,10 @@ function ProjectsTab({ onOpenProject, onClose }) {
   const handleRenameCommit = useCallback(async (id) => {
     const trimmed = editingName.trim()
     if (!trimmed) { setEditingId(null); return }
-    // Optimistic update
     setProjects(prev => prev.map(p => p.id === id ? { ...p, name: trimmed } : p))
     setEditingId(null)
     const { error: err } = await supabase.from('projects').update({ name: trimmed }).eq('id', id)
     if (err) {
-      // Roll back optimistic update and show error
       setToast({ msg: `Rename failed: ${err.message}`, type: 'error' })
       await load()
     }
@@ -151,25 +144,15 @@ function ProjectsTab({ onOpenProject, onClose }) {
         p_source_id: project.id,
         p_new_name: name.trim(),
       })
-      if (rpcErr) {
-        setToast({ msg: `Clone failed: ${rpcErr.message}`, type: 'error' })
-        return
-      }
-      if (!newId) {
-        setToast({ msg: 'Clone failed: source project not found.', type: 'error' })
-        return
-      }
+      if (rpcErr) { setToast({ msg: `Clone failed: ${rpcErr.message}`, type: 'error' }); return }
+      if (!newId) { setToast({ msg: 'Clone failed: source project not found.', type: 'error' }); return }
       const { data: newProject, error: fetchErr } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', newId)
-        .single()
+        .from('projects').select('*').eq('id', newId).single()
       if (fetchErr || !newProject) {
         setToast({ msg: 'Cloned but failed to load. Refresh the list.', type: 'error' })
-        await load()
-        return
+        await load(); return
       }
-      setToast({ msg: 'Project cloned successfully. Ready for new media assets.', type: 'success' })
+      setToast({ msg: 'Project cloned successfully.', type: 'success' })
       onOpenProject(newProject)
       onClose?.()
     } catch (err) {
@@ -181,43 +164,19 @@ function ProjectsTab({ onOpenProject, onClose }) {
 
   const handleDelete = useCallback(async (project) => {
     setDeletingId(project.id); setConfirmId(null); setToast(null)
-
     try {
-      // 1. Safe delete: only remove storage if no other project (e.g. cloned round) references it
       const { data: canDelete, error: checkErr } = await supabase.rpc('can_safely_delete_storage', {
         p_project_id: project.id,
       })
-      if (checkErr) {
-        setToast({ msg: `Delete check failed: ${checkErr.message}`, type: 'error' })
-        return
-      }
+      if (checkErr) { setToast({ msg: `Delete check failed: ${checkErr.message}`, type: 'error' }); return }
       if (canDelete) {
-        const { data: files, error: listErr } = await supabase.storage
-          .from('projects')
-          .list(project.id)
+        const { data: files, error: listErr } = await supabase.storage.from('projects').list(project.id)
         if (!listErr && files && files.length > 0) {
-          const paths = files.map(f => `${project.id}/${f.name}`)
-          await supabase.storage.from('projects').remove(paths)
+          await supabase.storage.from('projects').remove(files.map(f => `${project.id}/${f.name}`))
         }
       }
-      // If !canDelete: skip storage deletion — another project (cloned round) references these assets
-
-      // 2. Delete the database row — explicitly check the error object.
-      //    Supabase does NOT throw on RLS violations; it returns { error }.
-      const { error: dbErr } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', project.id)
-
-      if (dbErr) {
-        setToast({
-          msg: `Delete failed: ${dbErr.message}. Check Supabase RLS (see SQL below).`,
-          type: 'error',
-        })
-        return
-      }
-
-      // 3. Re-fetch from DB — source of truth, not filtered local state
+      const { error: dbErr } = await supabase.from('projects').delete().eq('id', project.id)
+      if (dbErr) { setToast({ msg: `Delete failed: ${dbErr.message}`, type: 'error' }); return }
       await load()
       setToast({ msg: `"${project.name || 'Untitled'}" deleted.`, type: 'success' })
     } catch (err) {
@@ -239,13 +198,14 @@ function ProjectsTab({ onOpenProject, onClose }) {
     }
   }, [load])
 
-  const renderProjectCard = useCallback((p) => (
+  // ── Flat project row (replaces heavy card) ────────────────────────────────
+  const renderProjectRow = useCallback((p) => (
     <div
       key={p.id}
-      className="bg-white/4 hover:bg-white/6 border border-white/8 rounded-xl p-3.5 space-y-2.5 transition-all"
+      className="group flex items-center gap-3 px-3 py-2.5 hover:bg-orange-500/[0.07] transition-colors"
     >
-      {/* Name row */}
-      <div className="flex items-center gap-2">
+      {/* Title + meta */}
+      <div className="flex-1 min-w-0">
         {editingId === p.id ? (
           <input
             autoFocus
@@ -256,103 +216,126 @@ function ProjectsTab({ onOpenProject, onClose }) {
               if (e.key === 'Enter') handleRenameCommit(p.id)
               if (e.key === 'Escape') setEditingId(null)
             }}
-            className="flex-1 bg-white/8 border border-white/15 rounded-lg px-2.5 py-1 text-sm text-white/90 focus:outline-none focus:border-violet-500/50"
+            onClick={e => e.stopPropagation()}
+            className="w-full bg-white/[0.08] border border-orange-500/30 rounded px-2 py-0.5 text-sm text-white/95 focus:outline-none focus:border-orange-500/60"
           />
         ) : (
-          <span className="flex-1 text-sm font-medium text-white/80 truncate">
+          <span className="block text-sm font-semibold text-white/95 truncate">
             {p.name || <span className="text-amber-400/70 italic">Untitled</span>}
           </span>
         )}
-        <button
-          onClick={() => { setEditingId(p.id); setEditingName(p.name || '') }}
-          className="p-1.5 rounded-lg hover:bg-white/10 text-white/25 hover:text-white/60 transition-all"
-          title="Rename"
-        >
-          <IconEdit />
-        </button>
-        <button
-          onClick={() => handleClone(p)}
-          disabled={cloningId === p.id}
-          className="p-1.5 rounded-lg hover:bg-white/10 text-white/25 hover:text-white/60 transition-all disabled:opacity-50"
-          title="Republish as New Round (reuses stage & HDRI, empty media)"
-        >
-          <IconClone />
-        </button>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[10px] text-white/52">Created {fmtDate(p.created_at)}</span>
+          <span
+            className="text-[9px] text-white/20 font-mono group-hover:text-white/38 transition-colors"
+            title={p.id}
+          >
+            {p.id.slice(0, 8)}…
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); handleCopy(p.id, `id-${p.id}`) }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-white/40 hover:text-white/70"
+            title="Copy project ID"
+          >
+            {copied === `id-${p.id}`
+              ? <span className="text-emerald-400 text-[9px] font-medium">✓</span>
+              : <IconCopy />}
+          </button>
+        </div>
       </div>
 
-      {/* Meta */}
-      <p className="text-[10px] text-white/25 font-mono truncate">{p.id}</p>
-      <p className="text-[11px] text-white/30">Created {fmtDate(p.created_at)}</p>
-
-      {/* Copy links + Lock */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* Copy link chips */}
+      <div className="flex items-center gap-1 flex-shrink-0">
         {[
           { key: `collab-${p.id}`, label: 'Collab', path: `/collab/${p.id}` },
           { key: `view-${p.id}`,   label: 'View',   path: `/view/${p.id}` },
         ].map(({ key, label, path }) => (
           <button
             key={key}
-            onClick={() => handleCopy(`${baseUrl}${path}`, key)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 hover:text-white/70 text-[10px] transition-all"
+            onClick={e => { e.stopPropagation(); handleCopy(`${baseUrl}${path}`, key) }}
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.07] hover:bg-orange-500/[0.15] border border-white/[0.12] text-white/55 hover:text-orange-300 text-[9px] transition-all"
           >
-            {copied === key ? <span className="text-emerald-400">✓</span> : <IconCopy />}
+            {copied === key ? <span className="text-emerald-400">✓</span> : null}
             {label}
           </button>
         ))}
-        <button
-          onClick={() => handleToggleLock(p)}
-          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] transition-all ${
-            p.is_client_locked
-              ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-              : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70'
-          }`}
-          title={p.is_client_locked ? 'Unlock client link' : 'Lock client link (403 for external visitors)'}
-        >
-          {p.is_client_locked ? <IconLock /> : <IconUnlock />}
-          {p.is_client_locked ? 'Locked' : 'Lock'}
-        </button>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-1.5 pt-1 border-t border-white/5">
+      {/* Lock toggle — I/O pill, always visible */}
+      <button
+        onClick={e => { e.stopPropagation(); handleToggleLock(p) }}
+        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium transition-all flex-shrink-0 border ${
+          p.is_client_locked
+            ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30'
+            : 'bg-white/[0.05] border-white/[0.12] text-white/38 hover:text-white/62 hover:border-white/22'
+        }`}
+        title={p.is_client_locked ? 'Click to unlock' : 'Click to lock client link'}
+      >
+        {p.is_client_locked ? <><IconLock /> Locked</> : <IconUnlock />}
+      </button>
+
+      {/* Open Stage CTA — always visible, primary orange */}
+      <button
+        onClick={e => { e.stopPropagation(); onOpenProject(p) }}
+        className="flex items-center gap-1 px-3 py-1 rounded-lg bg-orange-500/20 hover:bg-orange-500/35 border border-orange-500/35 text-orange-300 text-xs font-semibold transition-all flex-shrink-0"
+      >
+        Open
+      </button>
+
+      {/* Ghost management — hover only, always visible during confirm */}
+      <div className={`flex items-center gap-0.5 flex-shrink-0 transition-opacity ${confirmId === p.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
         <button
-          onClick={() => onOpenProject(p)}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/20 text-violet-300 text-xs font-medium transition-all"
+          onClick={e => { e.stopPropagation(); handleClone(p) }}
+          disabled={cloningId === p.id}
+          className="p-1.5 rounded hover:bg-white/8 text-white/45 hover:text-white/75 transition-all disabled:opacity-40"
+          title="Clone as new round"
         >
-          <IconFolderOpen />Open
+          {cloningId === p.id ? <span className="text-[10px]">…</span> : <IconClone />}
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setEditingId(p.id); setEditingName(p.name || '') }}
+          className="p-1.5 rounded hover:bg-white/8 text-white/45 hover:text-white/75 transition-all"
+          title="Rename"
+        >
+          <IconEdit />
         </button>
         {confirmId === p.id ? (
-          <div className="flex gap-1">
+          <>
             <button
-              onClick={() => handleDelete(p)}
+              onClick={e => { e.stopPropagation(); handleDelete(p) }}
               disabled={deletingId === p.id}
-              className="px-2.5 py-1.5 rounded-lg bg-red-500/25 hover:bg-red-500/35 border border-red-500/30 text-red-300 text-xs font-medium transition-all disabled:opacity-50"
+              className="px-2 py-1 rounded bg-red-500/25 hover:bg-red-500/35 border border-red-500/28 text-red-300 text-[10px] font-medium transition-all disabled:opacity-50 ml-0.5"
             >
-              {deletingId === p.id ? '…' : 'Yes, Delete'}
+              {deletingId === p.id ? '…' : 'Delete'}
             </button>
             <button
-              onClick={() => setConfirmId(null)}
-              className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 text-xs transition-all"
+              onClick={e => { e.stopPropagation(); setConfirmId(null) }}
+              className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-white/35 text-[10px] transition-all"
             >
-              Cancel
+              ✕
             </button>
-          </div>
+          </>
         ) : (
           <button
-            onClick={() => setConfirmId(p.id)}
+            onClick={e => { e.stopPropagation(); setConfirmId(p.id) }}
             disabled={deletingId === p.id}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/8 hover:bg-red-500/18 border border-red-500/15 text-red-400/60 hover:text-red-400 text-xs transition-all disabled:opacity-40"
-            title="Delete project"
+            className="p-1.5 rounded hover:bg-red-500/15 text-white/42 hover:text-red-400 transition-all disabled:opacity-40"
+            title="Delete"
           >
-            {deletingId === p.id ? '…' : <IconTrash />}
+            {deletingId === p.id ? <span className="text-[10px]">…</span> : <IconTrash />}
           </button>
         )}
       </div>
     </div>
-  ), [editingId, editingName, confirmId, deletingId, cloningId, copied, handleRenameCommit, handleClone, handleCopy, handleDelete, handleToggleLock, onOpenProject])
+  ), [editingId, editingName, confirmId, deletingId, cloningId, copied, baseUrl, handleRenameCommit, handleClone, handleCopy, handleDelete, handleToggleLock, onOpenProject])
 
-  if (loading) return <div className="py-10 flex flex-col items-center gap-4"><Spinner /><p className="text-white/30 text-xs">Loading projects…</p></div>
-  if (error)   return (
+  if (loading) return (
+    <div className="py-10 flex flex-col items-center gap-4">
+      <Spinner />
+      <p className="text-white/30 text-xs">Loading projects…</p>
+    </div>
+  )
+  if (error) return (
     <div className="space-y-3">
       <ErrorBanner msg={error} />
       <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-all">
@@ -368,54 +351,59 @@ function ProjectsTab({ onOpenProject, onClose }) {
   )
 
   return (
-    <div className="space-y-2">
+    <div>
       <Toast msg={toast?.msg} type={toast?.type} onDismiss={() => setToast(null)} />
+      <div className="divide-y divide-white/[0.08]">
+        {groupedProjects.map(({ key, members }) => {
+          const root = members[0]
+          const isStack = members.length > 1
+          const isExpanded = expandedGroups.has(key)
 
-      {groupedProjects.map(({ key, members }) => {
-        const root = members[0]
-        const isStack = members.length > 1
-        const isExpanded = expandedGroups.has(key)
+          if (!isStack) {
+            return <div key={key}>{renderProjectRow(root)}</div>
+          }
 
-        if (!isStack) {
-          return <div key={key}>{renderProjectCard(root)}</div>
-        }
+          return (
+            <div key={key}>
+              {/* Group accordion header — no box border, just tint on hover */}
+              <button
+                onClick={() => toggleGroup(key)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-orange-500/[0.07] transition-colors text-left"
+              >
+                <span className="text-white/50"><IconChevron down={isExpanded} /></span>
+                <span className="flex-1 text-sm font-semibold text-white/90 truncate">
+                  {root.name || <span className="text-amber-400/70 italic">Untitled</span>}
+                </span>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-500/[0.12] border border-orange-500/[0.20] text-orange-300/70 font-medium flex-shrink-0">
+                  {members.length} rounds
+                </span>
+              </button>
 
-        return (
-          <div key={key} className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-            <button
-              onClick={() => toggleGroup(key)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
-            >
-              <IconChevron down={isExpanded} />
-              <span className="flex-1 text-sm font-medium text-white/80 truncate">
-                {root.name || <span className="text-amber-400/70 italic">Untitled</span>}
-              </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/40">
-                {members.length} round{members.length > 1 ? 's' : ''}
-              </span>
-            </button>
-            {isExpanded && (
-              <div className="border-t border-white/5 p-2 space-y-2">
-                {members.map(p => renderProjectCard(p))}
-              </div>
-            )}
-          </div>
-        )
-      })}
+              {/* Expanded sub-rows — indented with left border accent */}
+              {isExpanded && (
+                <div className="border-l border-orange-500/[0.25] ml-5 divide-y divide-white/[0.08]">
+                  {members.map(p => (
+                    <div key={p.id}>{renderProjectRow(p)}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 // ── Media Storage Tab ─────────────────────────────────────────────────────────
 function MediaStorageTab({ projectNames }) {
-  const [folders,     setFolders]     = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState(null)
-  const [toast,       setToast]       = useState(null)
-  const [confirmFile, setConfirmFile] = useState(null)   // { path, folderId, fileName }
+  const [folders,      setFolders]      = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState(null)
+  const [toast,        setToast]        = useState(null)
+  const [confirmFile,  setConfirmFile]  = useState(null)
   const [deletingFile, setDeletingFile] = useState(null)
 
-  // ── Load — extracted so it can be called after file deletions ────────────
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -443,23 +431,24 @@ function MediaStorageTab({ projectNames }) {
   const handleDeleteFile = useCallback(async (folderId, fileName) => {
     const path = `${folderId}/${fileName}`
     setDeletingFile(path); setConfirmFile(null); setToast(null)
-
     const { error: err } = await supabase.storage.from('projects').remove([path])
-
     if (err) {
       setToast({ msg: `File delete failed: ${err.message}`, type: 'error' })
       setDeletingFile(null)
       return
     }
-
-    // Re-fetch storage to confirm — don't just filter local state
     await load()
     setDeletingFile(null)
     setToast({ msg: `${fileName} deleted.`, type: 'success' })
   }, [load])
 
-  if (loading) return <div className="py-10 flex flex-col items-center gap-4"><Spinner /><p className="text-white/30 text-xs">Scanning storage…</p></div>
-  if (error)   return (
+  if (loading) return (
+    <div className="py-10 flex flex-col items-center gap-4">
+      <Spinner />
+      <p className="text-white/30 text-xs">Scanning storage…</p>
+    </div>
+  )
+  if (error) return (
     <div className="space-y-3">
       <ErrorBanner msg={error} />
       <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-all">
@@ -479,11 +468,11 @@ function MediaStorageTab({ projectNames }) {
       <Toast msg={toast?.msg} type={toast?.type} onDismiss={() => setToast(null)} />
 
       {folders.map(folder => {
-        const totalSize  = folder.files.reduce((acc, f) => acc + (f.metadata?.size || 0), 0)
+        const totalSize   = folder.files.reduce((acc, f) => acc + (f.metadata?.size || 0), 0)
         const projectName = projectNames[folder.id]
         return (
           <div key={folder.id} className="space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between px-1">
               <div className="min-w-0">
                 <span className="text-xs font-semibold text-white/60">
                   {projectName || <span className="text-amber-400/70">orphaned</span>}
@@ -548,36 +537,7 @@ function MediaStorageTab({ projectNames }) {
   )
 }
 
-// ── RLS Info Banner ────────────────────────────────────────────────────────────
-function RlsBanner() {
-  const [open, setOpen] = useState(false)
-  const sql = `-- Run this in Supabase → SQL Editor to allow project deletion:
-CREATE POLICY "Allow delete" ON projects
-FOR DELETE USING (true);
-
--- Also allow storage deletions (if using RLS on storage):
--- Storage uses bucket-level policies in the Supabase dashboard.
--- Go to Storage → projects bucket → Policies → Add DELETE policy.`
-
-  return (
-    <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-xs text-amber-300/70 hover:text-amber-300 transition-all"
-      >
-        <span>⚠ If deletes fail, check Supabase RLS</span>
-        <span className="text-[10px] opacity-60">{open ? '▲ hide' : '▼ show SQL'}</span>
-      </button>
-      {open && (
-        <pre className="px-4 pb-4 text-[10px] text-amber-200/50 font-mono whitespace-pre-wrap leading-relaxed">
-          {sql}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Main Dashboard Modal ──────────────────────────────────────────────────────
 function ProjectsDashboard({ onClose, onOpenProject }) {
   const [activeTab,    setActiveTab]    = useState('projects')
   const [projectNames, setProjectNames] = useState({})
@@ -592,7 +552,6 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
     onOpenProject(project)
   }, [onOpenProject])
 
-  // Load project names once to help the Media Storage tab label orphaned folders
   useEffect(() => {
     supabase.from('projects').select('id, name').then(({ data }) => {
       if (data) {
@@ -612,16 +571,16 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
       <div
         className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden"
         style={{
-          background: 'rgba(10,10,20,0.92)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+          background: 'rgba(12,8,6,0.96)',
+          border: '1px solid rgba(255,255,255,0.09)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.65)',
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07] flex-shrink-0">
           <div>
-            <h2 className="text-white/90 font-semibold text-base">Project Manager</h2>
-            <p className="text-white/30 text-xs mt-0.5">Manage published projects and storage files</p>
+            <h2 className="text-white/90 font-semibold text-base">Open Stage</h2>
+            <p className="text-white/30 text-xs mt-0.5">Select a project or manage storage</p>
           </div>
           <button
             onClick={onClose}
@@ -631,19 +590,19 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-white/8 px-6 flex-shrink-0">
+        {/* Tabs — minimal underline style, no border box */}
+        <div className="flex px-6 border-b border-white/[0.07] flex-shrink-0">
           {[
-            { id: 'projects', label: '📝 Projects' },
-            { id: 'storage',  label: '🗄️ Media Storage' },
+            { id: 'projects', label: 'Projects' },
+            { id: 'storage',  label: 'Media Storage' },
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 transition-all ${
+              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px transition-all ${
                 activeTab === tab.id
-                  ? 'border-violet-400 text-violet-300'
-                  : 'border-transparent text-white/35 hover:text-white/60'
+                  ? 'border-orange-400/70 text-orange-300/90'
+                  : 'border-transparent text-white/32 hover:text-white/58'
               }`}
             >
               {tab.label}
@@ -651,16 +610,15 @@ function ProjectsDashboard({ onClose, onOpenProject }) {
           ))}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 scrollbar-thin">
+        {/* Content — no inner border wrapper */}
+        <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
           {activeTab === 'projects' && (
-            <>
-              <ProjectsTab onOpenProject={handleOpenProject} onClose={onClose} />
-              <RlsBanner />
-            </>
+            <ProjectsTab onOpenProject={handleOpenProject} onClose={onClose} />
           )}
           {activeTab === 'storage' && (
-            <MediaStorageTab projectNames={projectNames} />
+            <div className="px-6 py-3">
+              <MediaStorageTab projectNames={projectNames} />
+            </div>
           )}
         </div>
       </div>
