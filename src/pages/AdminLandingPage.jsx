@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Clock3, FolderOpen, LogOut, Plus, RefreshCw } from 'lucide-react'
+import { ArrowRight, Clock3, Database, FolderOpen, LogOut, Plus, RefreshCw } from 'lucide-react'
 import ProjectsDashboard from '../components/ProjectsDashboard'
 import PresentationManager from '../components/PresentationManager'
 import { supabase } from '../lib/supabaseClient'
@@ -113,7 +113,7 @@ function ActionButton({ icon, label, detail, onClick, disabled = false }) {
         <span className="admin-landing-action-label">{label}</span>
         <span className="admin-landing-action-detail">{detail}</span>
       </span>
-      <ArrowRight size={16} className="admin-landing-action-arrow" />
+      <ArrowRight size={15} className="admin-landing-action-arrow" />
     </button>
   )
 }
@@ -128,37 +128,22 @@ function ProjectRow({ project, onOpenStage, onOpenPresentation }) {
         <span className="admin-landing-row-title">{project.name || 'Untitled stage'}</span>
         <span className="admin-landing-row-meta">
           {stageReady ? 'Stage ready' : 'Setup stage first'}
-          {draftCount > 0 ? ` - ${draftCount} draft${draftCount > 1 ? 's' : ''}` : ''}
+          {draftCount > 0 ? ` · ${draftCount} draft${draftCount > 1 ? 's' : ''}` : ''}
         </span>
       </div>
       <div className="admin-landing-row-actions">
         <button type="button" onClick={() => onOpenStage(project.id)}>Stage</button>
         <button type="button" onClick={() => onOpenPresentation(project.id)} disabled={!stageReady}>
-          {stageReady ? 'Presentation' : 'Locked'}
+          {stageReady ? 'Present' : 'Locked'}
         </button>
       </div>
     </div>
   )
 }
 
-function RecentPresentationRow({ draft, onOpen }) {
-  return (
-    <button type="button" className="admin-landing-recent" onClick={() => onOpen(draft.project_id)}>
-      <span>
-        <span className="admin-landing-row-title">{draft.projectName || 'Untitled stage'}</span>
-        <span className="admin-landing-row-meta">
-          Draft v{draft.version_number ?? '-'} - {formatRelative(draft.updated_at || draft.created_at)}
-        </span>
-      </span>
-      <ArrowRight size={15} />
-    </button>
-  )
-}
-
 export default function AdminLandingPage() {
   const navigate = useNavigate()
   const [projects, setProjects] = useState([])
-  const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showProjectManager, setShowProjectManager] = useState(false)
@@ -178,14 +163,13 @@ export default function AdminLandingPage() {
       let draftRows = []
       const { data: draftData, error: draftError } = await supabase
         .from('presentation_versions')
-        .select('id, project_id, version_number, version_name, updated_at, created_at, status')
+        .select('id, project_id, version_number, updated_at, status')
         .eq('status', 'draft')
         .order('updated_at', { ascending: false })
-        .limit(6)
+        .limit(20)
 
       if (!draftError) draftRows = draftData || []
 
-      const projectNameById = new Map((projectRows || []).map((p) => [p.id, p.name || 'Untitled stage']))
       const draftCountByProject = draftRows.reduce((acc, draft) => {
         acc[draft.project_id] = (acc[draft.project_id] || 0) + 1
         return acc
@@ -194,10 +178,6 @@ export default function AdminLandingPage() {
       setProjects((projectRows || []).map((project) => ({
         ...project,
         draftCount: draftCountByProject[project.id] || 0,
-      })))
-      setDrafts(draftRows.map((draft) => ({
-        ...draft,
-        projectName: projectNameById.get(draft.project_id) || draft.version_name || 'Untitled stage',
       })))
     } catch (err) {
       setError(err.message || 'Unable to load admin workspace.')
@@ -210,8 +190,6 @@ export default function AdminLandingPage() {
     load()
   }, [load])
 
-  const readyProjects = useMemo(() => projects.filter((project) => project.stage_url), [projects])
-
   const openStage = useCallback((projectId) => {
     navigate(projectId ? `/admin/stage/${projectId}` : '/admin/stage')
   }, [navigate])
@@ -223,6 +201,10 @@ export default function AdminLandingPage() {
 
   const openPresentation = useCallback((projectId) => {
     navigate(`/admin/${projectId}/presentation`)
+  }, [navigate])
+
+  const openDataPanel = useCallback(() => {
+    navigate('/admin/data')
   }, [navigate])
 
   const openManagedPresentation = useCallback((projectId) => {
@@ -240,8 +222,8 @@ export default function AdminLandingPage() {
       <GateBackground />
       <style>{`
         @keyframes adminLandingIn {
-          from { opacity: 0; transform: translateY(24px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translateY(20px) scale(0.985); }
+          to   { opacity: 1; transform: translateY(0)   scale(1);     }
         }
         .admin-landing-shell {
           position: relative;
@@ -254,174 +236,156 @@ export default function AdminLandingPage() {
           justify-content: center;
           padding: 32px 18px;
         }
+        .admin-landing-signout {
+          position: fixed;
+          top: 18px;
+          right: 22px;
+          z-index: 10;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          height: 30px;
+          padding: 0 10px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(0,0,0,0.28);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          color: rgba(255,255,255,0.42);
+          font-family: inherit;
+          font-size: 11px;
+          cursor: pointer;
+          transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .admin-landing-signout:hover {
+          color: rgba(255,255,255,0.72);
+          border-color: rgba(255,255,255,0.20);
+          background: rgba(0,0,0,0.42);
+        }
         .admin-landing-panel {
           position: relative;
           z-index: 1;
-          width: min(760px, calc(100vw - 32px));
-          max-height: calc(100vh - 64px);
-          overflow-y: auto;
-          background: rgba(8, 6, 6, 0.80);
+          width: min(920px, calc(100vw - 32px));
+          background: rgba(8,6,6,0.82);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.07);
           border-radius: 20px;
-          padding: 34px 34px 30px;
-          box-shadow: 0 0 60px rgba(255,80,0,0.22), 0 24px 48px rgba(0,0,0,0.55);
+          padding: 36px 36px 32px;
+          box-shadow: 0 0 60px rgba(255,80,0,0.20), 0 24px 48px rgba(0,0,0,0.55);
           animation: adminLandingIn 0.35s cubic-bezier(0.22,1,0.36,1) both;
         }
         .admin-landing-header {
           display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 18px;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
         }
         .admin-landing-kicker {
-          margin-top: 18px;
-          font-size: 11px;
-          color: rgba(255,119,51,0.92);
-          letter-spacing: 0.16em;
+          margin-top: 14px;
+          font-size: 10px;
+          color: rgba(255,119,51,0.72);
+          letter-spacing: 0.18em;
           text-transform: uppercase;
         }
         .admin-landing-title {
-          margin-top: 8px;
-          font-size: 28px;
+          margin-top: 7px;
+          font-size: 26px;
           line-height: 1.15;
           color: #fff;
           font-weight: 760;
         }
-        .admin-landing-subtitle {
-          margin-top: 8px;
-          max-width: 520px;
-          font-size: 13px;
-          line-height: 1.55;
-          color: rgba(255,255,255,0.54);
-        }
-        .admin-landing-signout {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          height: 34px;
-          padding: 0 11px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(255,255,255,0.04);
-          color: rgba(255,255,255,0.52);
-          font-size: 11px;
-          cursor: pointer;
-        }
         .admin-landing-actions {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 10px;
-          margin-top: 28px;
+          margin-top: 26px;
         }
         .admin-landing-action {
-          min-height: 132px;
+          min-height: 112px;
           display: flex;
           flex-direction: column;
           align-items: flex-start;
-          gap: 12px;
-          padding: 16px;
+          gap: 10px;
+          padding: 15px 14px;
           border-radius: 12px;
-          border: 1px solid rgba(255,85,0,0.22);
-          background: rgba(255,255,255,0.055);
+          border: 1px solid rgba(255,85,0,0.16);
+          background: rgba(255,255,255,0.065);
           color: #fff;
           text-align: left;
           cursor: pointer;
-          transition: border-color 0.15s, background 0.15s, transform 0.12s;
+          transition: border-color 0.18s, background 0.18s, transform 0.14s, box-shadow 0.18s;
         }
         .admin-landing-action:hover:not(:disabled) {
-          transform: translateY(-1px);
-          border-color: rgba(255,85,0,0.58);
-          background: rgba(255,85,0,0.12);
+          transform: translateY(-2px);
+          border-color: rgba(255,85,0,0.52);
+          background: rgba(255,85,0,0.11);
+          box-shadow: 0 8px 20px rgba(255,85,0,0.10);
+        }
+        .admin-landing-action:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
         .admin-landing-action-icon {
           width: 32px;
           height: 32px;
-          border-radius: 10px;
+          border-radius: 9px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           background: rgba(255,85,0,0.14);
           color: #FF7733;
+          flex-shrink: 0;
         }
         .admin-landing-action-copy {
           display: flex;
           flex-direction: column;
-          gap: 5px;
+          gap: 4px;
           flex: 1;
         }
         .admin-landing-action-label {
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 740;
+          line-height: 1.2;
         }
         .admin-landing-action-detail {
           font-size: 10px;
           line-height: 1.45;
-          color: rgba(255,255,255,0.44);
+          color: rgba(255,255,255,0.40);
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
         .admin-landing-action-arrow {
-          color: rgba(255,119,51,0.9);
+          color: rgba(255,119,51,0.60);
           align-self: flex-end;
+          margin-top: auto;
         }
-        .admin-landing-rule {
-          margin-top: 16px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,85,0,0.20);
-          background: rgba(255,85,0,0.08);
-          padding: 10px 12px;
-          font-size: 10px;
-          line-height: 1.45;
-          color: rgba(255,255,255,0.50);
-        }
-        .admin-landing-content {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-          gap: 14px;
-          margin-top: 18px;
-        }
-        .admin-landing-section-title {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          margin-bottom: 8px;
-          font-size: 10px;
-          color: rgba(255,255,255,0.40);
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-        }
-        .admin-landing-list {
+        .admin-landing-inline-list {
+          margin-top: 12px;
           display: flex;
           flex-direction: column;
-          gap: 7px;
+          gap: 5px;
         }
-        .admin-landing-row,
-        .admin-landing-recent {
+        .admin-landing-row {
           width: 100%;
-          min-height: 54px;
+          min-height: 50px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.045);
-          padding: 10px 11px;
+          border-radius: 9px;
+          border: 1px solid rgba(255,255,255,0.07);
+          background: rgba(255,255,255,0.04);
+          padding: 9px 11px;
           color: #fff;
-        }
-        .admin-landing-recent {
-          cursor: pointer;
-          text-align: left;
-        }
-        .admin-landing-recent:hover {
-          border-color: rgba(255,85,0,0.34);
-          background: rgba(255,85,0,0.09);
         }
         .admin-landing-row-main {
           min-width: 0;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
         }
         .admin-landing-row-title {
           display: block;
@@ -435,7 +399,8 @@ export default function AdminLandingPage() {
         .admin-landing-row-meta {
           display: block;
           font-size: 9px;
-          color: rgba(255,255,255,0.34);
+          color: rgba(255,255,255,0.30);
+          letter-spacing: 0.02em;
         }
         .admin-landing-row-actions {
           display: flex;
@@ -444,161 +409,138 @@ export default function AdminLandingPage() {
           flex-shrink: 0;
         }
         .admin-landing-row-actions button {
-          height: 28px;
+          height: 26px;
           padding: 0 9px;
-          border-radius: 8px;
-          border: 1px solid rgba(255,85,0,0.22);
-          background: rgba(255,85,0,0.08);
-          color: rgba(255,214,196,0.86);
+          border-radius: 7px;
+          border: 1px solid rgba(255,85,0,0.20);
+          background: rgba(255,85,0,0.07);
+          color: rgba(255,214,196,0.82);
+          font-family: inherit;
           font-size: 10px;
           cursor: pointer;
+          transition: border-color 0.15s, background 0.15s;
+        }
+        .admin-landing-row-actions button:hover:not(:disabled) {
+          border-color: rgba(255,85,0,0.40);
+          background: rgba(255,85,0,0.14);
         }
         .admin-landing-row-actions button:disabled {
-          opacity: 0.42;
+          opacity: 0.40;
           cursor: not-allowed;
-          border-color: rgba(255,255,255,0.08);
+          border-color: rgba(255,255,255,0.07);
           background: rgba(255,255,255,0.04);
-          color: rgba(255,255,255,0.36);
+          color: rgba(255,255,255,0.32);
         }
-        .admin-landing-empty,
         .admin-landing-error {
-          border-radius: 10px;
-          border: 1px dashed rgba(255,255,255,0.10);
-          padding: 14px;
-          color: rgba(255,255,255,0.34);
+          margin-top: 12px;
+          border-radius: 9px;
+          border: 1px solid rgba(255,80,80,0.22);
+          background: rgba(255,50,50,0.06);
+          padding: 10px 12px;
+          color: rgba(255,150,130,0.78);
           font-size: 11px;
           line-height: 1.5;
         }
-        .admin-landing-error {
-          border-color: rgba(255,80,80,0.28);
-          color: rgba(255,150,130,0.78);
-        }
         .admin-landing-refresh {
-          margin-top: 9px;
+          margin-top: 8px;
           display: inline-flex;
           align-items: center;
-          gap: 7px;
+          gap: 6px;
           color: rgba(255,119,51,0.9);
           background: none;
           border: 0;
+          font-family: inherit;
           font-size: 11px;
           cursor: pointer;
         }
-        @media (max-width: 760px) {
+        @media (max-width: 820px) {
+          .admin-landing-actions {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 640px) {
           .admin-landing-shell {
             align-items: flex-start;
             padding: 18px 12px 28px;
           }
           .admin-landing-panel {
             width: 100%;
-            max-height: none;
             padding: 28px 18px 24px;
           }
-          .admin-landing-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-          }
-          .admin-landing-signout {
-            position: absolute;
-            top: 14px;
-            right: 14px;
-          }
-          .admin-landing-actions,
-          .admin-landing-content {
+          .admin-landing-actions {
             grid-template-columns: 1fr;
           }
           .admin-landing-action {
-            min-height: 96px;
+            min-height: 80px;
           }
           .admin-landing-row {
             align-items: flex-start;
             flex-direction: column;
+            gap: 8px;
           }
         }
       `}</style>
 
+      {/* Sign out — fixed at viewport top-right, outside the card */}
+      <button type="button" className="admin-landing-signout" onClick={handleSignOut}>
+        <LogOut size={12} /> Sign out
+      </button>
+
       <main className="admin-landing-panel">
         <div className="admin-landing-header">
-          <div style={{ flex: 1 }}>
-            <BrandMark />
-            <div className="admin-landing-kicker">Admin workspace</div>
-            <h1 className="admin-landing-title">Choose where to continue.</h1>
-            <p className="admin-landing-subtitle">
-              Build the stage first, then hand off the presentation work for clips, notes, feedback, and version publishing.
-            </p>
-          </div>
-          <button type="button" className="admin-landing-signout" onClick={handleSignOut}>
-            <LogOut size={13} /> Sign out
-          </button>
+          <BrandMark />
+          <div className="admin-landing-kicker">Admin workspace</div>
+          <h1 className="admin-landing-title">Choose where to continue.</h1>
         </div>
 
         <div className="admin-landing-actions">
           <ActionButton
             icon={<Plus size={18} />}
             label="New Stage"
-            detail="Start a blank stage setup for GLB, camera, lighting, and publish."
+            detail="Blank stage — GLB, camera, lights, publish."
             onClick={() => openStage(null)}
           />
           <ActionButton
             icon={<FolderOpen size={18} />}
             label="Open Stage"
-            detail="Return to stage setup for an existing project."
+            detail="Return to an existing project's stage setup."
             onClick={() => setShowProjectManager(true)}
           />
           <ActionButton
             icon={<Clock3 size={18} />}
-            label="Recent Presentation"
-            detail="Manage drafts, published versions, and restores."
+            label="Open Presentation"
+            detail="Manage drafts, versions, and restores."
             onClick={() => setShowPresentationManager(true)}
+          />
+          <ActionButton
+            icon={<Database size={18} />}
+            label="Data & storage"
+            detail="Scan R2, analytics footprint, and destructive cleanup."
+            onClick={openDataPanel}
           />
         </div>
 
-        <div className="admin-landing-rule">
-          Presentation stays locked until a project has a stage file. If a row says "Setup stage first", open Stage before assigning clips or notes.
-        </div>
+        {!loading && projects.length > 0 && (
+          <div className="admin-landing-inline-list">
+            {projects.slice(0, 5).map((project) => (
+              <ProjectRow
+                key={project.id}
+                project={project}
+                onOpenStage={openStage}
+                onOpenPresentation={openPresentation}
+              />
+            ))}
+          </div>
+        )}
 
         {error && (
-          <div className="admin-landing-error" style={{ marginTop: 14 }}>
+          <div className="admin-landing-error">
             {error}
             <button type="button" className="admin-landing-refresh" onClick={load}>
               <RefreshCw size={12} /> Retry
             </button>
           </div>
         )}
-
-        <div className="admin-landing-content">
-          <section id="admin-open-stage-list">
-            <div className="admin-landing-section-title"><FolderOpen size={13} /> Open Stage</div>
-            <div className="admin-landing-list">
-              {loading && <div className="admin-landing-empty">Loading stages...</div>}
-              {!loading && !projects.length && <div className="admin-landing-empty">No stages yet. Start with New Stage.</div>}
-              {!loading && projects.slice(0, 5).map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  project={project}
-                  onOpenStage={openStage}
-                  onOpenPresentation={openPresentation}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <div className="admin-landing-section-title"><Clock3 size={13} /> Recent Presentation</div>
-            <div className="admin-landing-list">
-              {loading && <div className="admin-landing-empty">Loading drafts...</div>}
-              {!loading && !drafts.length && (
-                <div className="admin-landing-empty">
-                  No presentation drafts yet. {readyProjects.length ? 'Open a ready stage to begin.' : 'Create and publish a stage first.'}
-                </div>
-              )}
-              {!loading && drafts.map((draft) => (
-                <RecentPresentationRow key={draft.id} draft={draft} onOpen={openPresentation} />
-              ))}
-            </div>
-          </section>
-        </div>
       </main>
 
       {showProjectManager && (
@@ -616,15 +558,4 @@ export default function AdminLandingPage() {
       )}
     </div>
   )
-}
-
-function formatRelative(ts) {
-  if (!ts) return 'recently'
-  const diff = Date.now() - new Date(ts).getTime()
-  const mins = Math.max(0, Math.floor(diff / 60000))
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
 }

@@ -28,13 +28,17 @@ Làm lần lượt:
 
 4. **Mở `.env.local`** và điền giá trị thật. Bạn lấy từng giá trị theo mục B bên dưới (Supabase, R2). Upload API không dùng `VITE_UPLOAD_SECRET`; frontend phải có Supabase session và gửi bearer token.
 
-5. **Chạy app kèm API upload** (bắt buộc nếu cần upload; `npm run dev` chỉ chạy UI, không có `/api/*`):
+5. **Chạy app** — một trong hai:
 
-   ```bash
-   npm run dev:local
-   ```
+   - **`npm run dev`** (mặc định): Vite port 3000 + middleware chạy toàn bộ handler trong `api/**/*.js` (upload, admin scan, v.v.) miễn là biến môi trường trong `.env.local` đã đủ.
+
+   - **`npm run dev:local`**: `vercel dev` nếu bạn muốn môi trường giống production Vercel tuyệt đối.
 
 6. Mở **http://localhost:3000** — port cố định trong `vite.config.js`.
+
+   **Service role (admin data):** để trang `/admin/data` scan đủ và cho phép xóa/restore project, thêm `SUPABASE_SERVICE_ROLE_KEY` vào `.env.local` (lấy từ Supabase → Settings → API → *service_role* secret). `vercel dev` và Vite middleware đều đọc biến này từ file env local.
+
+   Nếu đã thêm mà banner vẫn báo thiếu key: **restart `vercel dev`**. Code server còn đọc trực tiếp `.env.local` ở root repo khi chạy local để bù trường hợp CLI không inject secret vào function.
 
 **Lần đầu `vercel dev`:** CLI có thể hỏi **link** tới project Vercel; chọn đúng repo hoặc bỏ qua nếu env đã đủ trong `.env.local`.
 
@@ -42,7 +46,7 @@ Làm lần lượt:
 |--------|----------------|
 | `npm run setup:local` | Tạo `.env.local` lần đầu |
 | `npm run dev:local` | Dev đầy đủ (UI + `POST /api/get-upload-url`) |
-| `npm run dev` | Chỉ UI, không upload |
+| `npm run dev` | UI + `/api/*` (Vite middleware chạy các file trong `api/`, giống Vercel) |
 
 **Nếu Network báo 404 cho `/@vite/client` hoặc `/src/main.jsx`:** nguyên nhân thường là rewrite SPA kiểu `"/(.*)" → /index.html` khiến `vercel dev` trả HTML thay cho module Vite. Repo này dùng rewrite **theo từng route** (`/admin`, `/privacy`, `/collab/...`, `/view/...`) để tránh lỗi đó. Trên production, URL lạ không thuộc các route đó có thể thành **404 của Vercel** (không còn fallback React `*`).
 

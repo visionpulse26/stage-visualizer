@@ -11,15 +11,17 @@ test('admin routes split landing from stage setup', () => {
   assert.match(app, /AdminLandingPage/)
   assert.match(app, /path="\/admin"/)
   assert.match(app, /path="\/admin\/stage"/)
+  assert.match(app, /path="\/admin\/data"/)
 })
 
-test('admin landing exposes the three primary workspace actions', () => {
+test('admin landing exposes primary workspace actions', () => {
   assert.equal(existsSync(new URL('src/pages/AdminLandingPage.jsx', root)), true)
   const page = read('src/pages/AdminLandingPage.jsx')
 
   assert.match(page, /New Stage/)
   assert.match(page, /Open Stage/)
-  assert.match(page, /Recent Presentation/)
+  assert.match(page, /Open Presentation/)
+  assert.match(page, /Data & storage/)
   assert.match(page, /Setup stage first/)
 })
 

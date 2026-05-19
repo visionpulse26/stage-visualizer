@@ -11,6 +11,7 @@ import PrivacyPage from './pages/PrivacyPage'
 const EmbedPage             = lazy(() => import('./pages/EmbedPage'))
 const PresentationEditorPage = lazy(() => import('./pages/PresentationEditorPage'))
 const AdminFeedbackReviewPage = lazy(() => import('./pages/AdminFeedbackReviewPage'))
+const AdminDataPage = lazy(() => import('./pages/AdminDataPage'))
 
 const PageLoadingFallback = () => (
   <div style={{ width: '100%', height: '100vh', background: '#080604', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -70,6 +71,19 @@ function App() {
           element={
             <ProtectedRoute>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/data"
+          element={
+            <ProtectedRoute>
+              <PageErrorBoundary>
+                <Suspense fallback={<PageLoadingFallback />}>
+                  <AdminDataPage />
+                </Suspense>
+              </PageErrorBoundary>
             </ProtectedRoute>
           }
         />

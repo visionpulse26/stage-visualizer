@@ -76,6 +76,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/admin/data",
+      "destination": "/index.html"
+    },
+    {
       "source": "/admin/:projectId",
       "destination": "/index.html"
     },
