@@ -76,6 +76,17 @@ function readPendingFeedbackDraft(key) {
   }
 }
 
+// Physical device orientation, independent of the visual viewport. The soft
+// keyboard shrinks the visual viewport (and CSS `orientation` media query can
+// follow it), so we prefer screen.orientation which reflects the real device.
+function readDeviceLandscape() {
+  if (typeof window === 'undefined') return false
+  const type = window.screen?.orientation?.type
+  if (type) return type.startsWith('landscape')
+  if (window.matchMedia) return window.matchMedia('(orientation: landscape)').matches
+  return window.innerWidth > window.innerHeight
+}
+
 // ── Layout helpers ────────────────────────────────────────────────────────────
 const Row = ({ children, gap = 6, align = 'center', style = {} }) => (
   <div style={{ display: 'flex', alignItems: align, gap, ...style }}>{children}</div>
@@ -188,8 +199,17 @@ function ClientPage() {
     width: typeof window !== 'undefined' ? window.innerWidth : 1024,
     height: typeof window !== 'undefined' ? window.innerHeight : 768,
   }))
+  // Physical device orientation — NOT derived from live viewport, so the soft
+  // keyboard (which shrinks the visual viewport) can never flip the layout.
+  const [isLandscape, setIsLandscape] = useState(() => readDeviceLandscape())
+  // Visual-viewport height, used ONLY to size the keyboard-aware feedback sheet.
+  const [keyboardViewportHeight, setKeyboardViewportHeight] = useState(() =>
+    typeof window !== 'undefined'
+      ? Math.round(window.visualViewport?.height ?? window.innerHeight)
+      : 768
+  )
   const isMobile = viewport.width < 768 || viewport.height < 520
-  const isMobileLandscape = isMobile && viewport.width > viewport.height
+  const isMobileLandscape = isMobile && isLandscape
   const [activeMobileTab, setActiveMobileTab] = useState('context')
   const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
   const [mobileFeedbackSheet, setMobileFeedbackSheet] = useState(null)
@@ -246,24 +266,33 @@ function ClientPage() {
   }, [guestIdentity, isAdmin])
 
   useEffect(() => {
-    const readViewport = () => {
-      const vv = window.visualViewport
-      return {
-        width: Math.round(vv?.width ?? window.innerWidth),
-        height: Math.round(vv?.height ?? window.innerHeight),
-      }
+    // Layout size + orientation: driven by the window/device, never by the
+    // visual viewport — otherwise the soft keyboard would re-flip portrait
+    // <-> landscape and the whole shell would jump around while typing.
+    const onLayoutChange = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight })
+      setIsLandscape(readDeviceLandscape())
     }
-    const onResize = () => {
-      setViewport(readViewport())
+    // Keyboard-aware height: only this is allowed to follow the visual viewport.
+    const onKeyboardChange = () => {
+      setKeyboardViewportHeight(Math.round(window.visualViewport?.height ?? window.innerHeight))
     }
-    onResize()
-    window.addEventListener('resize', onResize)
-    window.visualViewport?.addEventListener('resize', onResize)
-    window.visualViewport?.addEventListener('scroll', onResize)
+
+    onLayoutChange()
+    onKeyboardChange()
+
+    window.addEventListener('resize', onLayoutChange)
+    window.addEventListener('orientationchange', onLayoutChange)
+    const orientationApi = window.screen?.orientation
+    orientationApi?.addEventListener?.('change', onLayoutChange)
+    window.visualViewport?.addEventListener('resize', onKeyboardChange)
+    window.visualViewport?.addEventListener('scroll', onKeyboardChange)
     return () => {
-      window.removeEventListener('resize', onResize)
-      window.visualViewport?.removeEventListener('resize', onResize)
-      window.visualViewport?.removeEventListener('scroll', onResize)
+      window.removeEventListener('resize', onLayoutChange)
+      window.removeEventListener('orientationchange', onLayoutChange)
+      orientationApi?.removeEventListener?.('change', onLayoutChange)
+      window.visualViewport?.removeEventListener('resize', onKeyboardChange)
+      window.visualViewport?.removeEventListener('scroll', onKeyboardChange)
     }
   }, [])
 
@@ -1036,7 +1065,7 @@ function ClientPage() {
       mobileFeedbackSheet,
       mobileFeedbackInitialName: mobileFeedbackName,
       mobileFeedbackInitialComment: mobileFeedbackComment,
-      viewportHeight: viewport.height,
+      viewportHeight: keyboardViewportHeight,
       reviewerNameLocked,
       isSubmitting,
       submitError,
@@ -1090,6 +1119,8 @@ function ClientPage() {
         transparentLedConfig,
         onImageTextureLoaded: handleImageTextureLoaded,
         freezeRenderLoop: !!noteFocusNote,
+        // Re-fit the stage when the device rotates so it never stays zoomed-in.
+        reframeKey: isLandscape ? 'landscape' : 'portrait',
       },
     }
 
@@ -2526,7 +2557,7 @@ function MobileFontLinks() {
 
 function MobileResponsiveShell(props) {
   const landscape = Boolean(props.landscape)
-  const panelVisible = !landscape || !props.panelCollapsed
+  const panelVisible = !props.panelCollapsed
   return (
     <div style={{
       width: '100%', height: '100dvh', background: T.bg, color: T.text,
@@ -2559,10 +2590,16 @@ function MobileResponsiveShell(props) {
           <MobileStageViewport {...props} />
         </div>
 
-        {landscape && props.panelCollapsed ? (
-          <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">
-            <span style={mobilePanelRailLabelStyle()}>Show</span>
-          </button>
+        {props.panelCollapsed ? (
+          landscape ? (
+            <button onClick={props.onTogglePanel} style={mobilePanelRailStyle()} aria-label="Show details panel">
+              <span style={mobilePanelRailLabelStyle()}>Show</span>
+            </button>
+          ) : (
+            <button onClick={props.onTogglePanel} style={mobilePanelShowBarStyle()} aria-label="Show details panel">
+              Show details ▲
+            </button>
+          )
         ) : (
           <div style={{
             width: landscape ? 'clamp(280px, 30vw, 340px)' : '100%',
@@ -2575,9 +2612,9 @@ function MobileResponsiveShell(props) {
             flexDirection: 'column',
             minHeight: 0,
           }}>
-            {landscape && (
-              <button onClick={props.onTogglePanel} style={mobilePanelCollapseButtonStyle()}>Hide Panel</button>
-            )}
+            <button onClick={props.onTogglePanel} style={mobilePanelCollapseButtonStyle()}>
+              {landscape ? 'Hide Panel' : 'Hide details ▼'}
+            </button>
             <MobileBottomTabBar
               activeTab={props.activeMobileTab}
               onTabChange={props.setActiveMobileTab}
@@ -2955,6 +2992,24 @@ function mobilePanelCollapseButtonStyle() {
     fontFamily: 'Chakra Petch, sans-serif',
     fontSize: 10,
     fontWeight: 700,
+    cursor: 'pointer',
+  }
+}
+
+function mobilePanelShowBarStyle() {
+  return {
+    height: 34,
+    flexShrink: 0,
+    width: '100%',
+    border: 'none',
+    borderTop: `1px solid ${T.border}`,
+    background: 'rgba(8,6,4,0.96)',
+    color: T.ember2,
+    fontFamily: 'Chakra Petch, sans-serif',
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
     cursor: 'pointer',
   }
 }

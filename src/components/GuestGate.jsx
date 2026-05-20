@@ -237,14 +237,18 @@ function LogoSlot({ logoSrc }) {
 
 // ── Form state ─────────────────────────────────────────────────────────────────
 
-function FormState({ onSubmit, loading, error, logoSrc }) {
+function FormState({ mode, onSubmit, onSwitchMode, loading, error, logoSrc }) {
   const [name,  setName]  = useState('')
   const [email, setEmail] = useState('')
+
+  const isLogin = mode === 'login'
 
   function handleSubmit(e) {
     e.preventDefault()
     onSubmit(name.trim(), email.trim())
   }
+
+  const canSubmit = isLogin ? !!email.trim() : (!!name.trim() && !!email.trim())
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -255,7 +259,7 @@ function FormState({ onSubmit, loading, error, logoSrc }) {
         fontSize: 26, fontWeight: 700, color: '#fff',
         marginTop: 20, textAlign: 'center', lineHeight: 1.25,
       }}>
-        Hey there, stranger 👋
+        {isLogin ? 'Welcome back 👋' : 'Hey there, stranger 👋'}
       </h1>
       <p style={{
         fontFamily: "'Chakra Petch', sans-serif",
@@ -263,24 +267,28 @@ function FormState({ onSubmit, loading, error, logoSrc }) {
         marginTop: 8, textAlign: 'center', lineHeight: 1.6,
         maxWidth: 290, alignSelf: 'center',
       }}>
-        Drop your name &amp; email so we know who's in the room.
+        {isLogin
+          ? 'Enter the email you registered with — we\'ll bring back your name.'
+          : 'Drop your name & email so we know who\'s in the room.'}
       </p>
 
       <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div>
-          <label className="gate-label">Your Name</label>
-          <input
-            className="gate-input"
-            type="text"
-            placeholder="e.g. Alex Johnson"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            disabled={loading}
-            required
-            maxLength={100}
-            autoComplete="name"
-          />
-        </div>
+        {!isLogin && (
+          <div>
+            <label className="gate-label">Your Name</label>
+            <input
+              className="gate-input"
+              type="text"
+              placeholder="e.g. Alex Johnson"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              disabled={loading}
+              required
+              maxLength={100}
+              autoComplete="name"
+            />
+          </div>
+        )}
         <div>
           <label className="gate-label">Email Address</label>
           <input
@@ -302,18 +310,22 @@ function FormState({ onSubmit, loading, error, logoSrc }) {
         type="submit"
         className="gate-btn-primary"
         style={{ marginTop: 20 }}
-        disabled={loading || !name.trim() || !email.trim()}
+        disabled={loading || !canSubmit}
       >
-        {loading ? <><Spinner /> Checking...</> : 'Let me in →'}
+        {loading
+          ? <><Spinner /> Checking...</>
+          : (isLogin ? 'Continue →' : 'Let me in →')}
       </button>
 
-      <p style={{
-        fontFamily: "'Chakra Petch', sans-serif",
-        fontSize: 12, color: 'rgba(255,255,255,0.3)',
-        textAlign: 'center', marginTop: 14, fontStyle: 'italic',
-      }}>
-        Been here before? We'll recognize you.
-      </p>
+      <button
+        type="button"
+        className="gate-btn-ghost"
+        style={{ marginTop: 10 }}
+        onClick={() => onSwitchMode(isLogin ? 'signup' : 'login')}
+        disabled={loading}
+      >
+        {isLogin ? 'First time here? Register' : 'Already registered? Just enter your email'}
+      </button>
     </form>
   )
 }
@@ -418,6 +430,8 @@ function WelcomeBackState({ guest, onConfirm, onNotMe, loading, logoSrc }) {
 export default function GuestGate({ presentationId, isAdmin = false, logoSrc, onConfirmed, children }) {
   // 'checking' | 'gate' | 'welcome-back' | 'confirmed'
   const [phase, setPhase] = useState('checking')
+  // 'signup' | 'login' — controls the gate form layout
+  const [mode, setMode] = useState('signup')
   const [returnGuest, setReturnGuest] = useState(null)
   const [pendingGuest, setPendingGuest] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -458,22 +472,37 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
     setPhase('gate')
   }, [presentationId, isAdmin])
 
+  // ── Switch between signup / login modes ───────────────────────────────────
+  const handleSwitchMode = useCallback((next) => {
+    setError(null)
+    setMode(next)
+  }, [])
+
   // ── Form submit ───────────────────────────────────────────────────────────
   const handleFormSubmit = useCallback(async (name, email) => {
-    if (!name || !email) return
+    const isLogin = mode === 'login'
+    if (!email || (!isLogin && !name)) return
     setLoading(true)
     setError(null)
 
     try {
-      const { data, error: rpcError } = await supabase.rpc('upsert_guest', {
-        p_presentation_id: presentationId,
-        p_email:           email,
-        p_name:            name,
-      })
+      const { data, error: rpcError } = isLogin
+        ? await supabase.rpc('lookup_guest', {
+            p_presentation_id: presentationId,
+            p_email:           email,
+          })
+        : await supabase.rpc('upsert_guest', {
+            p_presentation_id: presentationId,
+            p_email:           email,
+            p_name:            name,
+          })
 
       if (rpcError) {
         const msg = rpcError.message || ''
-        if (msg.includes('invalid_email'))         setError('That doesn\'t look like a valid email.')
+        if (msg.includes('guest_not_found')) {
+          setError('No registration found for that email. Switch to "Register" to sign up.')
+        }
+        else if (msg.includes('invalid_email'))         setError('That doesn\'t look like a valid email.')
         else if (msg.includes('invalid_name'))     setError('Please enter a valid name (1–100 characters).')
         else if (msg.includes('presentation_not_found')) setError('This presentation link is no longer active.')
         else if (msg.includes('Could not find the function') || msg.includes('schema cache')) {
@@ -488,7 +517,8 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
         setPendingGuest(data)
         setPhase('confirmed')
       } else {
-        // Returning guest — show confirmation screen
+        // Returning guest (existing email, or login lookup) — confirm identity.
+        // The stored name is authoritative; we never override it here.
         setPendingGuest(data)
         setReturnGuest({ name: data.name, email: data.email })
         setPhase('welcome-back')
@@ -498,7 +528,7 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
     } finally {
       setLoading(false)
     }
-  }, [presentationId])
+  }, [presentationId, mode])
 
   // ── Welcome-back confirm ──────────────────────────────────────────────────
   const handleConfirm = useCallback(() => {
@@ -514,6 +544,7 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
     setReturnGuest(null)
     setPendingGuest(null)
     setError(null)
+    setMode('signup')
     setPhase('gate')
   }, [])
 
@@ -551,7 +582,9 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
       {phase === 'gate' && (
         <GateModal>
           <FormState
+            mode={mode}
             onSubmit={handleFormSubmit}
+            onSwitchMode={handleSwitchMode}
             loading={loading}
             error={error}
             logoSrc={logoSrc}

@@ -490,7 +490,7 @@ function CameraSmoothFlyController({ cameraControlsRef, targetPresetRef, flyDura
   return null
 }
 
-function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
+function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl, reframeKey }) {
   const { camera } = useThree()
   const framedUrlRef = useRef(null)
 
@@ -500,7 +500,10 @@ function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
       return
     }
     const controls = cameraControlsRef?.current
-    if (!controls || !modelMetrics || framedUrlRef.current === modelUrl) return
+    // Re-frame on a new model OR when reframeKey changes (e.g. device rotation),
+    // so a portrait->landscape switch refits the stage instead of staying zoomed.
+    const frameId = `${modelUrl}::${reframeKey ?? ''}`
+    if (!controls || !modelMetrics || framedUrlRef.current === frameId) return
 
     const { center, size, radius } = modelMetrics
     const maxDim = Math.max(size?.x || 0, size?.y || 0, size?.z || 0, 1)
@@ -520,8 +523,8 @@ function CameraAutoFrame({ cameraControlsRef, modelMetrics, modelUrl }) {
       true
     )
 
-    framedUrlRef.current = modelUrl
-  }, [camera, cameraControlsRef, modelMetrics, modelUrl])
+    framedUrlRef.current = frameId
+  }, [camera, cameraControlsRef, modelMetrics, modelUrl, reframeKey])
 
   return null
 }
@@ -575,6 +578,8 @@ function StageCanvas({
   onMeshScanChange,
   /** Pre-computed PovColliderSpec[] from host page (Admin/Collab); passed straight to PovFpsRig. */
   stageColliders = [],
+  /** Changing this re-runs auto-framing (e.g. device rotation on mobile). */
+  reframeKey,
   children,
 }) {
   const internalPresetRef = useRef(null)
@@ -832,6 +837,7 @@ function StageCanvas({
             cameraControlsRef={cameraControlsRef}
             modelMetrics={modelMetrics}
             modelUrl={modelUrl}
+            reframeKey={reframeKey}
           />
         )}
 
