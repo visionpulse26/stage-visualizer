@@ -15,6 +15,7 @@ export function PovFpsRig({
   geofenceBox,
   geofencePadding = 0,
   stageColliders = [],
+  moveSpeed = 9,
   debugEnabled = false,
 }) {
   const { gl } = useThree()
@@ -74,6 +75,7 @@ export function PovFpsRig({
             geofencePadding={geofencePadding}
             gl={gl}
             stageColliders={stageColliders}
+            moveSpeed={moveSpeed}
           />
           {debugEnabled && (
             <PovDebugOverlay

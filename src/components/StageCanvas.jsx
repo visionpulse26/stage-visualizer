@@ -610,6 +610,14 @@ function StageCanvas({
     return Math.max(1.0, xz * 0.35)
   }, [modelMetrics])
 
+  // Auto-scale move speed so the stage feels responsive regardless of model units
+  // (meters, cm, etc.). Formula: ~1.54s to cross the stage at full sprint.
+  const povMoveSpeed = useMemo(() => {
+    if (!modelMetrics?.size) return 9
+    const xz = Math.max(modelMetrics.size.x, modelMetrics.size.z)
+    return Math.max(9, xz * 0.65)
+  }, [modelMetrics])
+
   const hasEnv        = !!(customHdriUrl || (hdriPreset && hdriPreset !== 'none'))
   const resolvedBloom     = bloomStrength      ?? 0.3
   const resolvedEnvInt    = envIntensity       ?? 1
@@ -859,6 +867,7 @@ function StageCanvas({
                   geofenceBox={modelMetrics?.box ?? null}
                   geofencePadding={povGeofencePadding}
                   stageColliders={stageColliders}
+                  moveSpeed={povMoveSpeed}
                 />
               ) : (
                 <LazyPovSimpleRig

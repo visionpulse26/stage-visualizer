@@ -52,7 +52,7 @@ function findSpawnFromFloorColliders(camera, stageColliders) {
   return best
 }
 
-export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePadding, gl, stageColliders = [] }) {
+export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePadding, gl, stageColliders = [], moveSpeed = 9 }) {
   const { camera } = useThree()
   const rb = useRef(null)
   const eyeOffset = floorY - CAPSULE_REST_CENTER_Y
@@ -78,6 +78,7 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     stageColliders,
     capsuleRestCenterY: CAPSULE_REST_CENTER_Y,
     capsuleRadius: CAPSULE_RADIUS,
+    moveSpeed,
   })
 
   const syncCameraToBody = useCallback(() => {

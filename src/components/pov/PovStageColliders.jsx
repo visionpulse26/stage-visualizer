@@ -17,10 +17,29 @@ export function PovStageColliders({ geofenceBox, geofencePadding, stageColliders
     () => buildGeofenceWallSpecs(geofenceBox, geofencePadding),
     [geofenceBox, geofencePadding],
   )
-  const fallbackFloor = useMemo(
-    () => buildGeofenceFloorSpec(geofenceBox, geofencePadding),
-    [geofenceBox, geofencePadding],
-  )
+  const fallbackFloor = useMemo(() => {
+    const base = buildGeofenceFloorSpec(geofenceBox, geofencePadding)
+    const floorTiles = stageColliders.filter(
+      (s) => s.type === 'floor' || s.type === 'explicit-floor',
+    )
+    if (floorTiles.length === 0) return base
+
+    // Find the lowest floor tile top surface across all configured tiles
+    const lowestTileTop = floorTiles.reduce(
+      (minY, s) => Math.min(minY, s.position[1] + s.halfExtents[1]),
+      Infinity,
+    )
+    const ht = base.args[1] // slab half-thickness
+    // Only raise if the lowest tile top is meaningfully above the default y=0 fallback
+    if (!Number.isFinite(lowestTileTop) || lowestTileTop < 0.3) return base
+
+    // Position fallback slab so its top surface is just below the lowest floor tile.
+    // Gaps between tiles cause only a ~5cm drop instead of falling all the way to y=0.
+    return {
+      pos: [base.pos[0], lowestTileTop - ht - 0.05, base.pos[2]],
+      args: base.args,
+    }
+  }, [geofenceBox, geofencePadding, stageColliders])
 
   const floors = stageColliders.filter(
     (s) => s.type === 'floor' || s.type === 'explicit-floor',
