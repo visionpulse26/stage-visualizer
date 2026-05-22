@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react'
-import { useThree } from '@react-three/fiber'
+import { useCallback, useMemo, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useBeforePhysicsStep, useAfterPhysicsStep } from '@react-three/rapier'
 import { usePovController } from '../../hooks/usePovController'
 
@@ -8,6 +8,18 @@ const CAPSULE_HALF_HEIGHT = 0.55
 const CAPSULE_RADIUS = 0.28
 const CAPSULE_REST_CENTER_Y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS
 const FALL_RESET_Y = -8
+
+function getValidRigidBody(ref) {
+  const body = ref?.current
+  if (!body) return null
+  try {
+    if (body.isValid && !body.isValid()) return null
+    if (body.isInvalid?.()) return null
+  } catch {
+    return null
+  }
+  return body
+}
 const clamp = (value, min, max) => {
   if (min > max) return (min + max) * 0.5
   return Math.max(min, Math.min(max, value))
@@ -55,7 +67,7 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     [],
   )
 
-  const { tick } = usePovController({
+  const { tick, applyLook } = usePovController({
     enabled,
     camera,
     gl,
@@ -68,19 +80,36 @@ export function PovKinematicDriver({ enabled, floorY, geofenceBox, geofencePaddi
     capsuleRadius: CAPSULE_RADIUS,
   })
 
+  const syncCameraToBody = useCallback(() => {
+    const body = getValidRigidBody(rb)
+    if (!body) return
+    const p = body.translation()
+    camera.position.set(p.x, p.y + eyeOffset, p.z)
+  }, [camera, eyeOffset])
+
+  // Look + camera follow run on the render clock so POV stays smooth on
+  // high-refresh displays instead of waiting for the fixed 60hz physics step.
+  useFrame(() => {
+    if (!enabled) return
+    applyLook()
+    syncCameraToBody()
+  })
+
   useBeforePhysicsStep(() => {
     if (!enabled) return
     tick(FIXED_DT)
   })
 
   useAfterPhysicsStep(() => {
-    if (!enabled || !rb.current) return
-    const p = rb.current.translation()
-    camera.position.set(p.x, p.y + eyeOffset, p.z)
+    if (!enabled) return
+    const body = getValidRigidBody(rb)
+    if (!body) return
+    syncCameraToBody()
+    const p = body.translation()
 
     if (p.y < FALL_RESET_Y) {
-      rb.current.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
-      rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      body.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
   })
 
