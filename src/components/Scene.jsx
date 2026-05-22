@@ -562,6 +562,21 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       // Stage models from C4D/SketchUp often carry unreliable bounds after GLB export.
       // Disabling per-mesh frustum culling avoids "rotate slightly and the stage disappears".
       child.frustumCulled = false
+      // GLBs exported after deleting normal tags / breaking phong shading ship with
+      // no usable normal attribute. MeshStandardMaterial then lights every face as
+      // black (dot(normal, light) == 0). Rebuild smooth normals so lighting works.
+      const normalAttr = child.geometry?.attributes?.normal
+      let normalsMissing = !normalAttr || normalAttr.count === 0
+      if (!normalsMissing && normalAttr.array) {
+        const arr = normalAttr.array
+        const sample = Math.min(arr.length, 30)
+        let allZero = true
+        for (let s = 0; s < sample; s++) {
+          if (arr[s] !== 0) { allZero = false; break }
+        }
+        normalsMissing = allZero
+      }
+      if (normalsMissing) child.geometry?.computeVertexNormals?.()
       child.geometry?.computeBoundingBox?.()
       child.geometry?.computeBoundingSphere?.()
 
