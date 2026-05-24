@@ -4,11 +4,12 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment, ContactShadows } from '@react-three/drei'
-import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing'
+import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Scene from './Scene'
+import { detectLedSurfaceTarget } from '../utils/ledMaterialTargets'
 
 const LazyPovFpsRig = lazy(() =>
   import('./PovFpsRig').then((mod) => ({ default: mod.PovFpsRig }))
@@ -112,7 +113,7 @@ function EnvIntensityController({ intensity, protectLed }) {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
       mats.forEach(m => {
         if (!m || m.envMapIntensity === undefined) return
-        if (protectLed && m.name === 'LED_MASTER_MAT') {
+        if (protectLed && detectLedSurfaceTarget([m.name], '')?.surfaceType === 'solid') {
           m.envMapIntensity = 0
           return
         }
@@ -242,7 +243,23 @@ function LocalStudioEnvironment({ intensity = 1, background = false, bgBlur = 0 
 // Simplified system: NO rotation, AGGRESSIVE cleanup, BULLETPROOF loading.
 // Only loads url_low versions to keep GPU cool on RTX 4080.
 
-const LOAD_TIMEOUT_MS = 10000 // 10 second timeout
+const LOAD_TIMEOUT_MS = 30000
+
+function getHdriExtensionFromSource(source, fallback = 'hdr') {
+  const normalizedFallback = ['hdr', 'exr'].includes((fallback || '').toLowerCase())
+    ? fallback.toLowerCase()
+    : 'hdr'
+  if (!source || source.startsWith('blob:')) return normalizedFallback
+
+  try {
+    const { pathname } = new URL(source, window.location.href)
+    const ext = pathname.split('/').pop()?.split('.').pop()?.toLowerCase()
+    return ['hdr', 'exr'].includes(ext) ? ext : normalizedFallback
+  } catch {
+    const ext = source.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase()
+    return ['hdr', 'exr'].includes(ext) ? ext : normalizedFallback
+  }
+}
 
 function LiteHdriEnvironment({
   url,
@@ -323,9 +340,7 @@ function LiteHdriEnvironment({
     }
 
     const isBlob = url.startsWith('blob:')
-    const isExr = isBlob
-      ? (ext || '').toLowerCase() === 'exr'
-      : url.toLowerCase().endsWith('.exr')
+    const isExr = getHdriExtensionFromSource(url, ext) === 'exr'
     const loader = isExr ? new EXRLoader() : new RGBELoader()
     if (loadingManager) loader.manager = loadingManager
 
@@ -693,6 +708,7 @@ function StageCanvas({
         gl={{
           antialias:             true,
           alpha:                 false,
+          logarithmicDepthBuffer: true,
           preserveDrawingBuffer: true,
           toneMapping:           THREE.ACESFilmicToneMapping,
           toneMappingExposure:   0.62,
@@ -881,21 +897,14 @@ function StageCanvas({
           </PovRuntimeBoundary>
         )}
 
-        {/* Bloom + DoF — stage stays sharp, background/foreground bokeh */}
+        {/* Bloom only. HDRI background blur is handled by Environment; a full-scene
+            DoF depth pass is unstable with transparent/coplanar GLB LED surfaces. */}
         <EffectComposer>
           <Bloom
             luminanceThreshold={resolvedThreshold}
             luminanceSmoothing={0.9}
             intensity={resolvedBloom}
           />
-          {resolvedBgBlur > 0 && (
-            <DepthOfField
-              target={[0, 1, 0]}
-              worldFocusRange={6}
-              focalLength={0.02}
-              bokehScale={2}
-            />
-          )}
         </EffectComposer>
       </Canvas>
       </StageErrorBoundary>

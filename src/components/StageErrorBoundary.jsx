@@ -24,13 +24,21 @@ class StageErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
-      const msg = this.state.error?.message || 'Unknown error'
-      const isWebgl = /webgl|context|gpu/i.test(msg)
-      const isNetwork = /fetch|network|cors|failed to load/i.test(msg)
+      const rawMsg = this.state.error?.message || 'Unknown error'
+      const isWebgl = /webgl|context|gpu/i.test(rawMsg)
+      const isNetwork = /fetch|network|cors|failed to load/i.test(rawMsg)
+      const isGlbParse = /failed to parse|unexpected token|json|gltf/i.test(rawMsg)
 
       let hint = 'Try reloading the page.'
       if (isWebgl) hint = 'WebGL may be disabled or unsupported in your browser.'
       else if (isNetwork) hint = 'Check your connection and try again.'
+      else if (isGlbParse) hint = 'The GLB/GLTF file may be corrupted or invalid. Try re-exporting from your 3D software.'
+
+      // Truncate long messages (e.g. binary GLB data embedded in parse errors)
+      const msg = rawMsg.length > 200 ? rawMsg.slice(0, 200) + '…' : rawMsg
+      const displayMsg = isGlbParse && rawMsg.length > 200
+        ? 'Failed to parse model file — the file may be corrupted or not a valid GLB/GLTF.'
+        : msg
 
       return (
         <div
@@ -45,7 +53,7 @@ class StageErrorBoundary extends Component {
               STAGE FAILED TO LOAD
             </p>
             <p className="text-white/60 text-sm font-mono break-all">
-              {msg}
+              {displayMsg}
             </p>
             <p className="text-white/40 text-xs">
               {hint}

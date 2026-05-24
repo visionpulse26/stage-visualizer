@@ -17,14 +17,6 @@ import { buildPovCollidersFromConfig } from '../components/pov/buildPovColliders
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
 
-const DEFAULT_STAGE_PREVIEW_CLIP = {
-  id: 'default-stage-preview',
-  name: 'Default LED Preview',
-  type: 'image',
-  external: true,
-  url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1920 1080%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 x2=%221%22 y1=%220%22 y2=%221%22%3E%3Cstop stop-color=%22%23ff2d00%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%23a60000%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ff7a18%22/%3E%3C/linearGradient%3E%3Cpattern id=%22p%22 width=%2280%22 height=%2280%22 patternUnits=%22userSpaceOnUse%22 patternTransform=%22rotate(18)%22%3E%3Crect width=%2280%22 height=%2280%22 fill=%22url(%23g)%22/%3E%3Cpath d=%22M0 40h80M40 0v80%22 stroke=%22%23ffffff%22 stroke-opacity=%220.13%22 stroke-width=%226%22/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=%221920%22 height=%221080%22 fill=%22%23050000%22/%3E%3Crect x=%220%22 y=%220%22 width=%221920%22 height=%221080%22 fill=%22url(%23p)%22/%3E%3Ccircle cx=%22960%22 cy=%22540%22 r=%22280%22 fill=%22%23ffffff%22 fill-opacity=%220.08%22/%3E%3Ctext x=%22960%22 y=%22570%22 text-anchor=%22middle%22 font-family=%22Arial, sans-serif%22 font-size=%2268%22 font-weight=%22700%22 fill=%22%23fff2ec%22%3ESTAGE LED PREVIEW%3C/text%3E%3C/svg%3E',
-}
-
 function AdminPage() {
   const navigate = useNavigate()
   const { stageProjectId } = useParams()
@@ -157,14 +149,17 @@ function AdminPage() {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
   const [cloneToast, setCloneToast] = useState(null)
 
-  const ensureDefaultPreviewClip = useCallback(() => {
-    setVideoPlaylist([DEFAULT_STAGE_PREVIEW_CLIP])
+  // Reset all active media state — LED panels fall back to their material
+  // default (LED_TRANSPARENT_MAT renders as a dark grid, LED_MASTER_MAT solid
+  // black). User explicitly chooses media in the Presentation editor.
+  const clearActiveMedia = useCallback(() => {
+    setVideoPlaylist([])
     setVideoElement(null)
-    setActiveImageUrl(DEFAULT_STAGE_PREVIEW_CLIP.url)
-    setActiveVideoId(DEFAULT_STAGE_PREVIEW_CLIP.id)
-    setVideoLoaded(true)
+    setActiveImageUrl(null)
+    setActiveVideoId(null)
+    setVideoLoaded(false)
     setIsPlaying(false)
-    clipCountRef.current = 1
+    clipCountRef.current = 0
   }, [])
 
   // ── Resolve external stage URL through cache for 3D preview ─────────────────
@@ -195,8 +190,8 @@ function AdminPage() {
   }, [])
 
   useEffect(() => {
-    ensureDefaultPreviewClip()
-  }, [ensureDefaultPreviewClip])
+    clearActiveMedia()
+  }, [clearActiveMedia])
 
   // ── Enumerate available cameras on mount ─────────────────────────────────
   useEffect(() => {
@@ -587,9 +582,11 @@ function AdminPage() {
         (percent) => setR2UploadProgress(percent)
       )
 
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'hdr'
       if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
         try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
       }
+      setHdriFileExt(['hdr', 'exr'].includes(ext) ? ext : 'hdr')
       setCustomHdriUrl(finalUrl)
       setHdriFile(null)
       setHdriPreset('none')
@@ -606,6 +603,8 @@ function AdminPage() {
     if (customHdriUrl && customHdriUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(customHdriUrl) } catch (_) {}
     }
+    const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() || 'hdr'
+    setHdriFileExt(['hdr', 'exr'].includes(ext) ? ext : 'hdr')
     setCustomHdriUrl(url)
     setHdriFile(null)
     setHdriPreset('none')
@@ -880,8 +879,8 @@ function AdminPage() {
       setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
     }
 
-    ensureDefaultPreviewClip()
-  }, [stageUrl, isRemote, resetPovSession, ensureDefaultPreviewClip])
+    clearActiveMedia()
+  }, [stageUrl, isRemote, resetPovSession, clearActiveMedia])
 
   useEffect(() => {
     if (!stageProjectId || autoOpenedProjectRef.current === stageProjectId) return
@@ -981,6 +980,15 @@ function AdminPage() {
       }
 
       const finalVideoUrl = null
+      const finalMediaPlaylist = videoPlaylist
+        .filter(c => c?.url && !c.url.startsWith('blob:') && !c.url.startsWith('data:'))
+        .map(c => ({
+          name: c.name,
+          url: c.url,
+          type: c.type,
+          external: c.external ?? true,
+          ...(c.thumbnailUrl || c.thumbnail_url ? { thumbnailUrl: c.thumbnailUrl || c.thumbnail_url } : {}),
+        }))
 
       // 3. HDRI
       const finalHdriUrl = (customHdriUrl && !customHdriUrl.startsWith('blob:'))
@@ -1021,7 +1029,7 @@ function AdminPage() {
         id:              projectId,
         stage_url:       finalStageUrl,
         video_url:       finalVideoUrl,
-        media_playlist:  [],
+        media_playlist:  finalMediaPlaylist,
         camera_presets:  cameraPresets,
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
@@ -1040,8 +1048,6 @@ function AdminPage() {
         .single()
       if (tokRow?.embed_token) setEmbedToken(tokRow.embed_token)
 
-      ensureDefaultPreviewClip()
-
       setPublishedId(projectId)
       setCloudStageUrl(finalStageUrl)
       setPublishStatus('success')
@@ -1055,7 +1061,7 @@ function AdminPage() {
   }, [stageFile, cloudStageUrl, publishedId, cameraPresets, gridCellSize, projectName,
       hdriPreset, customHdriUrl, envIntensity, bgBlur, showHdriBackground, bloomStrength, sunAzimuth, sunElevation,
       bloomThreshold, protectLed, transparentLedConfig, sunIntensity, autoplayIntervalSeconds, cameraFlyDurationSeconds, versionStatus,
-      povHeightOffset, povColliderConfig, embedEnabled, ensureDefaultPreviewClip])
+      povHeightOffset, povColliderConfig, embedEnabled, videoPlaylist])
 
   // ── Derived HDRI state passed to UIPanel ─────────────────────────────────
   const hasLocalHdri = !!(customHdriUrl && customHdriUrl.startsWith('blob:'))

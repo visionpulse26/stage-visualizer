@@ -1,13 +1,31 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import * as THREE from 'three'
 import { scanStageMeshes, scanStageMeshesAsync } from './pov/scanStageMeshes'
+import { detectLedSurfaceTarget } from '../utils/ledMaterialTargets'
+
+function createDracoLoader() {
+  const draco = new DRACOLoader()
+  draco.setDecoderPath('/draco/')
+  return draco
+}
+
+function createGltfLoader(loadingManager) {
+  const loader = new GLTFLoader(loadingManager)
+  loader.setDRACOLoader(createDracoLoader())
+  return loader
+}
 
 const LED_MATERIAL_NAME = 'LED_MASTER_MAT'
 const TRANSPARENT_LED_MATERIAL_NAME = 'LED_TRANSPARENT_MAT'
 const EMISSIVE_TARGET    = 1.5
 const EMISSIVE_FADE_SECS = 0.5
+const LED_BASE_POLYGON_OFFSET = { factor: -4, units: -4 }
+const LED_BASE_BEHIND_GRID_POLYGON_OFFSET = { factor: 1, units: 1 }
+const TRANSPARENT_LED_POLYGON_OFFSET = { factor: -1, units: -1 }
+const TRANSPARENT_LED_ALPHA_TEST = 0.02
 
 const DEFAULT_TRANSPARENT_LED = {
   enabled: true,
@@ -92,11 +110,9 @@ const STAGE_MATERIAL_PRESETS = [
 ]
 
 function getLedSurfaceType(...names) {
-  const normalized = names.filter(Boolean)
-  if (normalized.some(name => name === LED_MATERIAL_NAME)) return 'solid'
-  if (normalized.some(name => name === TRANSPARENT_LED_MATERIAL_NAME)) return 'transparent-grid'
-  if (normalized.some(name => name.startsWith('LED_GRID_'))) return 'transparent-grid'
-  return null
+  const meshName = names[names.length - 1] || ''
+  const matNames = names.slice(0, -1).filter(Boolean)
+  return detectLedSurfaceTarget(matNames, meshName)?.surfaceType ?? null
 }
 
 function createTransparentLedMaskTexture(transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
@@ -135,7 +151,7 @@ function createTransparentLedMaskTexture(transparentLedConfig = DEFAULT_TRANSPAR
   return maskTexture
 }
 
-function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+function createGeneratedTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
   const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
   const maskTexture = createTransparentLedMaskTexture(cfg)
   const material = new THREE.MeshBasicMaterial({
@@ -144,18 +160,69 @@ function createTransparentLedMaterial(texture, transparentLedConfig = DEFAULT_TR
     alphaMap: maskTexture,
     transparent: true,
     opacity: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)),
-    alphaTest: 0.08,
-    depthWrite: true,
+    alphaTest: TRANSPARENT_LED_ALPHA_TEST,
+    // Keep the grid in front of the LED base without moving the geometry. A small
+    // offset avoids coplanar depth flicker, while the low alpha test lets mipmaps
+    // smooth the repeated grid instead of popping on/off as the camera rotates.
+    polygonOffset: true,
+    polygonOffsetFactor: TRANSPARENT_LED_POLYGON_OFFSET.factor,
+    polygonOffsetUnits: TRANSPARENT_LED_POLYGON_OFFSET.units,
+    depthWrite: false,
     depthTest: true,
     side: THREE.DoubleSide,
     toneMapped: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
   })
   material.name = TRANSPARENT_LED_MATERIAL_NAME
+  material.forceSinglePass = true
+  material.alphaToCoverage = true
+  material.needsUpdate = true
   material.userData.ownedAlphaMap = true
   return material
+}
+
+function createSourceTransparentLedMaterial(sourceMaterial, texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+  const cfg = { ...DEFAULT_TRANSPARENT_LED, ...(transparentLedConfig || {}) }
+  const material = sourceMaterial?.clone?.()
+  if (!material) return createGeneratedTransparentLedMaterial(texture, cfg)
+
+  material.name = sourceMaterial?.name || TRANSPARENT_LED_MATERIAL_NAME
+
+  if (texture) {
+    const preserveSourceMapForAlpha = !material.alphaMap && material.map && (material.transparent || material.alphaTest > 0)
+
+    if (preserveSourceMapForAlpha && 'emissiveMap' in material) {
+      material.emissiveMap = texture
+      material.emissive?.set?.('#ffffff')
+      material.emissiveIntensity = Math.max(0, Number(cfg.glow) || DEFAULT_TRANSPARENT_LED.glow)
+    } else {
+      material.map = texture
+      material.color?.set?.('#ffffff')
+      if ('emissiveMap' in material) material.emissiveMap = texture
+      material.emissive?.set?.('#ffffff')
+      if ('emissiveIntensity' in material) {
+        material.emissiveIntensity = Math.max(0, Number(cfg.glow) || DEFAULT_TRANSPARENT_LED.glow)
+      }
+    }
+    material.toneMapped = false
+  }
+
+  material.needsUpdate = true
+  material.userData.usesSourceTransparentMaterial = true
+  return material
+}
+
+function createTransparentLedMaterial(_sourceMaterial, texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+  return createGeneratedTransparentLedMaterial(texture, transparentLedConfig)
+}
+
+function disposeManagedMaterial(material) {
+  if (!material) return
+  if (material.userData?.ownedMap && material.map) material.map.dispose?.()
+  if (material.userData?.ownedEmissiveMap && material.emissiveMap && material.emissiveMap !== material.map) {
+    material.emissiveMap.dispose?.()
+  }
+  if (material.userData?.ownedAlphaMap && material.alphaMap) material.alphaMap.dispose?.()
+  material.dispose?.()
 }
 
 
@@ -432,6 +499,18 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     img.onload = () => {
       if (cancelled) { safeRevoke(); return }
 
+      // Guard against zero-sized decodes (e.g. SVG data URLs that lack explicit
+      // width/height attributes — Chromium/Edge may decode them to 0x0, which
+      // makes WebGL reject the upload with "texSubImage2D: bad image data" and
+      // can mark the texture immutable, causing the LED panel to flicker/blackout.
+      if (!img.naturalWidth || !img.naturalHeight) {
+        if (import.meta.env.DEV) {
+          console.warn('[Scene] image decoded to zero dimensions, skipping texture upload', activeImageUrl?.slice(0, 80))
+        }
+        safeRevoke()
+        return
+      }
+
       // 1. Dispose previous texture
       if (imageTextureRef.current) {
         imageTextureRef.current.dispose()
@@ -502,12 +581,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     return () => {
       if (videoTextureRef.current) videoTextureRef.current.dispose()
       if (imageTextureRef.current) imageTextureRef.current.dispose()
-      prevLedMaterialsRef.current.forEach((m) => {
-        if (m?.map) m.map.dispose?.()
-        if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
-        if (m?.userData?.ownedAlphaMap && m?.alphaMap) m.alphaMap.dispose?.()
-        m?.dispose?.()
-      })
+      prevLedMaterialsRef.current.forEach(disposeManagedMaterial)
     }
   }, [])
 
@@ -542,12 +616,11 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   useEffect(() => {
     if (!clonedScene) return
 
-    prevLedMaterialsRef.current.forEach((m) => {
-      if (m?.map) m.map.dispose?.()
-      if (m?.emissiveMap && m.emissiveMap !== m.map) m.emissiveMap.dispose?.()
-      if (m?.userData?.ownedAlphaMap && m?.alphaMap) m.alphaMap.dispose?.()
-      m?.dispose?.()
-    })
+    if (import.meta.env.DEV) {
+      console.log('[Scene] material pass — activeTexture:', activeTexture ? activeTexture.constructor.name : 'NULL')
+    }
+
+    prevLedMaterialsRef.current.forEach(disposeManagedMaterial)
     prevLedMaterialsRef.current = []
     ledMaterialsRef.current = []
 
@@ -580,7 +653,14 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       child.geometry?.computeBoundingBox?.()
       child.geometry?.computeBoundingSphere?.()
 
-      const mats = Array.isArray(child.material) ? child.material : [child.material]
+      if (child.userData.stageSourceRenderOrder == null) {
+        child.userData.stageSourceRenderOrder = child.renderOrder || 0
+      }
+      const currentMats = Array.isArray(child.material) ? child.material : [child.material]
+      if (!child.userData.stageSourceMaterials) {
+        child.userData.stageSourceMaterials = currentMats.slice()
+      }
+      const mats = child.userData.stageSourceMaterials
       child.updateWorldMatrix(true, false)
       meshEntries.push({
         child,
@@ -594,6 +674,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
     })
 
     const ledEntries = meshEntries.filter((entry) => entry.ledSurfaceType)
+    const hasTransparentGrid = ledEntries.some((entry) => entry.ledSurfaceType === 'transparent-grid')
+
     const duplicatePolicies = new Map(
       meshEntries
         .map((entry) => [entry.child.uuid, getDuplicateStagePolicy(entry, ledEntries)])
@@ -614,6 +696,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
         if (ledSurfaceType) {
           found = true
+          child.castShadow = false
+          child.receiveShadow = false
 
           child.updateWorldMatrix(true, false)
           const box    = new THREE.Box3().setFromObject(child)
@@ -623,10 +707,18 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           }
 
           let ledMat
+          const basePolygonOffset = ledSurfaceType === 'solid' && hasTransparentGrid
+            ? LED_BASE_BEHIND_GRID_POLYGON_OFFSET
+            : LED_BASE_POLYGON_OFFSET
           try {
             if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
-              ledMat = createTransparentLedMaterial(activeTexture, transparentLedConfig)
-              child.renderOrder = 4
+              if (import.meta.env.DEV) {
+                console.log(`[Scene] transparent-grid → mesh="${child.name}" mat="${mat.name}" texture=${activeTexture ? activeTexture.constructor.name : 'NULL'} hasUV=${!!child.geometry?.attributes?.uv}`)
+              }
+              ledMat = createTransparentLedMaterial(mat, activeTexture, transparentLedConfig)
+              child.renderOrder = ledMat.userData?.usesSourceTransparentMaterial
+                ? child.userData.stageSourceRenderOrder
+                : 4
             } else if (activeTexture) {
               if (protectLed) {
                 ledMat = new THREE.MeshBasicMaterial({
@@ -634,8 +726,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                   side:       THREE.DoubleSide,
                   toneMapped: false,
                   polygonOffset: true,
-                  polygonOffsetFactor: -2,
-                  polygonOffsetUnits: -2,
+                  polygonOffsetFactor: basePolygonOffset.factor,
+                  polygonOffsetUnits: basePolygonOffset.units,
                 })
                 child.renderOrder = 3
               } else {
@@ -650,8 +742,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                   side:              THREE.DoubleSide,
                   toneMapped:        true,
                   polygonOffset:     true,
-                  polygonOffsetFactor: -2,
-                  polygonOffsetUnits: -2,
+                  polygonOffsetFactor: basePolygonOffset.factor,
+                  polygonOffsetUnits: basePolygonOffset.units,
                 })
                 ledMaterialsRef.current.push(ledMat)
                 child.renderOrder = 3
@@ -661,8 +753,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                 color: 0x000000,
                 side: THREE.DoubleSide,
                 polygonOffset: true,
-                polygonOffsetFactor: -2,
-                polygonOffsetUnits: -2,
+                polygonOffsetFactor: basePolygonOffset.factor,
+                polygonOffsetUnits: basePolygonOffset.units,
               })
               child.renderOrder = 3
             }
@@ -751,7 +843,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 }
 
 function ModelWithUrl({ url, ...rest }) {
-  const gltf = useLoader(GLTFLoader, url)
+  const gltf = useLoader(GLTFLoader, url, (loader) => {
+    loader.setDRACOLoader(createDracoLoader())
+  })
   return <ModelContent gltf={gltf} {...rest} />
 }
 
@@ -761,7 +855,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   useEffect(() => {
     if (!url || !loadingManager) return
     setLoadError(null)
-    const loader = new GLTFLoader(loadingManager)
+    const loader = createGltfLoader(loadingManager)
     loader.load(
       url,
       (g) => setGltf(g),

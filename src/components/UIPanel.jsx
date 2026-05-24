@@ -320,58 +320,22 @@ function UIPanel({
               </div>
             </Section>
 
-            <Section icon={<IconVideo />} title="Default Preview Clip">
+            <Section icon={<IconVideo />} title="Virtual Camera">
               <div className="space-y-2" style={{ fontFamily: "'Chakra Petch', sans-serif" }}>
-                <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-white/80">{videoPlaylist[0]?.name || 'Default LED Preview'}</p>
-                      <p className="mt-1 text-[9px] leading-snug text-white/35">
-                        Stage Setup uses one fixed preview clip for LED/material checks. Upload and sequence real show clips in Presentation after publishing.
-                      </p>
+                {r2Error && (
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[10px] font-semibold text-red-400">Upload Failed</p>
+                      <button onClick={onDismissR2Error} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
                     </div>
-                    <span className="shrink-0 rounded-md border border-violet-500/25 bg-violet-500/15 px-2 py-1 text-[8px] font-bold uppercase tracking-widest text-violet-300">
-                      Active
-                    </span>
+                    <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
                   </div>
-                </div>
-                <button
-                  onClick={handleNasVideoClick}
-                  disabled={isR2Uploading}
-                  className="hidden w-full items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#FF5F1F]/40 hover:border-[#FF5F1F] hover:bg-[#FF5F1F]/10 text-white/40 hover:text-[#FF5F1F] text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
-                  >
-                    {isR2Uploading ? (
-                      <>
-                        <span className="w-4 h-4 rounded-full border-2 border-emerald-300/30 border-t-emerald-300 animate-spin" />
-                        {r2UploadProgress != null ? `Uploading… ${r2UploadProgress}%` : 'Uploading…'}
-                      </>
-                    ) : (
-                      <><IconServer /><span>Cloud media disabled in Stage Setup</span></>
-                    )}
-                  </button>
-                  {isR2Uploading && r2UploadProgress != null && (
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${r2UploadProgress}%` }} />
-                    </div>
-                  )}
-                  <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2MediaUpload?.(f); e.target.value = '' }} />
-                  {r2Error && (
-                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-[10px] font-semibold text-red-400">Upload Failed</p>
-                        <button onClick={onDismissR2Error} className="text-red-400/50 hover:text-red-400 text-xs leading-none flex-shrink-0">✕</button>
-                      </div>
-                      <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
-                    </div>
-                  )}
-                  <p className="hidden text-[9px] text-[#FF5F1F]/70 bg-[#FF5F1F]/5 border border-[#FF5F1F]/20 rounded-lg px-2.5 py-1.5 leading-snug">
-                    Stage clip uploads moved to Presentation.
-                  </p>
-                </div>
+                )}
+                <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2MediaUpload?.(f); e.target.value = '' }} />
+              </div>
 
               {/* ── Virtual Camera (OBS / NDI) ─────────────────────────────── */}
-              <div className="pt-2 border-t border-white/5 space-y-2">
-                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">Virtual Camera</p>
+              <div className="space-y-2">
 
                 {/* Camera selector dropdown */}
                 <select

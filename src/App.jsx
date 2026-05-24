@@ -22,7 +22,21 @@ const PageLoadingFallback = () => (
 class PageErrorBoundary extends Component {
   state = { error: null }
   static getDerivedStateFromError(error) { return { error } }
-  componentDidCatch(error, info) { console.error('[PageErrorBoundary]', error, info) }
+  componentDidCatch(error, info) {
+    console.error('[PageErrorBoundary]', error, info)
+    const message = String(error?.message || error || '')
+    const isStaleChunk = /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(message)
+    if (!isStaleChunk || typeof window === 'undefined') return
+
+    const retryKey = 'stageviz:stale-chunk-retry'
+    const retryValue = window.location.pathname
+    if (window.sessionStorage?.getItem(retryKey) === retryValue) return
+    try { window.sessionStorage?.setItem(retryKey, retryValue) } catch (_) {}
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('appv', String(Date.now()))
+    window.location.replace(url.toString())
+  }
   render() {
     if (this.state.error) {
       return (
