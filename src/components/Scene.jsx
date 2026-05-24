@@ -127,9 +127,9 @@ function createTransparentLedMaskTexture(transparentLedConfig = DEFAULT_TRANSPAR
   canvas.height = size
   const ctx = canvas.getContext('2d')
   ctx.clearRect(0, 0, size, size)
-  ctx.fillStyle = '#000000'
-  ctx.fillRect(0, 0, size, size)
   ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#000000'
   const barPxX = Math.max(1, Math.round(size * thicknessX))
   const barPxY = Math.max(1, Math.round(size * thicknessY))
   ctx.fillRect(0, 0, barPxX, size)
@@ -161,9 +161,9 @@ function createGeneratedTransparentLedMaterial(texture, transparentLedConfig = D
     transparent: true,
     opacity: Math.max(0, Math.min(1, Number(cfg.opacity) || DEFAULT_TRANSPARENT_LED.opacity)),
     alphaTest: TRANSPARENT_LED_ALPHA_TEST,
-    // Keep the grid in front of the LED base without moving the geometry. A small
-    // offset avoids coplanar depth flicker, while the low alpha test lets mipmaps
-    // smooth the repeated grid instead of popping on/off as the camera rotates.
+    // Keep the textured transparent LED surface in front of the LED base without
+    // moving the geometry. The alpha mask now leaves only fine transparent gaps,
+    // so uploaded media remains visible instead of collapsing into an average color.
     polygonOffset: true,
     polygonOffsetFactor: TRANSPARENT_LED_POLYGON_OFFSET.factor,
     polygonOffsetUnits: TRANSPARENT_LED_POLYGON_OFFSET.units,
@@ -616,8 +616,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   useEffect(() => {
     if (!clonedScene) return
 
-    console.warn('[Scene] material pass — activeTexture:', activeTexture ? activeTexture.constructor.name : 'NULL')
-
     prevLedMaterialsRef.current.forEach(disposeManagedMaterial)
     prevLedMaterialsRef.current = []
     ledMaterialsRef.current = []
@@ -710,7 +708,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
             : LED_BASE_POLYGON_OFFSET
           try {
             if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
-              console.warn(`[Scene] transparent-grid → mesh="${child.name}" mat="${mat.name}" texture=${activeTexture ? activeTexture.constructor.name : 'NULL'} hasUV=${!!child.geometry?.attributes?.uv}`)
               ledMat = createTransparentLedMaterial(mat, activeTexture, transparentLedConfig)
               child.renderOrder = ledMat.userData?.usesSourceTransparentMaterial
                 ? child.userData.stageSourceRenderOrder
