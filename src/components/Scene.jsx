@@ -616,7 +616,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   useEffect(() => {
     if (!clonedScene) return
 
-    console.log('[Scene] material pass — activeTexture:', activeTexture ? activeTexture.constructor.name : 'NULL')
+    console.warn('[Scene] material pass — activeTexture:', activeTexture ? activeTexture.constructor.name : 'NULL')
 
     prevLedMaterialsRef.current.forEach(disposeManagedMaterial)
     prevLedMaterialsRef.current = []
@@ -710,7 +710,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
             : LED_BASE_POLYGON_OFFSET
           try {
             if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
-              console.log(`[Scene] transparent-grid → mesh="${child.name}" mat="${mat.name}" texture=${activeTexture ? activeTexture.constructor.name : 'NULL'} hasUV=${!!child.geometry?.attributes?.uv}`)
+              console.warn(`[Scene] transparent-grid → mesh="${child.name}" mat="${mat.name}" texture=${activeTexture ? activeTexture.constructor.name : 'NULL'} hasUV=${!!child.geometry?.attributes?.uv}`)
               ledMat = createTransparentLedMaterial(mat, activeTexture, transparentLedConfig)
               child.renderOrder = ledMat.userData?.usesSourceTransparentMaterial
                 ? child.userData.stageSourceRenderOrder
