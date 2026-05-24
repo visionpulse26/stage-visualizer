@@ -60,7 +60,7 @@ test('keeps legacy LED material names as master surfaces', () => {
   })
 
   assert.deepEqual(detectLedSurfaceTarget(['LED_TRANSPARENT_MAT'], 'Mesh'), {
-    surfaceType: 'transparent-grid',
+    surfaceType: 'solid',
     targetId: 'master',
     targetLabel: 'Master LED',
     sourceName: 'LED_TRANSPARENT_MAT',
@@ -69,7 +69,7 @@ test('keeps legacy LED material names as master surfaces', () => {
   })
 
   assert.deepEqual(detectLedSurfaceTarget(['LED_TRANSPARENT_MAT.001'], 'Mesh'), {
-    surfaceType: 'transparent-grid',
+    surfaceType: 'solid',
     targetId: 'master',
     targetLabel: 'Master LED',
     sourceName: 'LED_TRANSPARENT_MAT.001',
@@ -78,11 +78,20 @@ test('keeps legacy LED material names as master surfaces', () => {
   })
 
   assert.deepEqual(detectLedSurfaceTarget(['MAT_GENERIC'], 'Transpa'), {
-    surfaceType: 'transparent-grid',
+    surfaceType: 'solid',
     targetId: 'master',
     targetLabel: 'Master LED',
     sourceName: 'Transpa',
     sourceKind: 'mesh',
+    isTargeted: false,
+  })
+
+  assert.deepEqual(detectLedSurfaceTarget(['LED_GRID_STAR'], 'Mesh'), {
+    surfaceType: 'transparent-grid',
+    targetId: 'master',
+    targetLabel: 'Master LED',
+    sourceName: 'LED_GRID_STAR',
+    sourceKind: 'material',
     isTargeted: false,
   })
 })

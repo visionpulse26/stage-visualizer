@@ -65,10 +65,18 @@ function parseLegacyLedName(name) {
   if (
     normalized === LED_TRANSPARENT_MATERIAL_NAME ||
     normalized.startsWith(`${LED_TRANSPARENT_MATERIAL_NAME}_`) ||
-    normalized.startsWith('LED_GRID_') ||
     normalized === 'TRANSPA' ||
     normalized.startsWith('TRANSPA_')
   ) {
+    return {
+      surfaceType: 'solid',
+      targetId: LED_MASTER_TARGET_ID,
+      targetLabel: LED_MASTER_TARGET_LABEL,
+      sourceName: name,
+      isTargeted: false,
+    }
+  }
+  if (normalized.startsWith('LED_GRID_')) {
     return {
       surfaceType: 'transparent-grid',
       targetId: LED_MASTER_TARGET_ID,
