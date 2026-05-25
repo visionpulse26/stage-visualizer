@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabaseClient'
 import useHdriPresets from '../hooks/useHdriPresets'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
+import { transcodeToHalfRes } from '../utils/videoTranscode'
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
@@ -144,6 +145,7 @@ function AdminPage() {
   const [isR2Uploading, setIsR2Uploading] = useState(false)
   const [r2UploadProgress, setR2UploadProgress] = useState(null) // 0–100 or null
   const [r2Error, setR2Error] = useState(null)
+  const [transcodeStatus, setTranscodeStatus] = useState(null) // null | string message
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
@@ -241,10 +243,10 @@ function AdminPage() {
     v.load()
   }, [])
 
-  // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
-  const ALLOWED_VIDEO_EXT = ['mp4', 'webm']
+  // ── File validation — videos now accept any format (transcoded before upload) ──
+  const ALLOWED_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'hevc', 'heic', 'm4v', 'ts', 'mts', 'mxf', 'wmv', 'flv']
   const ALLOWED_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
-  const ALLOWED_MIME_VIDEO = ['video/mp4', 'video/webm']
+  const ALLOWED_MIME_VIDEO = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/mp2t', 'video/mxf']
   const ALLOWED_MIME_IMAGE = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
 
   const validateMediaFile = useCallback((file) => {
@@ -252,11 +254,11 @@ function AdminPage() {
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     const mime = file.type.toLowerCase()
 
-    const isValidVideo = ALLOWED_VIDEO_EXT.includes(ext) || ALLOWED_MIME_VIDEO.includes(mime)
+    const isValidVideo = ALLOWED_VIDEO_EXT.includes(ext) || ALLOWED_MIME_VIDEO.includes(mime) || mime.startsWith('video/')
     const isValidImage = ALLOWED_IMAGE_EXT.includes(ext) || ALLOWED_MIME_IMAGE.includes(mime)
 
     if (!isValidVideo && !isValidImage) {
-      alert(`⚠️ FORMAT NOT SUPPORTED.\n\nPLEASE USE MP4/WEBM FOR VIDEOS.\nPLEASE USE WEBP/PNG/JPG FOR IMAGES.\n\nFile: ${file.name}`)
+      alert(`⚠️ FORMAT NOT SUPPORTED.\n\nAccepted video formats: MP4, MOV, MKV, AVI, WebM, HEVC, and more.\nAccepted image formats: WebP, PNG, JPG, GIF.\n\nFile: ${file.name}`)
       return false
     }
     return true
@@ -519,18 +521,25 @@ function AdminPage() {
       alert('Please enter a project name before uploading.')
       return
     }
-    setIsR2Uploading(true); setR2Error(null); setR2UploadProgress(0)
+    setIsR2Uploading(true); setR2Error(null); setR2UploadProgress(0); setTranscodeStatus(null)
     try {
+      // Transcode video to half-res H.264 before upload; images pass through unchanged
+      const uploadFile = await transcodeToHalfRes(file, {
+        onStatus: (msg) => setTranscodeStatus(msg),
+        onProgress: (pct) => setTranscodeStatus(`Converting… ${pct}%`),
+      })
+      setTranscodeStatus(null)
+
       const { putUrl, publicUrl } = await getPresignedUploadUrl({
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        contentLength: file.size,
+        filename: uploadFile.name,
+        contentType: uploadFile.type || 'application/octet-stream',
+        contentLength: uploadFile.size,
         projectId: publishedId || undefined,
         type: 'media',
       })
       const finalUrl = await uploadFileToPresignedUrl(
         putUrl,
-        file,
+        uploadFile,
         publicUrl,
         (percent) => setR2UploadProgress(percent)
       )
@@ -558,7 +567,7 @@ function AdminPage() {
     } catch (err) {
       setR2Error(getUploadErrorMessage(err))
     } finally {
-      setIsR2Uploading(false); setR2UploadProgress(null)
+      setIsR2Uploading(false); setR2UploadProgress(null); setTranscodeStatus(null)
     }
   }, [projectName, publishedId, videoPlaylist, activateVideo, validateMediaFile])
 
@@ -1182,6 +1191,7 @@ function AdminPage() {
           isR2Uploading={isR2Uploading}
           r2UploadProgress={r2UploadProgress}
           r2Error={r2Error}
+          transcodeStatus={transcodeStatus}
           onDismissR2Error={() => setR2Error(null)}
           envIntensity={envIntensity}               onEnvIntensityChange={setEnvIntensity}
           bgBlur={bgBlur}                           onBgBlurChange={setBgBlur}
