@@ -2,6 +2,10 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import { supabase } from '../lib/supabaseClient'
+import { usePresenceChannel } from '../hooks/usePresenceChannel'
+import { useVersionWatcher } from '../hooks/useVersionWatcher'
+import { PresenceAvatars } from '../components/PresenceAvatars'
+import { RemoteConflictBanner } from '../components/RemoteConflictBanner'
 import {
   deleteFeedback,
   deleteVersion,
@@ -1261,6 +1265,39 @@ export default function PresentationEditorPage() {
     }
   }, [])
 
+  // ── Real-time presence & remote conflict detection ────────────────────────
+  const presenceUserInfo = useMemo(() => ({
+    userId: adminUserId,
+    email: adminIdentity,
+    displayName: adminIdentity,
+  }), [adminUserId, adminIdentity])
+
+  const { presenceList } = usePresenceChannel(projectId, presenceUserInfo)
+
+  const [remoteSavedVersion, setRemoteSavedVersion] = useState(null)
+
+  const handleRemoteSave = useCallback((newRow) => {
+    setRemoteSavedVersion(newRow)
+  }, [])
+
+  useVersionWatcher(projectId, draftVersion?.version_token ?? null, handleRemoteSave)
+
+  const handleReloadRemote = useCallback(async () => {
+    setRemoteSavedVersion(null)
+    try {
+      const draft = await loadDraft(projectId)
+      if (!draft?.snapshot_json?.slides) return
+      const freshSlides = draft.snapshot_json.slides.filter(
+        (s) => !isDefaultStagePreviewClip({ id: s.clipId })
+      )
+      setDraftVersion(draft)
+      setSlides(freshSlides)
+      setIsDirty(false)
+    } catch (err) {
+      console.error('[VersionWatcher] reload failed', err)
+    }
+  }, [projectId])
+
   const persistProjectPlaylistThumbnail = useCallback(async (slide, slideIndex, thumbnailUrl) => {
     const currentPlaylist = videoPlaylistRef.current
     if (!projectId || !isPersistedThumbnailUrl(thumbnailUrl) || !currentPlaylist.length) return
@@ -1369,7 +1406,22 @@ export default function PresentationEditorPage() {
         let slidesData
         if (draft?.snapshot_json?.slides?.length) {
           // Filter default clips from saved drafts too
-          slidesData = draft.snapshot_json.slides.filter(s => !isDefaultStagePreviewClip({ id: s.clipId }))
+          const draftSlides = draft.snapshot_json.slides.filter(s => !isDefaultStagePreviewClip({ id: s.clipId }))
+
+          // Merge: clips added to media_playlist after the draft was saved won't be
+          // in snapshot_json. Append them so two admins uploading concurrently don't
+          // silently lose each other's clips.
+          const draftClipIds = new Set(draftSlides.map(s => String(s.clipId)))
+          const newClips = playlist.filter(c => !draftClipIds.has(String(c.id)))
+          if (newClips.length > 0) {
+            const appended = newClips.map((clip, i) =>
+              makeSlideFromClip(clip, draftSlides.length + i, p.camera_presets)
+            )
+            slidesData = [...draftSlides, ...appended]
+            setIsDirty(true)
+          } else {
+            slidesData = draftSlides
+          }
         } else {
           slidesData = playlist.map((clip, i) => makeSlideFromClip(clip, i, p.camera_presets))
         }
@@ -2169,6 +2221,11 @@ export default function PresentationEditorPage() {
         </GhostBtn>
         <GhostBtn style={topBarButtonStyle} onClick={() => navigate(`/admin/${projectId}/feedback`)}>💬 View Feedback</GhostBtn>
         <GhostBtn style={topBarButtonStyle} onClick={() => setShowHistory(true)}>History</GhostBtn>
+        <PresenceAvatars
+          presenceList={presenceList}
+          selfUserId={adminUserId}
+          style={{ marginRight: 4 }}
+        />
         <GhostBtn style={topBarButtonStyle} onClick={() => handleSaveDraft()} disabled={isSaving}>
           {isSaving ? 'Saving…' : 'Save draft'}
         </GhostBtn>
@@ -2545,6 +2602,12 @@ export default function PresentationEditorPage() {
           hasUnsavedChanges={isDirty}
         />
       )}
+
+      <RemoteConflictBanner
+        remoteVersion={remoteSavedVersion}
+        onReload={handleReloadRemote}
+        onDismiss={() => setRemoteSavedVersion(null)}
+      />
     </div>
   )
 }
