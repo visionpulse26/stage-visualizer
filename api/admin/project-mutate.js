@@ -10,8 +10,9 @@
  *  - { action: 'delete_files_only_bulk', projectIds: string[] }
  */
 
-import { getBearerToken, verifyBearerUser, getServiceRoleClient } from '../lib/adminApiCommon.js'
+import { getBearerToken, verifyBearerUser, getServiceRoleClient, publicR2BaseFromEnv } from '../lib/adminApiCommon.js'
 import { createR2S3Client, getR2BucketName, listAllObjectsUnderPrefix, deleteObjectKeys } from '../lib/r2Admin.js'
+import { filterDeletableR2Keys } from '../lib/r2ReferenceProtection.js'
 
 export const config = {
   api: { bodyParser: { sizeLimit: '4mb' } },
@@ -55,12 +56,31 @@ export default async function handler(req, res) {
   const body = req.body || {}
   const action = body.action
 
-  async function deleteR2Prefix(projectId) {
+  async function loadProjectReferenceRows() {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, stage_url, media_playlist, scene_config')
+    if (error) throw error
+    return data || []
+  }
+
+  async function deleteR2Prefix(projectId, excludingProjectIds = [projectId], projectRows = null) {
     const prefix = `${projectId}/`
     const objs = await listAllObjectsUnderPrefix(s3, bucket, prefix)
     const keys = objs.map((o) => o.key)
-    if (keys.length === 0) return { deleted: [], failed: [] }
-    return deleteObjectKeys(s3, bucket, keys)
+    if (keys.length === 0) return { deleted: [], failed: [], skippedReferenced: [] }
+
+    const refs = projectRows || await loadProjectReferenceRows()
+    const { deletable, skippedReferenced } = filterDeletableR2Keys({
+      keys,
+      projectRows: refs,
+      excludingProjectIds,
+      publicBase: publicR2BaseFromEnv(),
+    })
+    const result = deletable.length > 0
+      ? await deleteObjectKeys(s3, bucket, deletable)
+      : { deleted: [], failed: [] }
+    return { ...result, skippedReferenced }
   }
 
   if (action === 'soft_delete') {
@@ -82,7 +102,8 @@ export default async function handler(req, res) {
   if (action === 'delete_files_only') {
     const projectId = body.projectId
     if (!isValidProjectId(projectId)) return res.status(400).json({ error: 'Invalid projectId' })
-    const r2 = await deleteR2Prefix(projectId)
+    const refs = await loadProjectReferenceRows()
+    const r2 = await deleteR2Prefix(projectId, [projectId], refs)
     const { data: row, error: fetchErr } = await supabase.from('projects').select('scene_config').eq('id', projectId).single()
     if (fetchErr) return res.status(500).json({ error: fetchErr.message })
     const nextCfg = { ...(row?.scene_config && typeof row.scene_config === 'object' ? row.scene_config : {}) }
@@ -105,13 +126,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'projectIds must be a non-empty array' })
     }
     const results = []
+    const refs = await loadProjectReferenceRows()
     for (const projectId of projectIds) {
       if (!isValidProjectId(projectId)) {
         results.push({ projectId, ok: false, error: 'Invalid id' })
         continue
       }
       try {
-        const r2 = await deleteR2Prefix(projectId)
+        const r2 = await deleteR2Prefix(projectId, projectIds, refs)
         const { data: row, error: fetchErr } = await supabase.from('projects').select('scene_config').eq('id', projectId).single()
         if (fetchErr) throw fetchErr
         const nextCfg = { ...(row?.scene_config && typeof row.scene_config === 'object' ? row.scene_config : {}) }
@@ -133,6 +155,7 @@ export default async function handler(req, res) {
     const projectId = body.projectId
     if (!isValidProjectId(projectId)) return res.status(400).json({ error: 'Invalid projectId' })
 
+    const refs = await loadProjectReferenceRows()
     const tables = ['client_page_views', 'client_sessions', 'client_clip_watch', 'client_interactions']
     for (const t of tables) {
       const { error } = await supabase.from(t).delete().eq('project_id', projectId)
@@ -142,7 +165,7 @@ export default async function handler(req, res) {
     const { error: delProjErr } = await supabase.from('projects').delete().eq('id', projectId)
     if (delProjErr) return res.status(500).json({ error: delProjErr.message })
 
-    const r2 = await deleteR2Prefix(projectId)
+    const r2 = await deleteR2Prefix(projectId, [projectId], refs)
     return res.status(200).json({ ok: true, r2 })
   }
 
