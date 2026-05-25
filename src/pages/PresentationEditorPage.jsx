@@ -4,6 +4,7 @@ import StageCanvas from '../components/StageCanvas'
 import { supabase } from '../lib/supabaseClient'
 import { usePresenceChannel } from '../hooks/usePresenceChannel'
 import { useVersionWatcher } from '../hooks/useVersionWatcher'
+import { useCollaborativeEditing } from '../hooks/useCollaborativeEditing'
 import { PresenceAvatars } from '../components/PresenceAvatars'
 import { RemoteConflictBanner } from '../components/RemoteConflictBanner'
 import {
@@ -1183,10 +1184,12 @@ export default function PresentationEditorPage() {
 
   // ── Presentation editor state ─────────────────────────────────────────────
   const [slides,          setSlides]          = useState([])
+  const slidesRef = useRef([])  // always-current ref for auto-save reads
   const [activeSlideId,   setActiveSlideId]   = useState(null)
   const [rightTab,        setRightTab]        = useState('context')  // 'context' | 'feedback'
   const [isDirty,         setIsDirty]         = useState(false)
   const [isSaving,        setIsSaving]        = useState(false)
+  const [autoSaveStatus,  setAutoSaveStatus]  = useState('idle')  // 'idle'|'saving'|'saved'
   const [saveError,       setSaveError]       = useState(null)
   const [showPublish,     setShowPublish]      = useState(false)
   const [showHistory,     setShowHistory]      = useState(false)
@@ -1223,6 +1226,10 @@ export default function PresentationEditorPage() {
   useEffect(() => {
     videoPlaylistRef.current = videoPlaylist
   }, [videoPlaylist])
+
+  useEffect(() => {
+    slidesRef.current = slides
+  }, [slides])
 
   useEffect(() => {
     const vid = videoRef.current
@@ -1277,8 +1284,82 @@ export default function PresentationEditorPage() {
   const [remoteSavedVersion, setRemoteSavedVersion] = useState(null)
 
   const handleRemoteSave = useCallback((newRow) => {
+    // Suppress banner for our own auto-saves
+    if (newRow.created_by_user_id && newRow.created_by_user_id === adminUserId) return
     setRemoteSavedVersion(newRow)
+  }, [adminUserId])
+
+  // ── Collaborative editing — apply incoming remote slide ops ──────────────
+  const applyRemoteOp = useCallback((op) => {
+    switch (op.type) {
+      case 'slide_update':
+        setSlides(prev => prev.map(s => s.id === op.slideId ? { ...s, ...op.patch } : s))
+        break
+      case 'slide_add':
+        setSlides(prev => {
+          if (prev.some(s => s.id === op.slide.id)) return prev  // dedupe
+          if (op.afterId) {
+            const idx = prev.findIndex(s => s.id === op.afterId)
+            if (idx >= 0) {
+              const next = [...prev]
+              next.splice(idx + 1, 0, op.slide)
+              return next
+            }
+          }
+          return [...prev, op.slide]
+        })
+        break
+      case 'slide_delete':
+        setSlides(prev => prev.filter(s => s.id !== op.slideId))
+        break
+      case 'slide_reorder':
+        setSlides(prev => {
+          const arr = [...prev]
+          const fromIdx = arr.findIndex(s => s.id === op.dragId)
+          const toIdx   = arr.findIndex(s => s.id === op.dropId)
+          if (fromIdx < 0 || toIdx < 0) return prev
+          const [item] = arr.splice(fromIdx, 1)
+          arr.splice(toIdx, 0, item)
+          return arr
+        })
+        break
+      default:
+        break
+    }
+    // Remote ops mark us dirty so we auto-save the merged state
+    setIsDirty(true)
   }, [])
+
+  const { broadcastOp } = useCollaborativeEditing(projectId, presenceUserInfo, applyRemoteOp)
+
+  // ── Auto-save (replaces manual Save Draft for collaborative flow) ─────────
+  const runAutoSave = useCallback(async () => {
+    if (!projectId) return
+    setAutoSaveStatus('saving')
+    try {
+      const snapshot = buildSnapshot(projectName, slidesRef.current, cameraPresets)
+      const savedDraft = await saveDraft(projectId, snapshot, {
+        expectedToken: null,  // force — real-time sync keeps state coherent
+        createdBy: adminIdentity,
+        createdByUserId: adminUserId,
+      })
+      setDraftVersion(savedDraft)
+      setIsDirty(false)
+      setAutoSaveStatus('saved')
+      setTimeout(() => setAutoSaveStatus(s => s === 'saved' ? 'idle' : s), 2500)
+    } catch (err) {
+      console.error('[AutoSave] failed:', err)
+      setAutoSaveStatus('idle')
+    }
+  }, [projectId, projectName, cameraPresets, adminIdentity, adminUserId])
+
+  useEffect(() => {
+    if (!isDirty) return
+    const timer = setTimeout(runAutoSave, 2000)
+    return () => clearTimeout(timer)
+  // slides in deps so the debounce resets on every edit
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty, slides, runAutoSave])
 
   useVersionWatcher(projectId, draftVersion?.version_token ?? null, handleRemoteSave)
 
@@ -1623,8 +1704,9 @@ export default function PresentationEditorPage() {
 
   const updateActiveSlide = useCallback((patch) => {
     setSlides(prev => prev.map(s => s.id === activeSlideId ? { ...s, ...patch } : s))
+    broadcastOp({ type: 'slide_update', slideId: activeSlideId, patch })
     markDirty()
-  }, [activeSlideId, markDirty])
+  }, [activeSlideId, broadcastOp, markDirty])
 
   const selectSlide = useCallback((id) => setActiveSlideId(id), [])
 
@@ -1632,8 +1714,9 @@ export default function PresentationEditorPage() {
     const slide = makeBlankSlide(slides.length)
     setSlides(prev => [...prev, slide])
     setActiveSlideId(slide.id)
+    broadcastOp({ type: 'slide_add', slide })
     markDirty()
-  }, [slides.length, markDirty])
+  }, [slides.length, broadcastOp, markDirty])
 
   const openClipUploadPicker = useCallback(() => {
     if (isUploadingClips) return
@@ -1662,14 +1745,16 @@ export default function PresentationEditorPage() {
       const baseSlides = replaceDefaultPreview
         ? prev.filter(slide => !isDefaultStagePreviewClip({ id: slide.clipId }))
         : prev
-      return [...baseSlides, makeSlideFromClip(clip, baseSlides.length, cameraPresets)]
+      const newSlide = makeSlideFromClip(clip, baseSlides.length, cameraPresets)
+      broadcastOp({ type: 'slide_add', slide: newSlide })
+      return [...baseSlides, newSlide]
     })
     if (activate) {
       setActiveSlideId(`slide_${clip.id}`)
       activatePlaylistClip(clip)
     }
     markDirty()
-  }, [activatePlaylistClip, cameraPresets, markDirty, projectId])
+  }, [activatePlaylistClip, broadcastOp, cameraPresets, markDirty, projectId])
 
   const handleUploadClips = useCallback(async (filesLike) => {
     const allFiles = Array.from(filesLike ?? [])
@@ -1809,8 +1894,9 @@ export default function PresentationEditorPage() {
       return next
     })
     setActiveSlideId(clone.id)
+    broadcastOp({ type: 'slide_add', slide: clone, afterId: activeSlideId })
     markDirty()
-  }, [activeSlide, activeSlideId, markDirty])
+  }, [activeSlide, activeSlideId, broadcastOp, markDirty])
 
   const toggleHidden = useCallback(() => {
     updateActiveSlide({ hiddenFromClient: !activeSlide?.hiddenFromClient })
@@ -1821,9 +1907,11 @@ export default function PresentationEditorPage() {
     if (!window.confirm(`Delete "${activeSlide.title || 'this slide'}"?`)) return
 
     const removedClipId = activeSlide.clipId
+    const deletedSlideId = activeSlideId
     const remaining = slides.filter(s => s.id !== activeSlideId)
     setSlides(remaining)
     setActiveSlideId(remaining[0]?.id ?? null)
+    broadcastOp({ type: 'slide_delete', slideId: deletedSlideId })
 
     // Remove the clip from the project playlist so the LED doesn't keep
     // showing it and other slides can't fall back to it by index.
@@ -1854,7 +1942,7 @@ export default function PresentationEditorPage() {
     }
 
     markDirty()
-  }, [activeSlide, activeSlideId, slides, markDirty, projectId])
+  }, [activeSlide, activeSlideId, slides, broadcastOp, markDirty, projectId])
 
   const reorderSlides = useCallback((dragId, dropId) => {
     setSlides(prev => {
@@ -1866,8 +1954,9 @@ export default function PresentationEditorPage() {
       arr.splice(toIdx, 0, item)
       return arr
     })
+    broadcastOp({ type: 'slide_reorder', dragId, dropId })
     markDirty()
-  }, [markDirty])
+  }, [broadcastOp, markDirty])
 
   // ── Annotation mode ───────────────────────────────────────────────────────
   const enterAnnotationMode = useCallback((noteId) => {
@@ -2226,6 +2315,7 @@ export default function PresentationEditorPage() {
           selfUserId={adminUserId}
           style={{ marginRight: 4 }}
         />
+        <AutoSaveIndicator status={autoSaveStatus} isDirty={isDirty} />
         <GhostBtn style={topBarButtonStyle} onClick={() => handleSaveDraft()} disabled={isSaving}>
           {isSaving ? 'Saving…' : 'Save draft'}
         </GhostBtn>
@@ -2610,6 +2700,34 @@ export default function PresentationEditorPage() {
       />
     </div>
   )
+}
+
+// ── Auto-save status indicator ────────────────────────────────────────────────
+function AutoSaveIndicator({ status, isDirty }) {
+  if (status === 'saving') {
+    return (
+      <span style={{ fontSize: 10, color: 'rgba(200,184,168,0.6)', fontFamily: 'Chakra Petch, sans-serif', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#E8531A', animation: 'sv-pulse 0.9s ease-in-out infinite' }} />
+        Saving…
+      </span>
+    )
+  }
+  if (status === 'saved') {
+    return (
+      <span style={{ fontSize: 10, color: '#2BC782', fontFamily: 'Chakra Petch, sans-serif', letterSpacing: '0.06em' }}>
+        ✓ Saved
+      </span>
+    )
+  }
+  if (isDirty) {
+    return (
+      <span style={{ fontSize: 10, color: 'rgba(200,184,168,0.4)', fontFamily: 'Chakra Petch, sans-serif', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#E89518' }} />
+        Unsaved
+      </span>
+    )
+  }
+  return null
 }
 
 // ── Small icon components ─────────────────────────────────────────────────────
