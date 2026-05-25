@@ -582,6 +582,8 @@ function StageCanvas({
   stageColliders = [],
   /** Changing this re-runs auto-framing (e.g. device rotation on mobile). */
   reframeKey,
+  /** When true, switches Canvas frameloop to 'demand' to save GPU (e.g. feedback overlay open). */
+  freezeRenderLoop = false,
   children,
 }) {
   const internalPresetRef = useRef(null)
