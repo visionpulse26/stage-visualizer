@@ -26,6 +26,7 @@ import {
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
+import { transcodeToHalfRes } from '../utils/videoTranscode'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { useStageLoading } from '../hooks/useStageLoading'
@@ -59,11 +60,11 @@ const T = {
   text4:     '#5A4E45',
 }
 
-const CLIP_UPLOAD_ACCEPT = '.mp4,.webm,.mov,.webp,.png,.jpg,.jpeg,.gif'
+const CLIP_UPLOAD_ACCEPT = '.mp4,.webm,.mov,.mkv,.avi,.hevc,.m4v,.ts,.wmv,.flv,.webp,.png,.jpg,.jpeg,.gif'
 const DEFAULT_STAGE_PREVIEW_CLIP_ID = 'default-stage-preview'
-const CLIP_UPLOAD_VIDEO_EXT = ['mp4', 'webm', 'mov']
+const CLIP_UPLOAD_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'hevc', 'm4v', 'ts', 'wmv', 'flv']
 const CLIP_UPLOAD_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
-const CLIP_UPLOAD_VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mov']
+const CLIP_UPLOAD_VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mov', 'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/mp2t', 'video/mxf']
 const CLIP_UPLOAD_IMAGE_MIME = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
 
 // ── Tiny layout helpers ───────────────────────────────────────────────────────
@@ -1506,28 +1507,39 @@ export default function PresentationEditorPage() {
       const uploadedClips = []
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i]
-        setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name}`)
+
+        // Transcode video to half-res H.264 before upload; images pass through unchanged
+        let uploadFile = file
+        if (file.type.startsWith('video/') || /\.(mov|mkv|avi|hevc|m4v|ts|wmv|flv)$/i.test(file.name)) {
+          setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${file.name}`)
+          uploadFile = await transcodeToHalfRes(file, {
+            onStatus: (msg) => setClipUploadStatus(`${msg} (${i + 1}/${files.length})`),
+            onProgress: (pct) => setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${pct}%`),
+          })
+        }
+
+        setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${uploadFile.name}`)
 
         // Infer correct MIME type — browsers (especially Windows) may report '' for .mov files.
         // The Content-Type used to sign the presigned URL must exactly match what XHR sends
         // to R2, otherwise R2 returns 403 SignatureDoesNotMatch.
-        const contentType = getMediaMimeType(file)
+        const contentType = getMediaMimeType(uploadFile)
 
         const { putUrl, publicUrl } = await getPresignedUploadUrl({
-          filename: file.name,
+          filename: uploadFile.name,
           contentType,
-          contentLength: file.size,
+          contentLength: uploadFile.size,
           projectId: projectId || undefined,
           type: 'media',
         })
 
-        const finalUrl = await uploadFileToPresignedUrl(putUrl, file, publicUrl,
+        const finalUrl = await uploadFileToPresignedUrl(putUrl, uploadFile, publicUrl,
           (progress) => { setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${progress}%`) },
           contentType,   // pass the same contentType so XHR header matches the signed URL
         )
 
         const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, uploadedClips.length) + 1
-        uploadedClips.push(makeUploadedClip(file, finalUrl, nextClipNumber))
+        uploadedClips.push(makeUploadedClip(uploadFile, finalUrl, nextClipNumber))
       }
 
       const currentPlaylist = videoPlaylistRef.current
