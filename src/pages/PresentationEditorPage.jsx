@@ -1298,6 +1298,13 @@ export default function PresentationEditorPage() {
           }
           return [...prev, op.slide]
         })
+        // Sync the raw playlist so the clip's URL is available for playback
+        if (op.clip) {
+          setVideoPlaylist(prev => {
+            if (prev.some(c => String(c.id) === String(op.clip.id))) return prev
+            return [...prev, op.clip]
+          })
+        }
         break
       case 'slide_delete':
         setSlides(prev => prev.filter(s => s.id !== op.slideId))
@@ -1718,7 +1725,7 @@ export default function PresentationEditorPage() {
         ? prev.filter(slide => !isDefaultStagePreviewClip({ id: slide.clipId }))
         : prev
       const newSlide = makeSlideFromClip(clip, baseSlides.length, cameraPresets)
-      broadcastOp({ type: 'slide_add', slide: newSlide })
+      broadcastOp({ type: 'slide_add', slide: newSlide, clip })
       return [...baseSlides, newSlide]
     })
     if (activate) {
