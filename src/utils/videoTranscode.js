@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile, toBlobURL } from '@ffmpeg/util'
+import { fetchFile } from '@ffmpeg/util'
 
 let ffmpegInstance = null
 let ffmpegLoading = null
@@ -10,11 +10,10 @@ async function getFFmpeg() {
 
   const ff = new FFmpeg()
   ffmpegLoading = (async () => {
-    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
     try {
       await ff.load({
-        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: '/ffmpeg/ffmpeg-core.js',
+        wasmURL: '/ffmpeg/ffmpeg-core.wasm',
       })
       ffmpegInstance = ff
     } finally {
