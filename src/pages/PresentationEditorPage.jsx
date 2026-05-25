@@ -26,7 +26,7 @@ import {
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
-import { transcodeToHalfRes } from '../utils/videoTranscode'
+import { shouldTranscodeVideo, transcodeToHalfRes } from '../utils/videoTranscode'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { useStageLoading } from '../hooks/useStageLoading'
@@ -1056,6 +1056,73 @@ function PublishModal({ slides, cameraPresets, projectName, draftVersionNumber, 
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+function ClipTranscodeModal({ job, onDismiss }) {
+  if (!job) return null
+
+  const remainingConvert = Math.max(0, (job.totalConvert ?? 0) - (job.completedConvert ?? 0))
+  const completedFiles = job.completedFiles ?? 0
+  const totalFiles = job.totalFiles ?? 0
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(5,3,2,0.42)',
+      backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 145, pointerEvents: 'auto',
+    }}>
+      <div style={{
+        width: 430, background: 'linear-gradient(180deg, rgba(20,14,10,0.97), rgba(12,8,6,0.97))',
+        border: `1px solid ${T.border2}`, borderRadius: 10,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.58), inset 0 1px 0 rgba(255,255,255,0.05)',
+        padding: '15px 17px',
+      }}>
+        <Col gap={12}>
+          <Row gap={8}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.ember, boxShadow: T.emberGlow }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: 'Chakra Petch, sans-serif' }}>
+              Đang convert {job.totalConvert} clip
+            </span>
+          </Row>
+          <span style={{ fontSize: 11, lineHeight: 1.55, color: T.text2, fontFamily: 'Chakra Petch, sans-serif' }}>
+            Vui lòng đợi hoặc để chạy nền. Bạn vẫn có thể đổi tên, review feedback và chỉnh presentation trong lúc convert/upload tiếp tục chạy trong tab này.
+          </span>
+          <div style={{
+            background: 'rgba(0,0,0,0.32)', border: '1px solid rgba(220,100,30,0.16)',
+            borderRadius: 8, padding: '9px 10px',
+          }}>
+            <Col gap={5}>
+              <Row gap={8}>
+                <span style={{ fontSize: 10, color: T.text3, minWidth: 86, fontFamily: 'Chakra Petch, sans-serif' }}>Current</span>
+                <span style={{ fontSize: 11, color: T.text, fontFamily: 'Chakra Petch, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {job.currentFile || 'Preparing...'}
+                </span>
+              </Row>
+              <Row gap={8}>
+                <span style={{ fontSize: 10, color: T.text3, minWidth: 86, fontFamily: 'Chakra Petch, sans-serif' }}>Progress</span>
+                <span style={{ fontSize: 11, color: T.text, fontFamily: 'Chakra Petch, sans-serif' }}>
+                  {completedFiles}/{totalFiles} uploaded - {remainingConvert} convert remaining
+                </span>
+              </Row>
+              <Row gap={8}>
+                <span style={{ fontSize: 10, color: T.text3, minWidth: 86, fontFamily: 'Chakra Petch, sans-serif' }}>Status</span>
+                <span style={{ fontSize: 11, color: job.failed ? T.amber : T.text, fontFamily: 'Chakra Petch, sans-serif' }}>
+                  {job.status || 'Queued'}
+                </span>
+              </Row>
+            </Col>
+          </div>
+          <span style={{ fontSize: 10, lineHeight: 1.45, color: T.amber, fontFamily: 'Chakra Petch, sans-serif' }}>
+            Không tắt hoặc reload browser khi job còn chạy; tab sẽ cảnh báo nếu bạn rời trang.
+          </span>
+          <Row gap={8}>
+            <Spacer f={1} />
+            <GhostBtn onClick={onDismiss}>Để chạy nền</GhostBtn>
+          </Row>
+        </Col>
+      </div>
+    </div>
+  )
+}
+
 export default function PresentationEditorPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -1126,6 +1193,9 @@ export default function PresentationEditorPage() {
   const [isUploadingClips, setIsUploadingClips] = useState(false)
   const [clipUploadStatus, setClipUploadStatus] = useState('')
   const [clipUploadError,  setClipUploadError]  = useState('')
+  const [clipBackgroundJob, setClipBackgroundJob] = useState(null)
+  const [showClipTranscodeModal, setShowClipTranscodeModal] = useState(false)
+  const [clipBackgroundActive, setClipBackgroundActive] = useState(false)
 
   // ── Annotation mode (admin drawing annotation for a director note) ─────────
   const [annotatingNoteId,    setAnnotatingNoteId]    = useState(null)
@@ -1147,6 +1217,17 @@ export default function PresentationEditorPage() {
   useEffect(() => {
     videoPlaylistRef.current = videoPlaylist
   }, [videoPlaylist])
+
+  useEffect(() => {
+    if (!clipBackgroundActive) return undefined
+    const warnBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+      return ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [clipBackgroundActive])
 
   useEffect(() => {
     let mounted = true
@@ -1491,6 +1572,33 @@ export default function PresentationEditorPage() {
     clipUploadInputRef.current?.click()
   }, [isUploadingClips])
 
+  const appendUploadedClip = useCallback(async (clip, activate = false) => {
+    const currentPlaylist = videoPlaylistRef.current
+    const replaceDefaultPreview = currentPlaylist.length === 1 && isDefaultStagePreviewClip(currentPlaylist[0])
+    const nextPlaylist = replaceDefaultPreview ? [clip] : [...currentPlaylist, clip]
+
+    videoPlaylistRef.current = nextPlaylist
+    setVideoPlaylist(nextPlaylist)
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
+      .eq('id', projectId)
+    if (error) throw error
+
+    setSlides(prev => {
+      const baseSlides = replaceDefaultPreview
+        ? prev.filter(slide => !isDefaultStagePreviewClip({ id: slide.clipId }))
+        : prev
+      return [...baseSlides, makeSlideFromClip(clip, baseSlides.length, cameraPresets)]
+    })
+    if (activate) {
+      setActiveSlideId(`slide_${clip.id}`)
+      activatePlaylistClip(clip)
+    }
+    markDirty()
+  }, [activatePlaylistClip, cameraPresets, markDirty, projectId])
+
   const handleUploadClips = useCallback(async (filesLike) => {
     const allFiles = Array.from(filesLike ?? [])
     const files = allFiles.filter(file => validatePresentationMediaFile(file))
@@ -1501,85 +1609,118 @@ export default function PresentationEditorPage() {
 
     setIsUploadingClips(true)
     setClipUploadError('')
-    setClipUploadStatus(`Uploading 1/${files.length}…`)
+    setClipUploadStatus(`Checking media metadata 1/${files.length}...`)
 
+    let uploadPlan = []
     try {
-      const uploadedClips = []
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i]
-
-        // Transcode video to half-res H.264 before upload; images pass through unchanged.
-        // If transcode fails (e.g. CDN blocked), fall back to uploading the original file.
-        let uploadFile = file
-        if (file.type.startsWith('video/') || /\.(mov|mkv|avi|hevc|m4v|ts|wmv|flv)$/i.test(file.name)) {
-          setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${file.name}`)
-          try {
-            uploadFile = await transcodeToHalfRes(file, {
-              onStatus: (msg) => setClipUploadStatus(`${msg} (${i + 1}/${files.length})`),
-              onProgress: (pct) => setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${pct}%`),
-            })
-          } catch (transcodeErr) {
-            console.error('[transcode] failed, uploading original:', transcodeErr)
-            uploadFile = file
-            setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name} (original)`)
-          }
-        }
-
-        setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${uploadFile.name}`)
-
-        // Infer correct MIME type — browsers (especially Windows) may report '' for .mov files.
-        // The Content-Type used to sign the presigned URL must exactly match what XHR sends
-        // to R2, otherwise R2 returns 403 SignatureDoesNotMatch.
-        const contentType = getMediaMimeType(uploadFile)
-
-        const { putUrl, publicUrl } = await getPresignedUploadUrl({
-          filename: uploadFile.name,
-          contentType,
-          contentLength: uploadFile.size,
-          projectId: projectId || undefined,
-          type: 'media',
-        })
-
-        const finalUrl = await uploadFileToPresignedUrl(putUrl, uploadFile, publicUrl,
-          (progress) => { setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${progress}%`) },
-          contentType,   // pass the same contentType so XHR header matches the signed URL
-        )
-
-        const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, uploadedClips.length) + 1
-        uploadedClips.push(makeUploadedClip(uploadFile, finalUrl, nextClipNumber))
+        setClipUploadStatus(`Checking media metadata ${i + 1}/${files.length}: ${file.name}`)
+        uploadPlan.push({ file, needsTranscode: await shouldTranscodeVideo(file) })
       }
-
-      const currentPlaylist = videoPlaylistRef.current
-      const replaceDefaultPreview = currentPlaylist.length === 1 && isDefaultStagePreviewClip(currentPlaylist[0])
-      const nextPlaylist = replaceDefaultPreview ? uploadedClips : [...currentPlaylist, ...uploadedClips]
-
-      videoPlaylistRef.current = nextPlaylist
-      setVideoPlaylist(nextPlaylist)
-
-      const { error } = await supabase
-        .from('projects')
-        .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
-        .eq('id', projectId)
-      if (error) throw error
-
-      setSlides(prev => {
-        const baseSlides = replaceDefaultPreview
-          ? prev.filter(slide => !isDefaultStagePreviewClip({ id: slide.clipId }))
-          : prev
-        const newSlides = uploadedClips.map((clip, i) => makeSlideFromClip(clip, baseSlides.length + i, cameraPresets))
-        return [...baseSlides, ...newSlides]
-      })
-      if (uploadedClips[0]) setActiveSlideId(`slide_${uploadedClips[0].id}`)
-      if (uploadedClips[0]) activatePlaylistClip(uploadedClips[0])
-      markDirty()
-      setClipUploadStatus(`Added ${uploadedClips.length} clip${uploadedClips.length === 1 ? '' : 's'}`)
     } catch (err) {
       setClipUploadError(getUploadErrorMessage(err))
       setClipUploadStatus('')
-    } finally {
       setIsUploadingClips(false)
+      return
     }
-  }, [activatePlaylistClip, cameraPresets, markDirty, projectId])
+
+    const totalConvert = uploadPlan.filter(item => item.needsTranscode).length
+    const jobId = Date.now()
+    setClipBackgroundJob({
+      id: jobId,
+      totalFiles: uploadPlan.length,
+      totalConvert,
+      completedFiles: 0,
+      completedConvert: 0,
+      currentFile: '',
+      status: totalConvert > 0 ? `Queued ${totalConvert} conversion${totalConvert === 1 ? '' : 's'}` : 'Uploading without conversion',
+      failed: false,
+    })
+    if (totalConvert > 0) setShowClipTranscodeModal(true)
+    setClipBackgroundActive(true)
+    setIsUploadingClips(false)
+
+    ;(async () => {
+      let completedFiles = 0
+      let completedConvert = 0
+      try {
+        for (let i = 0; i < uploadPlan.length; i += 1) {
+          const { file, needsTranscode } = uploadPlan[i]
+          let uploadFile = file
+
+          setClipBackgroundJob(prev => prev?.id === jobId ? {
+            ...prev,
+            currentFile: file.name,
+            status: needsTranscode ? `Converting ${i + 1}/${uploadPlan.length}: ${file.name}` : `Uploading ${i + 1}/${uploadPlan.length}: ${file.name}`,
+          } : prev)
+
+          if (needsTranscode) {
+            uploadFile = await transcodeToHalfRes(file, {
+              onStatus: (msg) => {
+                setClipUploadStatus(`${msg} (${i + 1}/${uploadPlan.length})`)
+                setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, status: `${msg} (${file.name})` } : prev)
+              },
+              onProgress: (pct) => {
+                const status = `Converting ${i + 1}/${uploadPlan.length}: ${pct}%`
+                setClipUploadStatus(status)
+                setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, status } : prev)
+              },
+            })
+            completedConvert += 1
+            setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, completedConvert } : prev)
+          }
+
+          setClipUploadStatus(`Uploading ${i + 1}/${uploadPlan.length}: ${uploadFile.name}`)
+
+          const contentType = getMediaMimeType(uploadFile)
+          const { putUrl, publicUrl } = await getPresignedUploadUrl({
+            filename: uploadFile.name,
+            contentType,
+            contentLength: uploadFile.size,
+            projectId: projectId || undefined,
+            type: 'media',
+          })
+
+          const finalUrl = await uploadFileToPresignedUrl(putUrl, uploadFile, publicUrl,
+            (progress) => {
+              const status = `Uploading ${i + 1}/${uploadPlan.length}: ${progress}%`
+              setClipUploadStatus(status)
+              setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, status } : prev)
+            },
+            contentType,
+          )
+
+          const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, 0) + 1
+          const clip = makeUploadedClip(uploadFile, finalUrl, nextClipNumber)
+          await appendUploadedClip(clip, completedFiles === 0)
+          completedFiles += 1
+          setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, completedFiles } : prev)
+        }
+
+        setClipUploadStatus(`Added ${completedFiles} clip${completedFiles === 1 ? '' : 's'}`)
+        setClipBackgroundJob(prev => prev?.id === jobId ? {
+          ...prev,
+          currentFile: '',
+          completedFiles,
+          completedConvert,
+          status: `Done - added ${completedFiles} clip${completedFiles === 1 ? '' : 's'}`,
+        } : prev)
+      } catch (err) {
+        console.error('[clip upload] background job failed:', err)
+        const message = getUploadErrorMessage(err)
+        setClipUploadError(message)
+        setClipUploadStatus('')
+        setClipBackgroundJob(prev => prev?.id === jobId ? {
+          ...prev,
+          failed: true,
+          status: message,
+        } : prev)
+      } finally {
+        setClipBackgroundActive(false)
+      }
+    })()
+  }, [appendUploadedClip, projectId])
 
   const duplicateSlide = useCallback(() => {
     if (!activeSlide) return
@@ -2258,6 +2399,13 @@ export default function PresentationEditorPage() {
           onSaveDraft={(vName, rNotes) => { handleSaveDraft(vName, rNotes); setShowPublish(false) }}
           onPublish={handlePublish}
           saving={isSaving}
+        />
+      )}
+
+      {showClipTranscodeModal && clipBackgroundJob?.totalConvert > 0 && (
+        <ClipTranscodeModal
+          job={clipBackgroundJob}
+          onDismiss={() => setShowClipTranscodeModal(false)}
         />
       )}
 

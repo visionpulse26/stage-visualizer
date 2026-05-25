@@ -14,12 +14,23 @@ test('presentation editor + Clip uploads multiple video and image files', () => 
   assert.match(page, /handleUploadClips/)
   assert.match(page, /Array\.from\(filesLike \?\? \[\]\)/)
   assert.match(page, /validatePresentationMediaFile\(file\)/)
+  assert.match(page, /shouldTranscodeVideo\(file\)/)
   assert.match(page, /uploadFile = await transcodeToHalfRes\(file/)
   assert.match(page, /getPresignedUploadUrl\(\{[\s\S]*contentLength:\s*uploadFile\.size[\s\S]*type:\s*'media'/)
   assert.match(page, /uploadFileToPresignedUrl\(putUrl, uploadFile, publicUrl/)
   assert.match(page, /makeUploadedClip\(uploadFile, finalUrl, nextClipNumber\)/)
-  assert.match(page, /makeSlideFromClip\(clip, baseSlides\.length \+ i, cameraPresets\)/)
+  assert.match(page, /makeSlideFromClip\(clip, baseSlides\.length, cameraPresets\)/)
   assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(nextPlaylist\)/)
+})
+
+test('presentation editor runs eligible clip transcodes in a background browser job', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /ClipTranscodeModal/)
+  assert.match(page, /setShowClipTranscodeModal\(true\)/)
+  assert.match(page, /beforeunload/)
+  assert.match(page, /event\.returnValue = ''/)
+  assert.match(page, /setClipBackgroundActive\(true\)/)
 })
 
 test('presentation editor + Clip button opens file picker instead of adding a blank slide', () => {
