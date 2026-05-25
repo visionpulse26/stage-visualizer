@@ -13,6 +13,7 @@ import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { transcodeToHalfRes } from '../utils/videoTranscode'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
@@ -119,6 +120,7 @@ function CollabPage() {
   // ── Media playlist ────────────────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])
   const [activeVideoId, setActiveVideoId] = useState(null)
+  const [transcodeStatus, setTranscodeStatus] = useState(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
   const [isLooping,     setIsLooping]     = useState(true)
   const videoRef     = useRef(null)
@@ -434,10 +436,10 @@ function CollabPage() {
   }, [projectId, activateVideo, addBlob, revokeAllBlobs, resetPovSession])
 
   // ── Handlers for locally-added media (blob URL only, never uploaded) ─────
-  // ── File validation to prevent heavy formats (MOV, AVI) from crashing ────
-  const ALLOWED_VIDEO_EXT = ['mp4', 'webm']
+  // ── File validation — videos accept any format (transcoded in-browser) ────
+  const ALLOWED_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'hevc', 'heic', 'm4v', 'ts', 'mts', 'mxf', 'wmv', 'flv']
   const ALLOWED_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
-  const ALLOWED_MIME_VIDEO = ['video/mp4', 'video/webm']
+  const ALLOWED_MIME_VIDEO = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/mp2t', 'video/mxf']
   const ALLOWED_MIME_IMAGE = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
 
   const validateMediaFile = useCallback((file) => {
@@ -445,28 +447,41 @@ function CollabPage() {
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     const mime = file.type.toLowerCase()
 
-    const isValidVideo = ALLOWED_VIDEO_EXT.includes(ext) || ALLOWED_MIME_VIDEO.includes(mime)
+    const isValidVideo = ALLOWED_VIDEO_EXT.includes(ext) || ALLOWED_MIME_VIDEO.includes(mime) || mime.startsWith('video/')
     const isValidImage = ALLOWED_IMAGE_EXT.includes(ext) || ALLOWED_MIME_IMAGE.includes(mime)
 
     if (!isValidVideo && !isValidImage) {
-      alert(`⚠️ FORMAT NOT SUPPORTED.\n\nPLEASE USE MP4/WEBM FOR VIDEOS.\nPLEASE USE WEBP/PNG/JPG FOR IMAGES.\n\nFile: ${file.name}`)
+      alert(`⚠️ FORMAT NOT SUPPORTED.\n\nAccepted video formats: MP4, MOV, MKV, AVI, WebM, HEVC, and more.\nAccepted image formats: WebP, PNG, JPG, GIF.\n\nFile: ${file.name}`)
       return false
     }
     return true
   }, [])
 
-  const handleVideoUpload = useCallback((file) => {
+  const handleVideoUpload = useCallback(async (file) => {
     if (!file) return
-    // VALIDATION: Block unsupported formats before creating blob URL
     if (!validateMediaFile(file)) return
 
-    clipCountRef.current += 1
-    const url   = URL.createObjectURL(file)
-    localBlobUrlsRef.current.push(url)
-    const id    = Date.now()
     const isImg = file.type.startsWith('image/')
-    const name  = isImg ? `Image ${clipCountRef.current}` : `Clip ${clipCountRef.current}`
-    setVideoPlaylist(prev => [...prev, { id, name, url, type: isImg ? 'image' : 'video', file }])
+
+    let processedFile = file
+    if (!isImg) {
+      setTranscodeStatus('Loading converter…')
+      try {
+        processedFile = await transcodeToHalfRes(file, {
+          onStatus: (msg) => setTranscodeStatus(msg),
+          onProgress: (pct) => setTranscodeStatus(`Converting… ${pct}%`),
+        })
+      } finally {
+        setTranscodeStatus(null)
+      }
+    }
+
+    clipCountRef.current += 1
+    const url = URL.createObjectURL(processedFile)
+    localBlobUrlsRef.current.push(url)
+    const id   = Date.now()
+    const name = isImg ? `Image ${clipCountRef.current}` : `Clip ${clipCountRef.current}`
+    setVideoPlaylist(prev => [...prev, { id, name, url, type: isImg ? 'image' : 'video', file: processedFile }])
     if (isImg) {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       setVideoElement(null); setActiveImageUrl(url)
@@ -804,6 +819,7 @@ function CollabPage() {
         <CollabPanel
           // ── Media ────────────────────────────────────────────────────────
           onVideoUpload={handleVideoUpload}
+          transcodeStatus={transcodeStatus}
           videoLoaded={videoLoaded}
           ledMaterialFound={ledMaterialFound}
           videoPlaylist={videoPlaylist}

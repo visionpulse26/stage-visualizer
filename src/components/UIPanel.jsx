@@ -94,6 +94,7 @@ function UIPanel({
   isR2Uploading,
   r2UploadProgress,       // 0–100 or null
   r2Error, onDismissR2Error,
+  transcodeStatus,        // string message during transcode, or null
   envIntensity, onEnvIntensityChange,
   bgBlur, onBgBlurChange,
   showHdriBackground, onShowHdriBackgroundToggle,
@@ -331,7 +332,13 @@ function UIPanel({
                     <p className="text-[9px] text-red-400/70 leading-snug break-words">{r2Error}</p>
                   </div>
                 )}
-                <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2MediaUpload?.(f); e.target.value = '' }} />
+                {transcodeStatus && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                    <span className="w-3 h-3 rounded-full border-2 border-violet-300/30 border-t-violet-300 animate-spin flex-shrink-0" />
+                    <span className="text-[10px] text-violet-300">{transcodeStatus}</span>
+                  </div>
+                )}
+                <input ref={nasVideoInputRef} type="file" accept=".mp4,.webm,.mov,.mkv,.avi,.hevc,.m4v,.ts,.wmv,.flv,.webp,.png,.jpg,.jpeg,.gif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onR2MediaUpload?.(f); e.target.value = '' }} />
               </div>
 
               {/* ── Virtual Camera (OBS / NDI) ─────────────────────────────── */}

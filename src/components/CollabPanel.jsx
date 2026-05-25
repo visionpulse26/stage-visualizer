@@ -72,6 +72,7 @@ function Toggle({ label, hint, active, onToggle }) {
 function CollabPanel({
   // ── Media ──────────────────────────────────────────────────────────────────
   onVideoUpload,
+  transcodeStatus,
   videoLoaded,
   videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
@@ -215,14 +216,21 @@ function CollabPanel({
             >
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all"
+                disabled={!!transcodeStatus}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-white/40 hover:text-cyan-300 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-wait"
               >
                 <IconUpload /><span>Add Video or Image</span>
               </button>
+              {transcodeStatus && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                  <span className="w-3 h-3 rounded-full border-2 border-cyan-300/30 border-t-cyan-300 animate-spin flex-shrink-0" />
+                  <span className="text-[10px] text-cyan-300">{transcodeStatus}</span>
+                </div>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".mp4,.webm,.webp,.png,.jpg,.jpeg,.gif"
+                accept=".mp4,.webm,.mov,.mkv,.avi,.hevc,.m4v,.ts,.wmv,.flv,.webp,.png,.jpg,.jpeg,.gif"
                 className="hidden"
                 onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
               />
