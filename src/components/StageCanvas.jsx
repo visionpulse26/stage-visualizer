@@ -3,8 +3,8 @@ import StageErrorBoundary from './StageErrorBoundary'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CameraControls, Sparkles, Grid, MeshReflectorMaterial, Environment, ContactShadows } from '@react-three/drei'
-import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { CameraControls, Grid, MeshReflectorMaterial, Environment, ContactShadows } from '@react-three/drei'
+import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
@@ -65,19 +65,6 @@ function GlDomElementBridge({ targetRef }) {
   return null
 }
 
-// ── Atmospheric dust particles ────────────────────────────────────────────────
-function AtmosphericDust() {
-  return (
-    <Sparkles
-      count={200}
-      scale={25}
-      size={1.5}
-      speed={0.15}
-      opacity={0.25}
-      color="#ffffff"
-    />
-  )
-}
 
 // ── Reflective floor with MeshReflectorMaterial ───────────────────────────────
 function ReflectiveFloor() {
@@ -85,8 +72,8 @@ function ReflectiveFloor() {
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.06, 0]} receiveShadow>
       <planeGeometry args={[200, 200]} />
       <MeshReflectorMaterial
-        blur={[180, 64]}
-        resolution={1024}
+        blur={[120, 40]}
+        resolution={512}
         mixBlur={0.65}
         mixStrength={14}
         roughness={0.95}
@@ -704,6 +691,8 @@ function StageCanvas({
       )}
       <StageErrorBoundary>
       <Canvas
+        frameloop={freezeRenderLoop ? 'demand' : 'always'}
+        dpr={[1, 2]}
         camera={{ position: [5, 5, 5], fov: 50, near: 0.05, far: 5000 }}
         gl={{
           antialias:             true,
@@ -774,7 +763,7 @@ function StageCanvas({
           position={sunPosition}
           intensity={sunIntensity}
           castShadow
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[1024, 1024]}
           shadow-camera-far={100}
           shadow-camera-left={-35}
           shadow-camera-right={35}
@@ -810,7 +799,7 @@ function StageCanvas({
           scale={90}
           blur={1.8}
           far={40}
-          resolution={1024}
+          resolution={512}
           frames={1}
         />
 
@@ -825,8 +814,6 @@ function StageCanvas({
           cellColor="#333333"
           sectionColor="#666666"
         />
-
-        <AtmosphericDust />
 
         {loadingManager && <FirstFrameReporter loadingManager={loadingManager} />}
         <Suspense fallback={null}>

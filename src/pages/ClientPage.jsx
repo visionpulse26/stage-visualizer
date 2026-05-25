@@ -416,12 +416,14 @@ function ClientPage() {
     v.ondurationchange = () => setActiveDuration(Number.isFinite(v.duration) ? v.duration : 0)
     v.onended = () => setIsPlaying(false)
 
-    v.src = url
     v.crossOrigin = 'anonymous'
-    v.loop = true
     v.muted = true
+    v.setAttribute('muted', '')
     v.playsInline = true
+    v.setAttribute('playsinline', '')
+    v.loop = true
     v.preload = 'auto'
+    v.src = url
     v.load()
   }, [])
 

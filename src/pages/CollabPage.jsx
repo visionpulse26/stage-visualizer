@@ -252,12 +252,14 @@ function CollabPage() {
   const activateVideo = useCallback((id, url) => {
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
     const v = document.createElement('video')
-    v.src = url
     v.crossOrigin = 'anonymous'
-    v.loop = true
     v.muted = true
+    v.setAttribute('muted', '')
     v.playsInline = true
+    v.setAttribute('playsinline', '')
+    v.loop = true
     v.preload = 'auto'
+    v.src = url
     v.addEventListener('loadeddata', () => {
       v.play().catch(() => {})
       videoRef.current = v
