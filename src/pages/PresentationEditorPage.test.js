@@ -49,3 +49,12 @@ test('presentation editor + Clip button opens file picker instead of adding a bl
   assert.match(page, /onAdd=\{openClipUploadPicker\}/)
   assert.doesNotMatch(page, /onAdd=\{addSlide\}/)
 })
+
+test('presentation editor rejects oversized image clips before requesting an upload URL', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /const MAX_MEDIA_IMAGE_BYTES = 25 \* 1024 \* 1024/)
+  assert.match(page, /function isPresentationImageFile\(file\)/)
+  assert.match(page, /isPresentationImageFile\(file\) && file\.size > MAX_MEDIA_IMAGE_BYTES/)
+  assert.match(page, /Images must be 25 MB or smaller/)
+})

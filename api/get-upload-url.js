@@ -36,7 +36,7 @@ const MAX_BYTES = {
   media: 500 * 1024 * 1024,
 }
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024
 
 const ALLOWED_EXTENSIONS = {
   stage: ['.glb', '.gltf'],

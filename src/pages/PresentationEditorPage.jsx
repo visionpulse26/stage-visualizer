@@ -66,6 +66,7 @@ const CLIP_UPLOAD_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'hevc', 'm4v'
 const CLIP_UPLOAD_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
 const CLIP_UPLOAD_VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mov', 'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/mp2t', 'video/mxf']
 const CLIP_UPLOAD_IMAGE_MIME = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
+const MAX_MEDIA_IMAGE_BYTES = 25 * 1024 * 1024
 
 // ── Tiny layout helpers ───────────────────────────────────────────────────────
 const Row = ({ children, gap = 6, align = 'center', wrap = false, style = {} }) => (
@@ -1625,6 +1626,11 @@ export default function PresentationEditorPage() {
       setClipUploadError('Select MP4/WEBM/MOV video or WEBP/PNG/JPG/GIF image files')
       return
     }
+    const oversizedImage = files.find(file => isPresentationImageFile(file) && file.size > MAX_MEDIA_IMAGE_BYTES)
+    if (oversizedImage) {
+      setClipUploadError('Images must be 25 MB or smaller')
+      return
+    }
 
     setIsUploadingClips(true)
     setClipUploadError('')
@@ -2771,8 +2777,15 @@ function validatePresentationMediaFile(file) {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
   const mime = (file.type || '').toLowerCase()
   const isValidVideo = CLIP_UPLOAD_VIDEO_EXT.includes(ext) || CLIP_UPLOAD_VIDEO_MIME.includes(mime)
-  const isValidImage = CLIP_UPLOAD_IMAGE_EXT.includes(ext) || CLIP_UPLOAD_IMAGE_MIME.includes(mime)
+  const isValidImage = isPresentationImageFile(file)
   return isValidVideo || isValidImage
+}
+
+function isPresentationImageFile(file) {
+  if (!file) return false
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const mime = (file.type || '').toLowerCase()
+  return CLIP_UPLOAD_IMAGE_EXT.includes(ext) || CLIP_UPLOAD_IMAGE_MIME.includes(mime)
 }
 
 function currentPlaylistClipCount(playlist, uploadedCount) {

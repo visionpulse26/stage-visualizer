@@ -97,6 +97,12 @@ export function getUploadErrorMessage(err) {
   if (import.meta.env.DEV && msg) {
     console.error('[upload]', msg)
   }
+  if (/File exceeds media upload size limit/i.test(msg)) {
+    return 'Image is too large. Use an image 25 MB or smaller.'
+  }
+  if (/File exceeds .* upload size limit/i.test(msg)) {
+    return 'File is too large for this upload type.'
+  }
   if (/timeout|timed out/i.test(msg)) return 'Upload timed out. Try a smaller file or a faster connection.'
   if (/403|Forbidden/i.test(msg)) return 'Upload failed. Please try again or contact support.'
   if (/CORS|cors|blocked/i.test(msg)) return 'Upload failed. Please try again or contact support.'
