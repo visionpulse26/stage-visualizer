@@ -26,3 +26,10 @@ test('stage setup panel removes clip loading controls and links to presentation 
   assert.doesNotMatch(panel, /Upload to Cloud \(R2\)/)
   assert.doesNotMatch(panel, /Clear Playlist/)
 })
+
+test('admin publish persists media playlist clip ids for presentation clients', () => {
+  const page = read('src/pages/AdminPage.jsx')
+
+  assert.match(page, /finalMediaPlaylist = videoPlaylist/)
+  assert.match(page, /id: c\.id/)
+})

@@ -2794,6 +2794,7 @@ function currentPlaylistClipCount(playlist, uploadedCount) {
 
 function serializeMediaPlaylistForDb(playlist) {
   return (playlist || []).map(c => ({
+    id: c.id,
     name: c.name,
     url: c.url,
     type: c.type,

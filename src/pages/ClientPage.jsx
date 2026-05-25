@@ -465,6 +465,15 @@ function ClientPage() {
     activateVideo(clip.id, url, activationSeq)
   }, [activateVideo, projectId, resolvePlayableUrl, startClipWatch])
 
+  const applySlideDefaultCamera = useCallback(function applySlideDefaultCamera(slide, presets = cameraPresets) {
+    if (!slide?.defaultCameraPresetId) return
+    const preset = findPreset(presets, slide.defaultCameraPresetId)
+    if (!preset) return
+    setActivePresetId(preset.id)
+    setCameraTargetPreset(cameraTargetPresetRef, preset)
+    currentCameraRef.current = preset.name || String(preset.id)
+  }, [cameraPresets])
+
   // ── Load project ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!gateConfirmed) return
@@ -552,6 +561,7 @@ function ClientPage() {
             // Override camera presets from snapshot if available
             if (hydratedSnap.cameraPresets?.length) {
               setCameraPresets(hydratedSnap.cameraPresets)
+              applySlideDefaultCamera(snapshotSlides[0], hydratedSnap.cameraPresets)
             }
           }
         } catch {
@@ -571,7 +581,9 @@ function ClientPage() {
           const restored = restoreMediaPlaylist(data.media_playlist)
           if (!cancelled) {
             setVideoPlaylist(restored)
-            const first = restored[0]
+            const first = snapshotSlides[0]
+              ? findClipForSlide(snapshotSlides[0], restored, 0)
+              : restored[0]
             if (first) activateClip(first, { track: false, slideId: snapshotSlides[0]?.id ?? null })
           }
         } else if (data.video_url) {
@@ -628,7 +640,7 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
+  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs, applySlideDefaultCamera])
 
   // ── Apply client zoom guard once stage is ready ───────────────────────────
   useEffect(() => {
@@ -657,9 +669,7 @@ function ClientPage() {
 
     // Switch clip
     const slideIndex = presentationSlides.findIndex(s => s.id === slideId)
-    const clip = videoPlaylist.find(c =>
-      String(c.id) === String(slide.clipId) || c.name === slide.clipId
-    ) ?? videoPlaylist[slideIndex]
+    const clip = findClipForSlide(slide, videoPlaylist, slideIndex)
 
     if (clip) {
       activateClip(clip, { slideId })
@@ -3419,6 +3429,16 @@ function findPreset(presets, presetIdOrName) {
 function findPresetByName(presets, name) {
   if (!Array.isArray(presets) || !name) return null
   return presets.find(p => String(p.name).toLowerCase() === String(name).toLowerCase()) || null
+}
+
+function findClipForSlide(slide, playlist, slideIndex = -1) {
+  if (!slide || !Array.isArray(playlist)) return null
+  return playlist.find(c =>
+    String(c.id) === String(slide.clipId) ||
+    c.name === slide.clipId ||
+    c.name === slide.title ||
+    c.url === slide.clipUrl
+  ) ?? playlist[slideIndex] ?? null
 }
 
 function rawToSlide(clip, i) {

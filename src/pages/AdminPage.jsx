@@ -995,6 +995,7 @@ function AdminPage() {
       const finalMediaPlaylist = videoPlaylist
         .filter(c => c?.url && !c.url.startsWith('blob:') && !c.url.startsWith('data:'))
         .map(c => ({
+          id: c.id,
           name: c.name,
           url: c.url,
           type: c.type,

@@ -58,3 +58,10 @@ test('presentation editor rejects oversized image clips before requesting an upl
   assert.match(page, /isPresentationImageFile\(file\) && file\.size > MAX_MEDIA_IMAGE_BYTES/)
   assert.match(page, /Images must be 25 MB or smaller/)
 })
+
+test('presentation editor persists clip ids in project media playlist', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /function serializeMediaPlaylistForDb\(playlist\)/)
+  assert.match(page, /id: c\.id/)
+})
