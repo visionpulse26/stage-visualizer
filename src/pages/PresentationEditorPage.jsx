@@ -1508,14 +1508,21 @@ export default function PresentationEditorPage() {
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i]
 
-        // Transcode video to half-res H.264 before upload; images pass through unchanged
+        // Transcode video to half-res H.264 before upload; images pass through unchanged.
+        // If transcode fails (e.g. CDN blocked), fall back to uploading the original file.
         let uploadFile = file
         if (file.type.startsWith('video/') || /\.(mov|mkv|avi|hevc|m4v|ts|wmv|flv)$/i.test(file.name)) {
           setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${file.name}`)
-          uploadFile = await transcodeToHalfRes(file, {
-            onStatus: (msg) => setClipUploadStatus(`${msg} (${i + 1}/${files.length})`),
-            onProgress: (pct) => setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${pct}%`),
-          })
+          try {
+            uploadFile = await transcodeToHalfRes(file, {
+              onStatus: (msg) => setClipUploadStatus(`${msg} (${i + 1}/${files.length})`),
+              onProgress: (pct) => setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${pct}%`),
+            })
+          } catch {
+            // Transcode failed — upload original file as fallback
+            uploadFile = file
+            setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name} (original)`)
+          }
         }
 
         setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${uploadFile.name}`)
