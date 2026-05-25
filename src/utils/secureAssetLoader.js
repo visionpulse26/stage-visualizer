@@ -16,6 +16,26 @@
 // DevTools → Application → Cache Storage and are enumerable + downloadable
 // by anyone with DevTools open.
 const memCache = new Map()
+const R2_CORS_CACHE_BUST_PARAM = 'sv_cors'
+const R2_CORS_CACHE_BUST_VALUE = '20260525'
+
+function shouldBypassStaleCorsCache(url) {
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname.endsWith('.r2.dev') || parsed.hostname.endsWith('.r2.cloudflarestorage.com')
+  } catch (_) {
+    return false
+  }
+}
+
+export function getCorsFreshAssetUrl(url) {
+  if (!url || url.startsWith('blob:') || !shouldBypassStaleCorsCache(url)) return url
+  const parsed = new URL(url)
+  if (!parsed.searchParams.has(R2_CORS_CACHE_BUST_PARAM)) {
+    parsed.searchParams.set(R2_CORS_CACHE_BUST_PARAM, R2_CORS_CACHE_BUST_VALUE)
+  }
+  return parsed.toString()
+}
 
 // ── One-time cleanup of legacy persistent Cache API entries ──────────────────
 // Removes 'stage-visualizer-assets-vN' caches left by older builds so
@@ -50,7 +70,7 @@ export async function fetchAndCacheAsset(url) {
     return URL.createObjectURL(memCache.get(url))
   }
 
-  const res = await fetch(url, { mode: 'cors' })
+  const res = await fetch(getCorsFreshAssetUrl(url), { mode: 'cors', cache: 'reload' })
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
   const blob = await res.blob()
   memCache.set(url, blob)
@@ -64,7 +84,7 @@ export async function fetchAndCacheAsset(url) {
  */
 export async function fetchAsBlobUrl(url) {
   if (!url || url.startsWith('blob:')) return url
-  const res = await fetch(url, { mode: 'cors' })
+  const res = await fetch(getCorsFreshAssetUrl(url), { mode: 'cors', cache: 'reload' })
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
   const blob = await res.blob()
   return URL.createObjectURL(blob)
