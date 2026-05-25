@@ -1764,14 +1764,45 @@ export default function PresentationEditorPage() {
     updateActiveSlide({ hiddenFromClient: !activeSlide?.hiddenFromClient })
   }, [activeSlide, updateActiveSlide])
 
-  const deleteSlide = useCallback(() => {
+  const deleteSlide = useCallback(async () => {
     if (!activeSlide) return
     if (!window.confirm(`Delete "${activeSlide.title || 'this slide'}"?`)) return
+
+    const removedClipId = activeSlide.clipId
     const remaining = slides.filter(s => s.id !== activeSlideId)
     setSlides(remaining)
     setActiveSlideId(remaining[0]?.id ?? null)
+
+    // Remove the clip from the project playlist so the LED doesn't keep
+    // showing it and other slides can't fall back to it by index.
+    const currentPlaylist = videoPlaylistRef.current
+    const nextPlaylist = currentPlaylist.filter(c =>
+      String(c.id) !== String(removedClipId) && c.name !== removedClipId
+    )
+    if (nextPlaylist.length !== currentPlaylist.length) {
+      videoPlaylistRef.current = nextPlaylist
+      setVideoPlaylist(nextPlaylist)
+      if (projectId) {
+        const { error } = await supabase
+          .from('projects')
+          .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
+          .eq('id', projectId)
+        if (error) console.error('[PresentationEditor] failed to persist playlist after slide delete', error)
+      }
+    }
+
+    // If nothing left to show, clear the LED surface explicitly. When a next
+    // slide exists, the active-slide useEffect re-activates its clip.
+    if (remaining.length === 0) {
+      if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = '' }
+      setVideoElement(null)
+      setActiveImageUrl(null)
+      setVideoLoaded(false)
+      setIsPlaying(false)
+    }
+
     markDirty()
-  }, [activeSlide, activeSlideId, slides, markDirty])
+  }, [activeSlide, activeSlideId, slides, markDirty, projectId])
 
   const reorderSlides = useCallback((dragId, dropId) => {
     setSlides(prev => {

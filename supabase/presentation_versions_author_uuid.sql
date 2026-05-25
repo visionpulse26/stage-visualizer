@@ -57,7 +57,7 @@ WHERE cfi.resolved_by_user_id IS NULL
 -- legacy signature so deploys are forward-compatible.
 
 CREATE OR REPLACE FUNCTION public.save_draft_version_v2(
-  p_project_id    UUID,
+  p_project_id    TEXT,
   p_snapshot      JSONB,
   p_version_name  TEXT,
   p_release_notes TEXT,
@@ -93,7 +93,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.publish_presentation_version_v2(
-  p_project_id    UUID,
+  p_project_id    TEXT,
   p_snapshot      JSONB,
   p_version_name  TEXT,
   p_release_notes TEXT,
@@ -131,7 +131,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.restore_presentation_version_v2(
-  p_project_id        UUID,
+  p_project_id        TEXT,
   p_source_version_id UUID,
   p_created_by        TEXT,
   p_created_by_user_id UUID
