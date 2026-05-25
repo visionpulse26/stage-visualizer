@@ -1518,8 +1518,8 @@ export default function PresentationEditorPage() {
               onStatus: (msg) => setClipUploadStatus(`${msg} (${i + 1}/${files.length})`),
               onProgress: (pct) => setClipUploadStatus(`Converting ${i + 1}/${files.length}: ${pct}%`),
             })
-          } catch {
-            // Transcode failed — upload original file as fallback
+          } catch (transcodeErr) {
+            console.error('[transcode] failed, uploading original:', transcodeErr)
             uploadFile = file
             setClipUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name} (original)`)
           }

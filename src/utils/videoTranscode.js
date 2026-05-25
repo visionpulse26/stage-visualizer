@@ -11,12 +11,15 @@ async function getFFmpeg() {
   const ff = new FFmpeg()
   ffmpegLoading = (async () => {
     const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-    await ff.load({
-      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-    })
-    ffmpegInstance = ff
-    ffmpegLoading = null
+    try {
+      await ff.load({
+        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+      })
+      ffmpegInstance = ff
+    } finally {
+      ffmpegLoading = null
+    }
     return ff
   })()
   return ffmpegLoading
