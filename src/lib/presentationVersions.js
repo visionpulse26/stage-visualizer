@@ -73,7 +73,11 @@ function assertExpectedToken(currentVersion, expectedToken) {
 
 function isMissingFunctionError(error) {
   const msg = String(error?.message ?? '')
-  return error?.code === '42883' || msg.includes('function') && msg.includes('does not exist')
+  return error?.code === '42883'
+    || error?.status === 404
+    || error?.code === 'PGRST202'
+    || msg.includes('Could not find the function')
+    || msg.includes('function') && msg.includes('does not exist')
 }
 
 function isMissingColumnError(error, column) {
