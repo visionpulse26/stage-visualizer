@@ -640,7 +640,10 @@ function ClientPage() {
 
     fetchProject()
     return () => { cancelled = true }
-  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs, applySlideDefaultCamera])
+  // Intentional: applySlideDefaultCamera depends on cameraPresets which this
+  // effect itself sets — including it in deps causes an infinite reload loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
 
   // ── Apply client zoom guard once stage is ready ───────────────────────────
   useEffect(() => {
