@@ -3,10 +3,8 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import StageCanvas from '../components/StageCanvas'
 import { supabase } from '../lib/supabaseClient'
 import { usePresenceChannel } from '../hooks/usePresenceChannel'
-import { useVersionWatcher } from '../hooks/useVersionWatcher'
 import { useCollaborativeEditing } from '../hooks/useCollaborativeEditing'
 import { PresenceAvatars } from '../components/PresenceAvatars'
-import { RemoteConflictBanner } from '../components/RemoteConflictBanner'
 import {
   deleteFeedback,
   deleteVersion,
@@ -1281,14 +1279,6 @@ export default function PresentationEditorPage() {
 
   const { presenceList } = usePresenceChannel(projectId, presenceUserInfo)
 
-  const [remoteSavedVersion, setRemoteSavedVersion] = useState(null)
-
-  const handleRemoteSave = useCallback((newRow) => {
-    // Suppress banner for our own auto-saves
-    if (newRow.created_by_user_id && newRow.created_by_user_id === adminUserId) return
-    setRemoteSavedVersion(newRow)
-  }, [adminUserId])
-
   // ── Collaborative editing — apply incoming remote slide ops ──────────────
   const applyRemoteOp = useCallback((op) => {
     switch (op.type) {
@@ -1360,24 +1350,6 @@ export default function PresentationEditorPage() {
   // slides in deps so the debounce resets on every edit
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDirty, slides, runAutoSave])
-
-  useVersionWatcher(projectId, draftVersion?.version_token ?? null, handleRemoteSave)
-
-  const handleReloadRemote = useCallback(async () => {
-    setRemoteSavedVersion(null)
-    try {
-      const draft = await loadDraft(projectId)
-      if (!draft?.snapshot_json?.slides) return
-      const freshSlides = draft.snapshot_json.slides.filter(
-        (s) => !isDefaultStagePreviewClip({ id: s.clipId })
-      )
-      setDraftVersion(draft)
-      setSlides(freshSlides)
-      setIsDirty(false)
-    } catch (err) {
-      console.error('[VersionWatcher] reload failed', err)
-    }
-  }, [projectId])
 
   const persistProjectPlaylistThumbnail = useCallback(async (slide, slideIndex, thumbnailUrl) => {
     const currentPlaylist = videoPlaylistRef.current
@@ -2693,11 +2665,6 @@ export default function PresentationEditorPage() {
         />
       )}
 
-      <RemoteConflictBanner
-        remoteVersion={remoteSavedVersion}
-        onReload={handleReloadRemote}
-        onDismiss={() => setRemoteSavedVersion(null)}
-      />
     </div>
   )
 }
