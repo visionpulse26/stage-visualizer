@@ -35,7 +35,7 @@ import VersionHistoryDrawer from '../features/presentation/components/VersionHis
 import { DirectorNotesEditor } from '../features/presentation/components/DirectorNotesEditor'
 import { AnnotationModeTopBar } from '../features/presentation/components/AnnotationModeOverlay'
 import { AnnotationLayer, AnnotationToolbar, StageLockBanner } from '../components/FeedbackDraftPanel'
-import { AlertTriangle, Check, Copy, Eye, EyeOff, MoreHorizontal, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Eye, EyeOff, MoreHorizontal, Plus, RotateCcw, Trash2, Volume2, VolumeX } from 'lucide-react'
 
 // ── Design tokens (mirror Hi-Fi v2 CSS vars) ─────────────────────────────────
 const T = {
@@ -1170,6 +1170,7 @@ export default function PresentationEditorPage() {
   const videoPlaylistRef = useRef([])
   const clipUploadInputRef = useRef(null)
   const [isPlaying,     setIsPlaying]     = useState(false)
+  const [audioEnabled,  setAudioEnabled]  = useState(false)
   const [currentTime,   setCurrentTime]   = useState(0)
   const [activeDuration, setActiveDuration] = useState(0)
   const videoRef = useRef(null)
@@ -1217,6 +1218,13 @@ export default function PresentationEditorPage() {
   useEffect(() => {
     videoPlaylistRef.current = videoPlaylist
   }, [videoPlaylist])
+
+  useEffect(() => {
+    const vid = videoRef.current
+    if (!vid) return
+    vid.muted = !audioEnabled
+    vid.volume = audioEnabled ? 1 : 0
+  }, [audioEnabled])
 
   useEffect(() => {
     if (!clipBackgroundActive) return undefined
@@ -1512,7 +1520,8 @@ export default function PresentationEditorPage() {
       vid.pause()
       vid.src = url
       vid.loop = true
-      vid.muted = true
+      vid.muted = !audioEnabled
+      vid.volume = audioEnabled ? 1 : 0
       vid.playsInline = true
       vid.preload = 'auto'
       vid.onloadeddata = () => {
@@ -1534,7 +1543,7 @@ export default function PresentationEditorPage() {
       vid.onended = () => setIsPlaying(false)
       vid.load()
     }
-  }, [addBlob])
+  }, [addBlob, audioEnabled])
 
   const handlePlay = useCallback(() => {
     const vid = videoRef.current
@@ -1545,6 +1554,16 @@ export default function PresentationEditorPage() {
   const handlePause = useCallback(() => {
     videoRef.current?.pause()
   }, [])
+
+  const handleToggleAudio = useCallback(() => {
+    if (activeImageUrl || !videoRef.current) return
+    const next = !audioEnabled
+    const vid = videoRef.current
+    vid.muted = !next
+    vid.volume = next ? 1 : 0
+    setAudioEnabled(next)
+    if (next) vid.play().catch(() => {})
+  }, [activeImageUrl, audioEnabled])
 
   // ── Slide mutations ───────────────────────────────────────────────────────
   const markDirty = useCallback(() => setIsDirty(true), [])
@@ -2309,6 +2328,26 @@ export default function PresentationEditorPage() {
               title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? '⏸' : '▶'}
+            </button>
+            <button
+              onClick={handleToggleAudio}
+              disabled={!!activeImageUrl || !videoElement}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: audioEnabled ? 'rgba(232,83,26,0.14)' : 'none',
+                border: `1px solid ${audioEnabled ? 'rgba(232,83,26,0.38)' : 'transparent'}`,
+                borderRadius: 5,
+                color: activeImageUrl || !videoElement ? T.text4 : (audioEnabled ? T.ember2 : T.text2),
+                cursor: activeImageUrl || !videoElement ? 'default' : 'pointer',
+                padding: 0,
+                width: 22,
+                height: 22,
+              }}
+              title={audioEnabled ? 'Mute audio' : 'Play audio'}
+            >
+              {audioEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
             </button>
             <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, position: 'relative' }}>
               <div style={{

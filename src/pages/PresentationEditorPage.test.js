@@ -33,6 +33,15 @@ test('presentation editor runs eligible clip transcodes in a background browser 
   assert.match(page, /setClipBackgroundActive\(true\)/)
 })
 
+test('presentation editor can enable audio playback for video clips', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /audioEnabled/)
+  assert.match(page, /handleToggleAudio/)
+  assert.match(page, /vid\.muted = !audioEnabled/)
+  assert.match(page, /title=\{audioEnabled \? 'Mute audio' : 'Play audio'\}/)
+})
+
 test('presentation editor + Clip button opens file picker instead of adding a blank slide', () => {
   const page = read('src/pages/PresentationEditorPage.jsx')
 
