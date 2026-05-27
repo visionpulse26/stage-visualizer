@@ -1364,6 +1364,7 @@ export default function PresentationEditorPage() {
           if (Array.isArray(snap.slides)) setSlides(snap.slides)
           if (Array.isArray(snap.cameraPresets)) setCameraPresets(snap.cameraPresets)
           if (snap.projectName) setProjectName(snap.projectName)
+          lastSavedTokenRef.current = serverDraft.version_token  // prevent watcher re-firing for this token
           setDraftVersion(serverDraft)
           setIsDirty(false)
         }
@@ -1383,11 +1384,17 @@ export default function PresentationEditorPage() {
   }, [isDirty, slides, runAutoSave])
 
   // ── Remote-save watcher — keeps stale tabs in sync ────────────────────────
-  // When another session saves, proactively update our local state.
+  // When another session saves the DRAFT, proactively update our local state.
   // If we have unsaved local edits, surface the conflict banner instead.
   const handleRemoteSave = useCallback((newRow) => {
+    // Only care about the active draft — ignore publish/archive row updates.
+    // Without this, renaming an archived version or publishing (which archives
+    // the old published row) would fire here and overwrite the editor state.
+    if (newRow.status !== 'draft') return
     // Ignore our own saves (race: realtime fires before tokenRef updates)
     if (newRow.version_token === lastSavedTokenRef.current) return
+    // Mark as seen so we don't re-process this token if the event fires again
+    lastSavedTokenRef.current = newRow.version_token
     if (isDirtyRef.current) {
       // We have local changes — let the admin decide what to keep
       setVersionConflict({ action: 'save', currentVersion: newRow, versionName: '', releaseNotes: '' })
