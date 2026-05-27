@@ -4,6 +4,7 @@ import StageCanvas from '../components/StageCanvas'
 import { supabase } from '../lib/supabaseClient'
 import { usePresenceChannel } from '../hooks/usePresenceChannel'
 import { useCollaborativeEditing } from '../hooks/useCollaborativeEditing'
+import { useVersionWatcher } from '../hooks/useVersionWatcher'
 import { PresenceAvatars } from '../components/PresenceAvatars'
 import {
   deleteFeedback,
@@ -1183,6 +1184,9 @@ export default function PresentationEditorPage() {
   // ── Presentation editor state ─────────────────────────────────────────────
   const [slides,          setSlides]          = useState([])
   const slidesRef = useRef([])  // always-current ref for auto-save reads
+  const draftVersionRef = useRef(null)      // always-current draft version for token checks
+  const isDirtyRef = useRef(false)          // always-current dirty flag for async handlers
+  const lastSavedTokenRef = useRef(null)    // token of the last save WE performed (skip self-notifications)
   const [activeSlideId,   setActiveSlideId]   = useState(null)
   const [rightTab,        setRightTab]        = useState('context')  // 'context' | 'feedback'
   const [isDirty,         setIsDirty]         = useState(false)
@@ -1228,6 +1232,9 @@ export default function PresentationEditorPage() {
   useEffect(() => {
     slidesRef.current = slides
   }, [slides])
+
+  useEffect(() => { draftVersionRef.current = draftVersion }, [draftVersion])
+  useEffect(() => { isDirtyRef.current = isDirty }, [isDirty])
 
   useEffect(() => {
     const vid = videoRef.current
@@ -1336,19 +1343,36 @@ export default function PresentationEditorPage() {
     try {
       const snapshot = buildSnapshot(projectName, slidesRef.current, cameraPresets)
       const savedDraft = await saveDraft(projectId, snapshot, {
-        expectedToken: null,  // force — real-time sync keeps state coherent
+        // Use the current version token so stale tabs can't force-overwrite newer saves.
+        // A null token only on first save (no draft yet) is intentional.
+        expectedToken: draftVersionRef.current?.version_token ?? null,
         createdBy: adminIdentity,
         createdByUserId: adminUserId,
       })
+      lastSavedTokenRef.current = savedDraft.version_token  // mark as our own save
       setDraftVersion(savedDraft)
       setIsDirty(false)
       setAutoSaveStatus('saved')
       setTimeout(() => setAutoSaveStatus(s => s === 'saved' ? 'idle' : s), 2500)
     } catch (err) {
-      console.error('[AutoSave] failed:', err)
+      if (isVersionConflict(err)) {
+        // Another session saved while this tab had stale state (e.g. overnight open tab).
+        // Reload the server version and discard our stale auto-save attempt.
+        const serverDraft = await loadDraft(projectId).catch(() => null)
+        if (serverDraft?.snapshot_json) {
+          const snap = serverDraft.snapshot_json
+          if (Array.isArray(snap.slides)) setSlides(snap.slides)
+          if (Array.isArray(snap.cameraPresets)) setCameraPresets(snap.cameraPresets)
+          if (snap.projectName) setProjectName(snap.projectName)
+          setDraftVersion(serverDraft)
+          setIsDirty(false)
+        }
+      } else {
+        console.error('[AutoSave] failed:', err)
+      }
       setAutoSaveStatus('idle')
     }
-  }, [projectId, projectName, cameraPresets, adminIdentity, adminUserId])
+  }, [projectId, projectName, cameraPresets, adminIdentity, adminUserId, isVersionConflict])
 
   useEffect(() => {
     if (!isDirty) return
@@ -1357,6 +1381,29 @@ export default function PresentationEditorPage() {
   // slides in deps so the debounce resets on every edit
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDirty, slides, runAutoSave])
+
+  // ── Remote-save watcher — keeps stale tabs in sync ────────────────────────
+  // When another session saves, proactively update our local state.
+  // If we have unsaved local edits, surface the conflict banner instead.
+  const handleRemoteSave = useCallback((newRow) => {
+    // Ignore our own saves (race: realtime fires before tokenRef updates)
+    if (newRow.version_token === lastSavedTokenRef.current) return
+    if (isDirtyRef.current) {
+      // We have local changes — let the admin decide what to keep
+      setVersionConflict({ action: 'save', currentVersion: newRow, versionName: '', releaseNotes: '' })
+    } else {
+      // No local changes — silently sync to the latest server state
+      const snap = newRow.snapshot_json
+      if (snap) {
+        if (Array.isArray(snap.slides)) setSlides(snap.slides)
+        if (Array.isArray(snap.cameraPresets)) setCameraPresets(snap.cameraPresets)
+        if (snap.projectName) setProjectName(snap.projectName)
+      }
+      setDraftVersion(newRow)
+    }
+  }, [])
+
+  useVersionWatcher(projectId, draftVersion?.version_token ?? null, handleRemoteSave)
 
   const persistProjectPlaylistThumbnail = useCallback(async (slide, slideIndex, thumbnailUrl) => {
     const currentPlaylist = videoPlaylistRef.current
@@ -1460,6 +1507,8 @@ export default function PresentationEditorPage() {
         // Load presentation draft or build from playlist
         const draft = await loadDraft(projectId)
         const published = await loadPublishedVersion(projectId)
+        // Mark loaded token so the version watcher doesn't treat it as a remote change
+        if (draft?.version_token) lastSavedTokenRef.current = draft.version_token
         setDraftVersion(draft)
         setPublishedVersion(published)
 
@@ -2035,6 +2084,7 @@ export default function PresentationEditorPage() {
         createdBy: adminIdentity,
         createdByUserId: adminUserId,
       })
+      lastSavedTokenRef.current = savedDraft.version_token
       setDraftVersion(savedDraft)
       setIsDirty(false)
     } catch (err) {
@@ -2066,6 +2116,7 @@ export default function PresentationEditorPage() {
         publishedByUserId: adminUserId,
         createdByUserId: adminUserId,
       })
+      lastSavedTokenRef.current = published.version_token
       setPublishedVersion(published)
       setDraftVersion(null)
       setIsDirty(false)
