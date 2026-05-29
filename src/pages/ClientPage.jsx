@@ -1155,7 +1155,7 @@ function ClientPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{
-      width: '100%', height: '100vh', background: T.bg, color: T.text,
+      width: '100%', height: '100dvh', background: T.bg, color: T.text,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       fontFamily: 'Chakra Petch, sans-serif', position: 'relative',
     }}>
@@ -1180,15 +1180,14 @@ function ClientPage() {
           onExit={exitNoteFocusMode}
         />
       ) : (
-          <ClientTopBar
-            projectName={projectName}
-            versionBadge={vBadge}
-            publishedAt={publishedVersion?.published_at}
-            slideCount={displayClips.length}
-            activeSlideIndex={displayClips.findIndex(s => s.id === (activeSlide?.id ?? displayClips[0]?.id))}
-            onLeaveFeedback={enterFeedbackMode}
-            readOnly={isPreviewingVersion}
-          />
+      <ClientTopBar
+        projectName={projectName}
+        versionBadge={vBadge}
+        publishedAt={publishedVersion?.published_at}
+        slideCount={displayClips.length}
+        activeSlideIndex={displayClips.findIndex(s => s.id === (activeSlide?.id ?? displayClips[0]?.id))}
+        readOnly={isPreviewingVersion}
+      />
         )}
       {!feedbackMode && !noteFocusNote && isPreviewingVersion && <VersionPreviewBanner version={previewVersion} />}
       {feedbackMode && <FeedbackLockBanner lockedCtx={lockedCtx} />}
@@ -1464,7 +1463,7 @@ function NoteFocusTopBar({ note, slideTitle, onExit }) {
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
-function ClientTopBar({ projectName, versionBadge, publishedAt, slideCount, activeSlideIndex, onLeaveFeedback, readOnly = false }) {
+function ClientTopBar({ projectName, versionBadge, publishedAt, slideCount, activeSlideIndex, readOnly = false }) {
   return (
     <div style={{
       height: 44, background: 'rgba(10,8,6,0.94)', borderBottom: `1px solid ${T.border}`,
@@ -1514,18 +1513,18 @@ function ClientTopBar({ projectName, versionBadge, publishedAt, slideCount, acti
 
       <Spacer />
 
-      <button onClick={readOnly ? undefined : onLeaveFeedback} disabled={readOnly} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '5px 13px', borderRadius: 6,
-        fontFamily: 'Chakra Petch, sans-serif', fontSize: 11, fontWeight: 600,
-        cursor: readOnly ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-        background: readOnly ? 'rgba(255,255,255,0.05)' : `linear-gradient(180deg, ${T.ember2}, ${T.ember})`,
-        border: `1px solid ${readOnly ? 'rgba(255,255,255,0.12)' : T.ember2}`,
-        color: readOnly ? T.text3 : 'white',
-        boxShadow: readOnly ? 'none' : `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.25)`,
-      }}>
-        {readOnly ? 'Preview only' : '✦ Leave Feedback'}
-      </button>
+      {readOnly && (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center',
+          padding: '3px 9px', borderRadius: 5,
+          fontSize: 10, fontWeight: 700,
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          color: T.text3,
+        }}>
+          Preview only
+        </span>
+      )}
     </div>
   )
 }
@@ -1565,8 +1564,8 @@ function ClipStrip({ clips, activeId, onSelect, disabled = false }) {
   if (!clips.length) return null
   return (
     <div style={{
-      height: 70, background: 'rgba(6,4,3,0.92)', borderBottom: `1px solid ${T.border}`,
-      display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px',
+      height: 58, background: 'rgba(6,4,3,0.86)', borderBottom: `1px solid rgba(220,100,30,0.16)`,
+      display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px',
       flexShrink: 0, overflowX: 'auto', overflowY: 'hidden',
     }}>
       {clips.map((clip, idx) => {
@@ -1578,26 +1577,26 @@ function ClipStrip({ clips, activeId, onSelect, disabled = false }) {
             disabled={disabled}
             style={{
               display: 'flex', gap: 8, alignItems: 'center',
-              padding: '6px 10px', borderRadius: 8, flexShrink: 0, cursor: disabled ? 'not-allowed' : 'pointer',
-              background: isActive ? 'rgba(232,83,26,0.1)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${isActive ? T.ember : 'rgba(220,100,30,0.12)'}`,
-              boxShadow: isActive ? '0 0 12px rgba(232,83,26,0.2)' : 'none',
+              padding: '5px 9px', borderRadius: 7, flexShrink: 0, cursor: disabled ? 'not-allowed' : 'pointer',
+              background: isActive ? 'rgba(232,83,26,0.10)' : 'rgba(255,255,255,0.025)',
+              border: `1px solid ${isActive ? 'rgba(232,83,26,0.78)' : 'rgba(220,100,30,0.10)'}`,
+              boxShadow: isActive ? '0 0 10px rgba(232,83,26,0.16)' : 'none',
               transition: 'all 0.15s',
               outline: 'none',
               opacity: disabled ? 0.55 : 1,
             }}
           >
-            <ClipThumbnail src={clip.thumbnailUrl || clip.thumbnail_url} active={isActive} />
+            <ClipThumbnail src={clip.thumbnailUrl || clip.thumbnail_url} active={isActive} width={40} height={26} radius={5} />
             <Col gap={1} style={{ textAlign: 'left' }}>
               <span style={{
-                fontSize: 11, fontWeight: isActive ? 600 : 500,
+                fontSize: 10, fontWeight: isActive ? 700 : 500,
                 color: isActive ? T.text : T.text2,
-                whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap', maxWidth: 112, overflow: 'hidden', textOverflow: 'ellipsis',
                 display: 'block',
               }}>
                 {clip.title || clip.name || `Clip ${idx + 1}`}
               </span>
-              <span style={{ fontSize: 9, color: T.text3 }}>
+              <span style={{ fontSize: 8, color: T.text3 }}>
                 {clip.durationSeconds ? formatDuration(clip.durationSeconds) : ''} #{idx + 1}
               </span>
             </Col>
@@ -1661,7 +1660,7 @@ function StageTitleBadge({ title, compact = false }) {
 function RightContextRail({ children, projectName, collapsed = false }) {
   return (
     <div style={{
-      width: collapsed ? 44 : 304,
+      width: collapsed ? 40 : 304,
       flexShrink: 0,
       display: 'flex',
       flexDirection: 'column',
@@ -1855,8 +1854,8 @@ function ContextPanel({ slide, feedbackItems = [], onCollapse, onLeaveFeedback, 
   return (
     <div style={{
       width: 304, flexShrink: 0,
-      background: T.glassDark, backdropFilter: 'blur(14px)',
-      borderLeft: `1px solid ${T.border}`,
+      background: 'rgba(8,6,4,0.88)', backdropFilter: 'blur(14px)',
+      borderLeft: `1px solid rgba(220,100,30,0.16)`,
       display: 'flex', flexDirection: 'column',
       flex: '1 1 auto', minHeight: 0,
     }}>
@@ -1986,17 +1985,17 @@ function ContextPanel({ slide, feedbackItems = [], onCollapse, onLeaveFeedback, 
       </div>
 
       {!readOnly && (
-      <div style={{ padding: '13px 16px 10px', borderTop: `1px solid rgba(220,100,30,0.1)`, flexShrink: 0 }}>
-        <button onClick={onLeaveFeedback} style={{
-          width: '100%', padding: '9px', borderRadius: 7,
-          fontFamily: 'Chakra Petch, sans-serif', fontSize: 12, fontWeight: 600,
-          background: `linear-gradient(180deg, ${T.ember2}, ${T.ember})`,
-          border: `1px solid ${T.ember2}`, color: 'white', cursor: 'pointer',
-          boxShadow: `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.2)`,
-        }}>
-          ✦ Leave Feedback
-        </button>
-      </div>
+        <div style={{ padding: '13px 16px 10px', borderTop: `1px solid rgba(220,100,30,0.1)`, flexShrink: 0 }}>
+          <button onClick={onLeaveFeedback} style={{
+            width: '100%', padding: '10px', borderRadius: 7,
+            fontFamily: 'Chakra Petch, sans-serif', fontSize: 12, fontWeight: 700,
+            background: `linear-gradient(180deg, ${T.ember2}, ${T.ember})`,
+            border: `1px solid ${T.ember2}`, color: 'white', cursor: 'pointer',
+            boxShadow: `${T.emberGlow}, inset 0 1px 0 rgba(255,255,255,0.2)`,
+          }}>
+            Leave Feedback
+          </button>
+        </div>
       )}
 
       {/* Branding watermark — replaces GlobalFooter for client view */}
@@ -2026,17 +2025,25 @@ function CollapsedHandle({ clipTitle, feedbackCount, onExpand, projectName }) {
     <div
       onClick={onExpand}
       style={{
-        width: 44, flexShrink: 0,
-        background: T.glassDark, backdropFilter: 'blur(14px)',
-        borderLeft: `1px solid ${T.border}`,
+        width: 40, flexShrink: 0,
+        background: 'rgba(8,6,4,0.70)', backdropFilter: 'blur(14px)',
+        borderLeft: `1px solid rgba(220,100,30,0.14)`,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         padding: '10px 0', gap: 12, cursor: 'pointer',
       }}
     >
-      <span style={{ fontSize: 12, color: T.text3 }}>‹</span>
+      <span style={{
+        writingMode: 'vertical-rl',
+        transform: 'rotate(180deg)',
+        fontSize: 8,
+        fontWeight: 800,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: T.ember2,
+      }}>Context</span>
       <span style={{
         writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-        fontSize: 10, fontWeight: 600, color: T.text2, letterSpacing: '0.06em',
+        fontSize: 9, fontWeight: 600, color: T.text3, letterSpacing: '0.06em',
         maxHeight: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
         {clipTitle}
@@ -3343,22 +3350,22 @@ function NextSceneLoadingPopup({ show, clipName }) {
   if (!show) return null
 
   return (
-    <div className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center px-4">
-      <div className="pointer-events-auto min-w-[260px] max-w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-white/12 bg-black/70 backdrop-blur-xl shadow-2xl px-5 py-4">
-        <div className="flex items-center gap-4">
-          <div className="relative h-10 w-10 flex-shrink-0">
-            <div className="absolute inset-0 rounded-full border border-[#FF5F1F]/25" />
+    <div className="fixed left-1/2 bottom-16 z-40 pointer-events-none flex -translate-x-1/2 px-4">
+      <div className="min-w-[250px] max-w-[min(340px,calc(100vw-2rem))] rounded-lg border border-white/10 bg-black/60 backdrop-blur-xl shadow-2xl px-4 py-3">
+        <div className="flex items-center gap-3">
+          <div className="relative h-8 w-8 flex-shrink-0">
+            <div className="absolute inset-0 rounded-full border border-[#FF5F1F]/20" />
             <div className="absolute inset-1 rounded-full border-2 border-white/10 border-t-[#FF5F1F] animate-spin" />
-            <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#FF5F1F]" />
+            <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#FF5F1F]" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#FF5F1F]">
               Loading next scene
             </p>
-            <p className="mt-1 truncate text-sm font-semibold text-white/90">
+            <p className="mt-1 truncate text-xs font-semibold text-white/85">
               {clipName || 'Preparing visual'}
             </p>
-            <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full w-1/2 rounded-full bg-[#FF5F1F] animate-[scene-progress_1.15s_ease-in-out_infinite]" />
             </div>
           </div>
