@@ -12,8 +12,12 @@ test('admin stage setup starts with no default preview clip — LED panels fall 
   assert.doesNotMatch(page, /DEFAULT_STAGE_PREVIEW_CLIP/)
   assert.doesNotMatch(page, /ensureDefaultPreviewClip/)
   assert.match(page, /clearActiveMedia/)
-  // Published media_playlist preserves remote clips for Collab/Presentation playback.
-  assert.match(page, /media_playlist:\s+finalMediaPlaylist/)
+  // Publish must PRESERVE the live media_playlist (clips owned by StageViz), never
+  // overwrite it with the classic editor's cleared in-memory list.
+  assert.match(page, /media_playlist:\s+mediaPlaylistForSave/)
+  assert.match(page, /mediaPlaylistForSave = existingProject\?\.media_playlist/)
+  // The classic editor's clip handlers must not persist media_playlist anymore.
+  assert.doesNotMatch(page, /update\(\{ media_playlist: mediaForDb \}\)/)
 })
 
 test('stage setup panel removes clip loading controls and links to presentation after publish', () => {

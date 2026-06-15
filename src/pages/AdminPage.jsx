@@ -326,13 +326,12 @@ function AdminPage() {
     )
   }, [])
 
-  const handleReorderPlaylist = useCallback(async (newOrder) => {
+  const handleReorderPlaylist = useCallback((newOrder) => {
+    // Local preview only. media_playlist is owned by the StageViz Presentation
+    // editor — this classic editor must never persist clips (it would overwrite
+    // the live list with stale/partial state).
     setVideoPlaylist(newOrder)
-    if (publishedId && newOrder.length > 0) {
-      const mediaForDb = newOrder.map(c => ({ name: c.name, url: c.url, type: c.type, external: c.external ?? false }))
-      await supabase.from('projects').update({ media_playlist: mediaForDb }).eq('id', publishedId)
-    }
-  }, [publishedId])
+  }, [])
 
   const handleDeleteClip = useCallback((clipId) => {
     setVideoPlaylist(prev => {
@@ -552,10 +551,10 @@ function AdminPage() {
       const updatedPlaylist = [...videoPlaylist, clip]
       setVideoPlaylist(updatedPlaylist)
 
-      if (publishedId) {
-        const mediaForDb = updatedPlaylist.map(c => ({ name: c.name, url: c.url, type: c.type, external: c.external ?? true }))
-        await supabase.from('projects').update({ media_playlist: mediaForDb }).eq('id', publishedId)
-      }
+      // Do NOT persist media_playlist here. Clips are owned by the StageViz
+      // Presentation editor; this classic editor's in-memory list is cleared on
+      // open, so writing it back would wipe clips added in StageViz. Local state
+      // updates above are for preview only.
 
       if (isImg) {
         if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
@@ -1003,6 +1002,23 @@ function AdminPage() {
           ...(c.thumbnailUrl || c.thumbnail_url ? { thumbnailUrl: c.thumbnailUrl || c.thumbnail_url } : {}),
         }))
 
+      // 2b. PRESERVE media_playlist — clips are owned by the StageViz Presentation
+      // editor. This classic stage editor intentionally clears its in-memory
+      // playlist on open (clearActiveMedia) and no longer exposes clip controls,
+      // so writing our (empty) in-memory list here would WIPE every clip added in
+      // StageViz. For an existing project we re-read the live DB value and write it
+      // back unchanged; only a brand-new project uses the in-memory list.
+      let mediaPlaylistForSave = finalMediaPlaylist
+      if (publishedId) {
+        const { data: existingProject, error: existingErr } = await supabase
+          .from('projects')
+          .select('media_playlist')
+          .eq('id', publishedId)
+          .maybeSingle()
+        if (existingErr) throw new Error(`Could not read existing clips before save: ${existingErr.message}`)
+        mediaPlaylistForSave = existingProject?.media_playlist ?? finalMediaPlaylist
+      }
+
       // 3. HDRI
       const finalHdriUrl = (customHdriUrl && !customHdriUrl.startsWith('blob:'))
         ? customHdriUrl
@@ -1042,7 +1058,7 @@ function AdminPage() {
         id:              projectId,
         stage_url:       finalStageUrl,
         video_url:       finalVideoUrl,
-        media_playlist:  finalMediaPlaylist,
+        media_playlist:  mediaPlaylistForSave,
         camera_presets:  cameraPresets,
         grid_cell_size:  gridCellSize,
         name:            projectName || 'Untitled Project',
