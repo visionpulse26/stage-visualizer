@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/ffmpeg/
+.claude/
 .env
 .env.local
 .env*.local
