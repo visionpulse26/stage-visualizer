@@ -2,6 +2,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/*.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/admin/*.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/api/oembed",
