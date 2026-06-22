@@ -32,7 +32,7 @@ import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAsse
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 import { shouldTranscodeVideo, transcodeToHalfRes } from '../utils/videoTranscode'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
-import { buildMultiMapledClip, serializeClipForPlaylist, isMultiMapledClip, getClipSources } from '../utils/mapledMedia'
+import { buildMultiMapledClip, serializeClipForPlaylist, isMultiMapledClip, getClipSources, buildImageMediaByTarget, getClipMediaType } from '../utils/mapledMedia'
 import { groupFilesIntoMapledClips } from '../utils/mapledUpload'
 import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
 import useLedTargets from '../hooks/useLedTargets'
@@ -1717,14 +1717,30 @@ export default function PresentationEditorPage() {
     }
     setMediaByTarget(null)
 
-    if (clip.type === 'image') {
+    if (getClipMediaType(clip) === 'image') {
       if (videoRef.current) {
         videoRef.current.pause()
         videoRef.current.src = ''
       }
-      setActiveImageUrl(url)
       setVideoElement(null)
       setVideoLoaded(true)
+
+      // Multi-mapled stills: drive each LED map from its own image instead of
+      // showing the master on every surface. Scene's per-target texture loader
+      // handles { imageUrl } entries directly — no video controller required.
+      if (isMultiMapledClip(clip)) {
+        const map = await buildImageMediaByTarget(clip, async (u) => {
+          if (u.startsWith('http://') || u.startsWith('https://')) {
+            const b = await fetchAsBlobUrlWithCache(u); addBlob(b); return b
+          }
+          return u
+        })
+        if (activationSeq !== activationSeqRef.current) return
+        setActiveImageUrl(null)
+        setMediaByTarget(map)
+      } else {
+        setActiveImageUrl(url)
+      }
     } else {
       setActiveImageUrl(null)
 

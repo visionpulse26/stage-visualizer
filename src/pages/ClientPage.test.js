@@ -32,7 +32,7 @@ test('client applies the first published slide default camera on initial load', 
 test('client drives multi-mapled clips through the lockstep playback controller', () => {
   const page = read('src/pages/ClientPage.jsx')
 
-  assert.match(page, /import \{ isMultiMapledClip, getClipSources \} from '\.\.\/utils\/mapledMedia'/)
+  assert.match(page, /import \{[^}]*\bisMultiMapledClip\b[^}]*\bgetClipSources\b[^}]*\} from '\.\.\/utils\/mapledMedia'/)
   assert.match(page, /createMapledPlaybackController\(\{/)
   // master + per-target media routed to the canvas
   assert.match(page, /mediaByTarget=\{mediaByTarget\}/)

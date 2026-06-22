@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { deleteFeedback, loadPublishedVersion, loadVersionById, submitFeedback, loadFeedback, updateFeedback, hydrateSnapshot } from '../lib/presentationVersions'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl } from '../utils/r2Upload'
-import { isMultiMapledClip, getClipSources } from '../utils/mapledMedia'
+import { isMultiMapledClip, getClipSources, buildImageMediaByTarget, getClipMediaType } from '../utils/mapledMedia'
 import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
 import { FeedbackDraftPanel, AnnotationLayer, AnnotationToolbar, FeedbackTopBar, FeedbackLockBanner, StageLockBanner, StageLockBadge } from '../components/FeedbackDraftPanel'
 import GuestGate, { getStoredGuest } from '../components/GuestGate'
@@ -478,7 +478,7 @@ function ClientPage() {
 
     if (slideId != null) setActiveSlideId(slideId)
 
-    if (clip.type === 'image') {
+    if (getClipMediaType(clip) === 'image') {
       if (videoRef.current) {
         videoRef.current.pause()
         videoRef.current.src = ''
@@ -486,9 +486,21 @@ function ClientPage() {
       }
       teardownMapledController()
       setVideoElement(null)
-      setActiveImageUrl(url)
       setActiveVideoId(clip.id)
       setIsPlaying(false)
+
+      // Multi-mapled stills: one image per LED map (no video controller needed).
+      if (isMultiMapledClip(clip)) {
+        const map = await buildImageMediaByTarget(clip, async (u) => {
+          if (isRemoteUrl(u)) { const b = await fetchAsBlobUrlWithCache(u); addBlob(b); return b }
+          return u
+        })
+        if (activationSeq !== activationSeqRef.current) return
+        setActiveImageUrl(null)
+        setMediaByTarget(map)
+      } else {
+        setActiveImageUrl(url)
+      }
       return
     }
 
