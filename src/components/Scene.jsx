@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import * as THREE from 'three'
 import { scanStageMeshes, scanStageMeshesAsync } from './pov/scanStageMeshes'
-import { detectLedSurfaceTarget } from '../utils/ledMaterialTargets'
+import { detectLedSurfaceTarget, resolveLedTargetId } from '../utils/ledMaterialTargets'
 
 function createDracoLoader() {
   const draco = new DRACOLoader()
@@ -492,7 +492,92 @@ function LedLights({ positions, color, active }) {
   )
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
+// ── Per-target LED textures (multi-mapled) ──────────────────────────────────
+// Builds one Three texture per supplied target so different LED maps can show
+// different media simultaneously. Any LED surface whose target isn't supplied
+// here falls back to the single master texture in the material pass. Returns the
+// live Map plus a version counter that retriggers the material pass on change.
+//
+// `mediaByTarget`: Map<targetId, { videoElement?: HTMLVideoElement, imageUrl?: string }>
+function useTexturesByTarget(mediaByTarget) {
+  const mapRef = useRef(new Map())
+  const [version, setVersion] = useState(0)
+
+  useEffect(() => {
+    const incoming = mediaByTarget instanceof Map ? mediaByTarget : new Map()
+    const current = mapRef.current
+    let changed = false
+    const cancellers = []
+
+    // Drop textures whose target is no longer supplied
+    for (const [targetId, tex] of current) {
+      if (!incoming.has(targetId)) {
+        tex.dispose?.()
+        current.delete(targetId)
+        changed = true
+      }
+    }
+
+    for (const [targetId, media] of incoming) {
+      const ve = media?.videoElement || null
+      const url = media?.imageUrl || null
+      const existing = current.get(targetId)
+
+      if (ve) {
+        if (existing?.userData?.__srcVideo === ve) continue // unchanged
+        existing?.dispose?.()
+        try {
+          const t = new THREE.VideoTexture(ve)
+          t.minFilter = THREE.LinearFilter
+          t.magFilter = THREE.LinearFilter
+          t.colorSpace = THREE.SRGBColorSpace
+          t.flipY = false
+          configureLedMediaTexture(t)
+          t.userData.__srcVideo = ve
+          current.set(targetId, t)
+          changed = true
+        } catch (_) { /* ignore */ }
+      } else if (url) {
+        if (existing?.userData?.__srcUrl === url) continue // unchanged
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        let cancelled = false
+        img.onload = () => {
+          if (cancelled || !img.naturalWidth || !img.naturalHeight) return
+          try {
+            const t = new THREE.Texture(img)
+            t.colorSpace = THREE.SRGBColorSpace
+            t.flipY = false
+            configureLedMediaTexture(t)
+            t.userData.__srcUrl = url
+            const prev = current.get(targetId)
+            if (prev && prev !== t) prev.dispose?.()
+            current.set(targetId, t)
+            setVersion((v) => v + 1)
+          } catch (_) { /* ignore */ }
+        }
+        img.src = url
+        cancellers.push(() => { cancelled = true; img.onload = null })
+      } else if (existing) {
+        existing.dispose?.()
+        current.delete(targetId)
+        changed = true
+      }
+    }
+
+    if (changed) setVersion((v) => v + 1)
+    return () => { cancellers.forEach((c) => c()) }
+  }, [mediaByTarget])
+
+  useEffect(() => () => {
+    for (const [, tex] of mapRef.current) tex.dispose?.()
+    mapRef.current.clear()
+  }, [])
+
+  return [mapRef.current, version]
+}
+
+function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -626,6 +711,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   }, [activeImageUrl])
 
   const activeTexture = videoTexture || imageTexture
+
+  // Per-target textures for multi-mapled clips (empty Map for single-media clips)
+  const [texturesByTarget, texturesVersion] = useTexturesByTarget(mediaByTarget)
 
   // Reset emissive fade counter on texture change
   const prevTextureRef = useRef(null)
@@ -768,6 +856,14 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
           child.castShadow = false
           child.receiveShadow = false
 
+          // Route this surface to its own LED map texture (multi-mapled). Falls
+          // back to the single master texture when no per-target media supplied.
+          const routed = texturesByTarget.size
+            ? resolveLedTargetId([mat.name], child.name, ledTargetMap)
+            : null
+          const targetTexture =
+            (routed && texturesByTarget.get(routed.targetId)) || activeTexture
+
           child.updateWorldMatrix(true, false)
           const box    = new THREE.Box3().setFromObject(child)
           const centre = box.getCenter(new THREE.Vector3())
@@ -781,14 +877,14 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
             : LED_BASE_POLYGON_OFFSET
           try {
             if (ledSurfaceType === 'transparent-grid' && transparentLedConfig?.enabled !== false) {
-              ledMat = createTransparentLedMaterial(mat, activeTexture, transparentLedConfig)
+              ledMat = createTransparentLedMaterial(mat, targetTexture, transparentLedConfig)
               child.renderOrder = ledMat.userData?.usesSourceTransparentMaterial
                 ? child.userData.stageSourceRenderOrder
                 : 4
-            } else if (activeTexture) {
+            } else if (targetTexture) {
               if (protectLed) {
                 ledMat = new THREE.MeshBasicMaterial({
-                  map:        activeTexture,
+                  map:        targetTexture,
                   side:       THREE.DoubleSide,
                   toneMapped: false,
                   polygonOffset: true,
@@ -799,9 +895,9 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
               } else {
                 ledMat = new THREE.MeshStandardMaterial({
                   color:             new THREE.Color(0, 0, 0),
-                  map:               activeTexture,
+                  map:               targetTexture,
                   emissive:          new THREE.Color(1, 1, 1),
-                  emissiveMap:       activeTexture,
+                  emissiveMap:       targetTexture,
                   emissiveIntensity: 0,
                   roughness:         0,
                   metalness:         0,
@@ -833,6 +929,8 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
                 mesh: child.name,
                 sourceMaterial: mat.name,
                 ledSurfaceType,
+                targetId: routed?.targetId ?? '(master fallback)',
+                targetTextureSupplied: !!(routed && texturesByTarget.get(routed.targetId)),
                 appliedMaterial: ledMat.name,
                 hasMap: !!ledMat.map,
                 hasEmissiveMap: !!ledMat.emissiveMap,
@@ -899,12 +997,19 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
       radius,
     })
 
-  }, [clonedScene, activeTexture, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics, onMeshScan])
+  }, [clonedScene, activeTexture, texturesByTarget, texturesVersion, ledTargetMap, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics, onMeshScan])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
     if (videoTextureRef.current && videoElement && !videoElement.paused) {
       videoTextureRef.current.needsUpdate = true
+    }
+    // Refresh per-target video textures (multi-mapled)
+    if (texturesByTarget.size) {
+      for (const [, tex] of texturesByTarget) {
+        const v = tex?.userData?.__srcVideo
+        if (v && !v.paused && v.readyState >= 2) tex.needsUpdate = true
+      }
     }
     if (ledMaterialsRef.current.length > 0) {
       const step = (EMISSIVE_TARGET / EMISSIVE_FADE_SECS) * delta
@@ -916,7 +1021,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   return (
     <>
       <primitive object={clonedScene} />
-      <LedLights positions={ledPositions} color={ledColor} active={!!activeTexture && sunIntensity > 0} />
+      <LedLights positions={ledPositions} color={ledColor} active={(!!activeTexture || texturesByTarget.size > 0) && sunIntensity > 0} />
     </>
   )
 }
@@ -950,10 +1055,12 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
   const common = {
     videoElement,
     activeImageUrl,
+    mediaByTarget,
+    ledTargetMap,
     onLedMaterialStatus,
     protectLed,
     sunIntensity,

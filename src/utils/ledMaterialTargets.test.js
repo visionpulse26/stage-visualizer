@@ -2,8 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   detectLedSurfaceTarget,
+  discoverLedSurfaces,
   formatLedTargetLabel,
+  getLedSurfaceKey,
   normalizeLedTargetToken,
+  resolveLedTargetId,
+  resolveLedTargets,
 } from './ledMaterialTargets.js'
 
 test('normalizes semantic mapled material names', () => {
@@ -105,4 +109,102 @@ test('material target takes priority over mesh target', () => {
     sourceKind: 'material',
     isTargeted: true,
   })
+})
+
+// ── Phase A: discovery + role resolution ────────────────────────────────────
+
+test('surface key: convention names key by targetId', () => {
+  const surface = getLedSurfaceKey(['LED_MAPLED_MAIN_MAT'], 'Mesh')
+  assert.equal(surface.key, 'main')
+  assert.equal(surface.matchKind, 'convention')
+  assert.equal(surface.isTargeted, true)
+})
+
+test('surface key: legacy LED collapses to master', () => {
+  const surface = getLedSurfaceKey(['LED_MASTER_MAT'], 'Mesh')
+  assert.equal(surface.key, 'master')
+  assert.equal(surface.matchKind, 'legacy')
+  assert.equal(surface.isTargeted, false)
+})
+
+test('surface key: heuristic catches non-convention "LED" names', () => {
+  // Real C4D objects with no naming convention still register so they can be
+  // mapped in the selector — and stay separable by distinct name.
+  const main = getLedSurfaceKey([], 'LED Main')
+  const side = getLedSurfaceKey([], 'Led Side')
+  assert.equal(main.matchKind, 'heuristic')
+  assert.equal(main.key, 'led_main')
+  assert.equal(side.key, 'led_side')
+  assert.notEqual(main.key, side.key)
+})
+
+test('surface key: non-LED mesh returns null', () => {
+  assert.equal(getLedSurfaceKey(['MAT_METAL'], 'Truss_01'), null)
+})
+
+test('discoverLedSurfaces groups distinct LED maps and ranks convention first', () => {
+  const scan = [
+    { name: 'Panel_A', materialNames: ['LED_MAPLED_MAIN_MAT'] },
+    { name: 'Panel_A2', materialNames: ['LED_MAPLED_MAIN_MAT'] }, // same map → grouped
+    { name: 'Panel_B', materialNames: ['LED_MAPLED_SIDE_MAT'] },
+    { name: 'LED Side', materialNames: [] },                       // heuristic
+    { name: 'Truss', materialNames: ['METAL'] },                   // ignored
+  ]
+  const surfaces = discoverLedSurfaces(scan)
+  assert.deepEqual(surfaces.map((s) => s.key), ['main', 'side', 'led_side'])
+  const main = surfaces.find((s) => s.key === 'main')
+  assert.equal(main.meshCount, 2)
+  assert.equal(main.matchKind, 'convention')
+  assert.equal(surfaces.at(-1).matchKind, 'heuristic')
+})
+
+test('resolveLedTargets: convention GLB needs zero config', () => {
+  const scan = [
+    { name: 'A', materialNames: ['LED_MAPLED_MAIN_MAT'] },
+    { name: 'B', materialNames: ['LED_MAPLED_SIDE_MAT'] },
+  ]
+  const targets = resolveLedTargets(scan, {})
+  assert.deepEqual(targets.map((t) => t.targetId), ['main', 'side'])
+  assert.equal(targets.length, 2)
+})
+
+test('resolveLedTargets: legacy single-LED collapses to one master target', () => {
+  const scan = [
+    { name: 'A', materialNames: ['LED_MASTER_MAT'] },
+    { name: 'B', materialNames: ['LED_MASTER_MAT'] },
+  ]
+  const targets = resolveLedTargets(scan, {})
+  assert.deepEqual(targets.map((t) => t.targetId), ['master'])
+})
+
+test('ledTargetMap remaps heuristic surfaces to roles and orders them', () => {
+  const scan = [
+    { name: 'LED Main', materialNames: [] },
+    { name: 'Led Side', materialNames: [] },
+  ]
+  const ledTargetMap = {
+    led_main: { targetId: 'main', label: 'Main Wall', order: 0 },
+    led_side: { targetId: 'side', label: 'Side Wings', order: 1 },
+  }
+  const targets = resolveLedTargets(scan, ledTargetMap)
+  assert.deepEqual(targets.map((t) => [t.targetId, t.label]), [
+    ['main', 'Main Wall'],
+    ['side', 'Side Wings'],
+  ])
+
+  // render-time routing resolves the same mesh to the mapped targetId
+  const routed = resolveLedTargetId([], 'LED Main', ledTargetMap)
+  assert.equal(routed.targetId, 'main')
+  assert.equal(routed.label, 'Main Wall')
+})
+
+test('resolveLedTargetId: convention routes with no map', () => {
+  const routed = resolveLedTargetId(['LED_MAPLED_SIDE_MAT'], 'Mesh', {})
+  assert.equal(routed.targetId, 'side')
+})
+
+test('discoverLedSurfaces tolerates empty/garbage input', () => {
+  assert.deepEqual(discoverLedSurfaces([]), [])
+  assert.deepEqual(discoverLedSurfaces(undefined), [])
+  assert.deepEqual(discoverLedSurfaces([{ name: '', materialNames: null }]), [])
 })

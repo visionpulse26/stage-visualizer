@@ -539,6 +539,8 @@ function StageCanvas({
   modelUrl,
   videoElement,
   activeImageUrl,
+  mediaByTarget,
+  ledTargetMap,
   onLedMaterialStatus,
   sunPosition,
   sunIntensity,
@@ -824,6 +826,8 @@ function StageCanvas({
               modelUrl={modelUrl}
               videoElement={videoElement}
               activeImageUrl={activeImageUrl}
+              mediaByTarget={mediaByTarget}
+              ledTargetMap={ledTargetMap}
               onLedMaterialStatus={onLedMaterialStatus}
               protectLed={protectLed ?? true}
               sunIntensity={sunIntensity ?? 1}
