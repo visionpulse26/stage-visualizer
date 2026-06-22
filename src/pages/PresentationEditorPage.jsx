@@ -32,8 +32,9 @@ import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAsse
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 import { shouldTranscodeVideo, transcodeToHalfRes } from '../utils/videoTranscode'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
-import { buildMultiMapledClip, serializeClipForPlaylist } from '../utils/mapledMedia'
+import { buildMultiMapledClip, serializeClipForPlaylist, isMultiMapledClip, getClipSources } from '../utils/mapledMedia'
 import { groupFilesIntoMapledClips } from '../utils/mapledUpload'
+import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
 import useLedTargets from '../hooks/useLedTargets'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { useStageLoading } from '../hooks/useStageLoading'
@@ -1173,7 +1174,10 @@ export default function PresentationEditorPage() {
   // ── LED maps (multi-mapled) ───────────────────────────────────────────────
   const [meshMetadata, setMeshMetadata] = useState([])
   const [ledTargetMap,  setLedTargetMap]  = useState({})   // surfaceKey → { targetId, label, order }
+  const [mediaByTarget, setMediaByTarget] = useState(null) // multi-mapled preview: targetId → { videoElement }
+  const mapledControllerRef = useRef(null)
   const { targets: ledTargets, isMultiMapled: stageIsMultiMapled } = useLedTargets(meshMetadata, ledTargetMap)
+  useEffect(() => () => { mapledControllerRef.current?.destroy(); mapledControllerRef.current = null }, [])
 
   const { loadingManager, loaded: stageLoaded, reset: resetStageLoading } = useStageLoading()
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
@@ -1696,6 +1700,13 @@ export default function PresentationEditorPage() {
       }
     } catch { url = clip.url }
 
+    // Tear down any previous multi-mapled followers before re-activating
+    if (mapledControllerRef.current) {
+      mapledControllerRef.current.destroy()
+      mapledControllerRef.current = null
+    }
+    setMediaByTarget(null)
+
     if (clip.type === 'image') {
       if (videoRef.current) {
         videoRef.current.pause()
@@ -1706,6 +1717,25 @@ export default function PresentationEditorPage() {
       setVideoLoaded(true)
     } else {
       setActiveImageUrl(null)
+
+      // Resolve follower sources (multi-mapled) so they can be attached on load.
+      let followers = []
+      let masterTargetId = null
+      if (isMultiMapledClip(clip)) {
+        const sources = getClipSources(clip)
+        masterTargetId = sources[0]?.targetId ?? null
+        for (let i = 1; i < sources.length; i += 1) {
+          let fu = sources[i].url
+          try {
+            if (fu.startsWith('http://') || fu.startsWith('https://')) {
+              const b = await fetchAsBlobUrlWithCache(fu); addBlob(b); fu = b
+            }
+          } catch { /* fall back to raw url */ }
+          followers.push({ targetId: sources[i].targetId, url: fu })
+        }
+        if (activationSeq !== activationSeqRef.current) return
+      }
+
       if (!videoRef.current) videoRef.current = document.createElement('video')
       const vid = videoRef.current
       vid.pause()
@@ -1720,6 +1750,12 @@ export default function PresentationEditorPage() {
         setVideoLoaded(true)
         setVideoElement(vid)
         setActiveDuration(Number.isFinite(vid.duration) ? vid.duration : 0)
+        if (followers.length) {
+          mapledControllerRef.current = createMapledPlaybackController({
+            masterVideo: vid, masterTargetId, followers,
+          })
+          setMediaByTarget(mapledControllerRef.current.mediaByTarget)
+        }
         vid.play().catch(() => {})
       }
       vid.onerror = () => {
@@ -2587,6 +2623,7 @@ export default function PresentationEditorPage() {
                 modelUrl={modelUrl}
                 videoElement={videoElement}
                 activeImageUrl={activeImageUrl}
+                mediaByTarget={mediaByTarget}
                 ledTargetMap={ledTargetMap}
                 onMeshScanChange={setMeshMetadata}
                 onLedMaterialStatus={() => {}}

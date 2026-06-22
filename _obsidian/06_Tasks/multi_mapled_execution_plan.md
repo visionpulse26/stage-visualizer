@@ -168,15 +168,18 @@ Quyết định #2 (scan + selector) cho phép admin gán role kể cả khi nam
 ---
 
 ### Phase D — Playback sync controller (trái tim của "chạy cùng lúc")
-**File:** tách hook mới `src/hooks/useMultiMapledPlayback.js` (giảm rủi ro với `ClientPage.jsx` ~L382–465).
+**File:** `src/utils/multiMapledPlayback.js` (mới), `src/pages/ClientPage.jsx`, `src/pages/PresentationEditorPage.jsx`.
 
-- [ ] Clip multi-mapled → tạo **N `<video>`** (1 / `source.targetId`), preload tất cả, expose `videoElementsByTarget`.
-- [ ] **Lockstep:** chọn master = source đầu (theo `order`). Trên master `timeupdate`, nếu `|follower.currentTime − master.currentTime| > 0.08s` → seek follower. Khi master loop (`ended` → 0) → **force-seek tất cả về 0**. play/pause/seek từ UI **fan-out** tới cả nhóm.
-- [ ] Render duration / seekbar / currentTime theo **master**.
-- [ ] Single clip → đường `activateVideo` cũ **nguyên vẹn**.
-- [ ] **Constraint (xem §6):** video trong 1 nhóm **nên cùng độ dài**. Xử lý lệch độ dài: mỗi follower tự `loop` độc lập, master vẫn cầm timeline (sync "mềm", chấp nhận lệch ở biên).
+- [x] `createMapledPlaybackController({ masterVideo, masterTargetId, followers })`: master = source[0] (do page tạo, drive UI/duration/currentTime/ledColor như cũ); controller tạo **N-1 follower `<video>`** + `mediaByTarget`.
+- [x] **Follower bám sự kiện master** (`play`/`pause`/`seeking`/`timeupdate`) → **mọi transport hiện có tự fan-out** (play, pause, scrub, jump-to-note) không phải sửa logic transport.
+- [x] **2 chế độ theo duration** (`decideSyncMode`, đã chốt với user): cùng độ dài → **sync chặt** (correct follower về master time + reset tại loop boundary, drift tol 0.12s); lệch độ dài (hiếm) → **independent** (mỗi video tự loop, không freeze cái ngắn), master vẫn cầm timeline.
+- [x] Single clip → đường cũ **nguyên vẹn** (`mediaByTarget` = null, zero overhead).
+- [x] Tích hợp **cả ClientPage lẫn editor preview**; teardown controller khi switch clip / unmount.
+- [x] +5 test `decideSyncMode`; +1 test wiring ClientPage; +1 wiring editor. Toàn bộ 74 test pass, compile sạch.
 
-**Done khi:** clip multi chạy đồng bộ ~khung hình; pause/seek áp cho cả nhóm; clip đơn không đổi hành vi.
+**Done khi:** clip multi chạy đồng bộ ~khung hình; pause/seek áp cho cả nhóm; clip đơn không đổi hành vi. → **✅ Logic hoàn tất; cần test mắt thường trên Vercel (cùng & khác độ dài).**
+
+> **Phase F (client end-to-end) coi như cuốn theo Phase D:** StageCanvas đã forward (Phase B), ClientPage activateClip nhánh multi + back-compat clip đơn đã xong. Còn lại chỉ là verify mắt thường.
 
 ---
 

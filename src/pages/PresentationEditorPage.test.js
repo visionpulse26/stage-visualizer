@@ -79,7 +79,7 @@ test('media playlist serialization preserves multi-mapled sources via serializeC
 
   // delegates to the shared serializer so playbackMode + sources[] survive DB writes
   assert.match(page, /serializeClipForPlaylist\(c\)/)
-  assert.match(page, /import \{ buildMultiMapledClip, serializeClipForPlaylist \} from '\.\.\/utils\/mapledMedia'/)
+  assert.match(page, /buildMultiMapledClip[\s\S]*serializeClipForPlaylist[\s\S]*from '\.\.\/utils\/mapledMedia'/)
 })
 
 test('multi-mapled upload routes through the assign modal before uploading', () => {

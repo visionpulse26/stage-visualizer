@@ -28,3 +28,15 @@ test('client applies the first published slide default camera on initial load', 
   assert.match(page, /function applySlideDefaultCamera/)
   assert.match(page, /setCameraTargetPreset\(cameraTargetPresetRef, preset\)/)
 })
+
+test('client drives multi-mapled clips through the lockstep playback controller', () => {
+  const page = read('src/pages/ClientPage.jsx')
+
+  assert.match(page, /import \{ isMultiMapledClip, getClipSources \} from '\.\.\/utils\/mapledMedia'/)
+  assert.match(page, /createMapledPlaybackController\(\{/)
+  // master + per-target media routed to the canvas
+  assert.match(page, /mediaByTarget=\{mediaByTarget\}/)
+  assert.match(page, /ledTargetMap=\{ledTargetMap\}/)
+  // followers resolved and attached on master load
+  assert.match(page, /if \(isMultiMapledClip\(clip\)\) \{/)
+})

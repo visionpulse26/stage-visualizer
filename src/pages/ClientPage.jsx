@@ -14,6 +14,8 @@ import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
 import { deleteFeedback, loadPublishedVersion, loadVersionById, submitFeedback, loadFeedback, updateFeedback, hydrateSnapshot } from '../lib/presentationVersions'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl } from '../utils/r2Upload'
+import { isMultiMapledClip, getClipSources } from '../utils/mapledMedia'
+import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
 import { FeedbackDraftPanel, AnnotationLayer, AnnotationToolbar, FeedbackTopBar, FeedbackLockBanner, StageLockBanner, StageLockBadge } from '../components/FeedbackDraftPanel'
 import GuestGate, { getStoredGuest } from '../components/GuestGate'
 
@@ -128,6 +130,9 @@ function ClientPage() {
   const [modelUrl,         setModelUrl]         = useState(null)
   const [videoElement,     setVideoElement]     = useState(null)
   const [activeImageUrl,   setActiveImageUrl]   = useState(null)
+  const [mediaByTarget,    setMediaByTarget]    = useState(null)   // multi-mapled: targetId → { videoElement }
+  const [ledTargetMap,     setLedTargetMap]     = useState({})
+  const mapledControllerRef = useRef(null)
   const [videoLoaded,      setVideoLoaded]      = useState(false)
   const [isDbLoading,      setIsDbLoading]      = useState(true)
   const [projectNotFound,  setProjectNotFound]  = useState(false)
@@ -371,6 +376,12 @@ function ClientPage() {
 
   useEffect(() => { resetStageLoading() }, [projectId, resetStageLoading])
 
+  // Tear down any multi-mapled follower videos on unmount
+  useEffect(() => () => {
+    mapledControllerRef.current?.destroy()
+    mapledControllerRef.current = null
+  }, [])
+
   // ── Video activation ──────────────────────────────────────────────────────
   const resolvePlayableUrl = useCallback(async (clip) => {
     if (!clip?.url || !isRemoteUrl(clip.url)) return clip?.url
@@ -379,11 +390,20 @@ function ClientPage() {
     return blobUrl
   }, [addBlob])
 
-  const activateVideo = useCallback((id, url, activationSeq) => {
+  const teardownMapledController = useCallback(() => {
+    if (mapledControllerRef.current) {
+      mapledControllerRef.current.destroy()
+      mapledControllerRef.current = null
+    }
+    setMediaByTarget(null)
+  }, [])
+
+  const activateVideo = useCallback((id, url, activationSeq, multi = null) => {
     if (videoRef.current) {
       videoRef.current.pause()
       videoRef.current.src = ''
     }
+    teardownMapledController()
     const v = document.createElement('video')
     setIsSwitchingClip(true)
     setCurrentTime(0)
@@ -399,6 +419,16 @@ function ClientPage() {
       setActiveVideoId(id)
       setVideoLoaded(true)
       setIsSwitchingClip(false)
+      // Multi-mapled: attach followers to this master before it starts so they
+      // join the very first play() and stay in lockstep.
+      if (multi?.followers?.length) {
+        mapledControllerRef.current = createMapledPlaybackController({
+          masterVideo: v,
+          masterTargetId: multi.masterTargetId,
+          followers: multi.followers,
+        })
+        setMediaByTarget(mapledControllerRef.current.mediaByTarget)
+      }
       v.play().catch(() => {})
       setIsPlaying(true)
     }
@@ -425,7 +455,7 @@ function ClientPage() {
     v.preload = 'auto'
     v.src = url
     v.load()
-  }, [])
+  }, [teardownMapledController])
 
   const activateClip = useCallback(async (clip, { track = true, slideId = null } = {}) => {
     if (!clip) return
@@ -454,6 +484,7 @@ function ClientPage() {
         videoRef.current.src = ''
         videoRef.current = null
       }
+      teardownMapledController()
       setVideoElement(null)
       setActiveImageUrl(url)
       setActiveVideoId(clip.id)
@@ -462,8 +493,26 @@ function ClientPage() {
     }
 
     setActiveImageUrl(null)
+
+    // Multi-mapled clip: resolve each follower source and drive them in lockstep
+    // with the master (sources[0], already resolved as `url`).
+    if (isMultiMapledClip(clip)) {
+      const sources = getClipSources(clip)
+      const followers = []
+      for (let i = 1; i < sources.length; i += 1) {
+        let fu = sources[i].url
+        try {
+          if (isRemoteUrl(fu)) { const b = await fetchAsBlobUrlWithCache(fu); addBlob(b); fu = b }
+        } catch { /* fall back to the raw url */ }
+        followers.push({ targetId: sources[i].targetId, url: fu })
+      }
+      if (activationSeq !== activationSeqRef.current) return
+      activateVideo(clip.id, url, activationSeq, { masterTargetId: sources[0]?.targetId, followers })
+      return
+    }
+
     activateVideo(clip.id, url, activationSeq)
-  }, [activateVideo, projectId, resolvePlayableUrl, startClipWatch])
+  }, [activateVideo, addBlob, projectId, resolvePlayableUrl, startClipWatch, teardownMapledController])
 
   const applySlideDefaultCamera = useCallback(function applySlideDefaultCamera(slide, presets = cameraPresets) {
     if (!slide?.defaultCameraPresetId) return
@@ -616,6 +665,7 @@ function ClientPage() {
           setTransparentLedConfig(prev => ({ ...prev, ...(cfg.transparentLedConfig || cfg.transparentLed || {}) }))
           if (cfg.sunPosition?.length) setSunPosition(cfg.sunPosition)
           if (cfg.sunIntensity != null) setSunIntensity(cfg.sunIntensity)
+          if (cfg.ledTargetMap && typeof cfg.ledTargetMap === 'object') setLedTargetMap(cfg.ledTargetMap)
           if (cfg.cameraFlyDurationSeconds != null) setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
           if (cfg.versionStatus != null) setVersionStatus(cfg.versionStatus)
           if (cfg.customHdriUrl) {
@@ -1219,6 +1269,8 @@ function ClientPage() {
             loadingManager={modelUrl ? loadingManager : null}
             videoElement={videoElement}
             activeImageUrl={activeImageUrl}
+            mediaByTarget={mediaByTarget}
+            ledTargetMap={ledTargetMap}
             onLedMaterialStatus={() => {}}
             sunPosition={sunPosition}
             sunIntensity={sunIntensity}
