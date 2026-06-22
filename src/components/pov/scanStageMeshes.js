@@ -123,7 +123,15 @@ function processMesh(child, nameCount) {
   _box.getSize(_size)
   _box.getCenter(_center)
 
-  const matNames = (Array.isArray(child.material) ? child.material : [child.material])
+  // Scene.jsx swaps LED/stage materials in place (e.g. LED_MAPLED_MAIN →
+  // LED_MASTER_MAT) but stashes the authored originals on userData first. Read
+  // those so the scan reports the real authored names (needed to detect distinct
+  // LED maps for multi-mapled); fall back to the live material when absent.
+  const sourceMats = child.userData?.stageSourceMaterials
+  const matArray = Array.isArray(sourceMats) && sourceMats.length
+    ? sourceMats
+    : (Array.isArray(child.material) ? child.material : [child.material])
+  const matNames = matArray
     .map((m) => m?.name ?? '')
     .filter(Boolean)
 
