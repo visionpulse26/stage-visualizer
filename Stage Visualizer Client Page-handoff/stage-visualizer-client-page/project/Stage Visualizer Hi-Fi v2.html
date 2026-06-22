@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage Visualizer — Hi-Fi v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #111; font-family: 'Chakra Petch', sans-serif; }
+
+:root {
+  --bg:         #080604;
+  --glass:      rgba(255,255,255,0.045);
+  --glass2:     rgba(255,255,255,0.07);
+  --glass-dark: rgba(8,6,4,0.65);
+  --border:     rgba(220,100,30,0.20);
+  --border2:    rgba(220,100,30,0.32);
+  --inner-hl:   inset 0 1px 0 rgba(255,255,255,0.05);
+  --ember:      #E8531A;
+  --ember2:     #FF6B2B;
+  --ember-dim:  rgba(232,83,26,0.15);
+  --ember-glow: 0 0 14px rgba(232,83,26,0.45), 0 0 2px rgba(232,83,26,0.8);
+  --cam:        #1FA0EE;
+  --cam-dim:    rgba(31,160,238,0.15);
+  --cam-glow:   0 0 10px rgba(31,160,238,0.35);
+  --green:      #2BC782;
+  --amber:      #E89518;
+  --text:       #F4ECE2;
+  --text2:      #C8B8A8;
+  --text3:      #8E7E70;
+  --text4:      #5A4E45;
+  --panel-r:    10px;
+  --ctrl-r:     6px;
+}
+
+.screen { font-family: 'Chakra Petch', sans-serif; background: var(--bg); overflow: hidden; position: relative; color: var(--text); }
+.screen::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 40% at 15% 100%, rgba(180,50,10,0.12) 0%, transparent 60%), radial-gradient(ellipse 40% 30% at 85% 0%, rgba(31,160,238,0.05) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+.screen > * { position: relative; z-index: 1; }
+
+.glass-panel { background: var(--glass-dark); backdrop-filter: blur(14px) saturate(120%); -webkit-backdrop-filter: blur(14px) saturate(120%); border: 1px solid var(--border); box-shadow: var(--inner-hl); }
+
+.topbar { height: 44px; background: rgba(10,8,6,0.94); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 14px; flex-shrink: 0; backdrop-filter: blur(20px); position: relative; z-index: 10; box-shadow: 0 1px 0 rgba(255,255,255,0.03); }
+.logo-mark { width: 24px; height: 24px; background: linear-gradient(135deg, var(--ember2), var(--ember)); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; box-shadow: var(--ember-glow), inset 0 1px 0 rgba(255,255,255,0.3); letter-spacing: 0.02em; }
+.topbar-divider { width: 1px; height: 22px; background: rgba(220,100,30,0.22); flex-shrink: 0; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: var(--ctrl-r); font-family: 'Chakra Petch', sans-serif; font-size: 11px; font-weight: 500; cursor: default; white-space: nowrap; letter-spacing: 0.02em; transition: all 0.15s; user-select: none; }
+.btn-ghost { background: var(--glass); border: 1px solid rgba(220,100,30,0.22); color: var(--text2); }
+.btn-ghost:hover { border-color: var(--border2); color: var(--text); background: var(--glass2); }
+.btn-ember { background: linear-gradient(180deg, var(--ember2), var(--ember)); border: 1px solid var(--ember2); color: white; box-shadow: var(--ember-glow), inset 0 1px 0 rgba(255,255,255,0.25); font-weight: 600; }
+.btn-ember-outline { background: var(--ember-dim); border: 1px solid var(--ember); color: var(--ember2); font-weight: 600; }
+.btn-disabled { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); color: var(--text4); cursor: not-allowed; }
+.btn-cam { background: var(--cam-dim); border: 1px solid var(--cam); color: var(--cam); font-size: 10px; padding: 3px 9px; box-shadow: var(--cam-glow); font-weight: 500; }
+.btn-cam-inactive { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: var(--text3); font-size: 10px; padding: 3px 9px; }
+
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; font-family: 'Chakra Petch', sans-serif; }
+.tag-draft     { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #B0A090; }
+.tag-unsaved   { background: rgba(232,149,24,0.16); border: 1px solid var(--amber); color: var(--amber); }
+.tag-published { background: rgba(43,199,130,0.13); border: 1px solid var(--green); color: var(--green); }
+.tag-pending   { background: rgba(232,149,24,0.12); border: 1px solid rgba(232,149,24,0.55); color: var(--amber); }
+.tag-resolved  { background: rgba(43,199,130,0.10); border: 1px solid rgba(43,199,130,0.45); color: var(--green); }
+.tag-locked    { background: rgba(232,83,26,0.16); border: 1px solid var(--ember); color: var(--ember2); }
+
+.section-label { font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); }
+
+.input-field { width: 100%; background: rgba(0,0,0,0.35); border: 1px solid rgba(220,100,30,0.18); border-radius: 6px; padding: 6px 9px; font-family: 'Chakra Petch', sans-serif; font-size: 11px; color: var(--text); outline: none; line-height: 1.4; }
+.input-field.focused { border-color: var(--border2); box-shadow: 0 0 0 2px rgba(232,83,26,0.12); }
+.input-field.empty { color: var(--text3); }
+.input-field.error { border-color: rgba(232,83,26,0.6); }
+
+.stage-viewer { background: #050404; position: relative; overflow: hidden; flex: 1; }
+.stage-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(232,83,26,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(232,83,26,0.04) 1px, transparent 1px); background-size: 40px 40px; }
+
+.clip-thumb { background: #1a1410; border: 1px solid rgba(220,100,30,0.15); border-radius: 6px; overflow: hidden; position: relative; flex-shrink: 0; }
+.clip-thumb.active { border-color: var(--ember); box-shadow: 0 0 10px rgba(232,83,26,0.3), inset 0 0 8px rgba(232,83,26,0.08); }
+.clip-thumb-bg { background: repeating-linear-gradient(135deg, #1a1410 0px, #1a1410 3px, #201810 3px, #201810 9px); width: 100%; height: 100%; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(220,100,30,0.25); border-radius: 2px; }
+
+.feedback-item { background: rgba(0,0,0,0.28); border: 1px solid rgba(220,100,30,0.1); border-radius: 8px; padding: 8px 10px; cursor: default; transition: all 0.15s; }
+.feedback-item:hover { border-color: var(--border2); background: rgba(0,0,0,0.4); }
+.feedback-item.active { border-color: var(--ember); box-shadow: 0 0 12px rgba(232,83,26,0.15); }
+
+.transport { height: 38px; background: rgba(5,4,3,0.95); border-top: 1px solid rgba(220,100,30,0.14); display: flex; align-items: center; gap: 10px; padding: 0 14px; flex-shrink: 0; }
+.transport-track { flex: 1; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; position: relative; }
+.transport-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--ember); border-radius: 2px; box-shadow: 0 0 6px rgba(232,83,26,0.4); }
+.transport-head { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 10px; height: 10px; border-radius: 50%; background: white; box-shadow: 0 0 8px rgba(232,83,26,0.9); }
+
+.panel-header { padding: 9px 12px; border-bottom: 1px solid rgba(220,100,30,0.12); flex-shrink: 0; }
+
+.ref-img-block { background: rgba(0,0,0,0.3); border: 1px solid rgba(220,100,30,0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--text3); font-family: 'Chakra Petch', sans-serif; position: relative; overflow: hidden; }
+.ref-img-block .hatch { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(220,100,30,0.05) 4px, rgba(220,100,30,0.05) 5px); }
+
+.avatar { border-radius: 50%; background: linear-gradient(135deg, #B04018, #4A2010); border: 1px solid rgba(232,83,26,0.45); display: flex; align-items: center; justify-content: center; color: var(--ember2); font-size: 9px; font-weight: 700; flex-shrink: 0; }
+
+.annot-circle { position: absolute; border: 2px dashed var(--ember); border-radius: 50%; box-shadow: 0 0 14px rgba(232,83,26,0.35), inset 0 0 8px rgba(232,83,26,0.08); pointer-events: none; }
+.annot-pin { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: var(--ember); border: 1.5px solid rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-weight: 700; box-shadow: var(--ember-glow); z-index: 10; }
+
+.mobile-status { height: 24px; background: #030202; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; flex-shrink: 0; }
+
+.review-tab { padding: 5px 11px; font-size: 10px; font-weight: 500; border-radius: 5px; cursor: default; letter-spacing: 0.04em; display: inline-flex; align-items: center; gap: 5px; }
+.review-tab.active { background: var(--ember-dim); border: 1px solid var(--ember); color: var(--ember2); font-weight: 600; }
+.review-tab.inactive { background: transparent; border: 1px solid transparent; color: var(--text3); }
+.review-tab.inactive:hover { color: var(--text2); }
+
+.menu-btn { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--text3); cursor: default; font-size: 13px; }
+.menu-btn:hover { background: var(--glass2); color: var(--text); }
+
+.modal-backdrop { position: absolute; inset: 0; background: rgba(5,3,2,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal { background: linear-gradient(180deg, rgba(20,14,10,0.96), rgba(12,8,6,0.96)); border: 1px solid var(--border2); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); backdrop-filter: blur(16px); }
+
+.collapsed-handle { width: 44px; background: var(--glass-dark); border-left: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 12px; cursor: default; position: relative; }
+.collapsed-handle:hover { background: rgba(20,14,10,0.85); }
+.vertical-text { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.08em; }
+</style>
+</head>
+<body>
+<script type="text/babel">
+const { useState } = React;
+
+const R = ({ children, gap = 6, align = 'center', wrap = false, style = {} }) => (<div style={{ display:'flex', alignItems:align, gap, flexWrap: wrap?'wrap':'nowrap', ...style }}>{children}</div>);
+const C = ({ children, gap = 6, style = {} }) => (<div style={{ display:'flex', flexDirection:'column', gap, ...style }}>{children}</div>);
+const Sp = ({ f, w, h }) => <div style={{ flex: f, width: w, height: h, flexShrink: 0 }} />;
+const Txt = ({ c='var(--text)', s=11, w=400, style={}, children }) => (<span style={{ color:c, fontSize:s, fontWeight:w, lineHeight:1.45, fontFamily:'Chakra Petch,sans-serif', ...style }}>{children}</span>);
+const Tag = ({ type, children }) => <span className={`tag tag-${type}`}>{children}</span>;
+const Btn = ({ v='ghost', style={}, children }) => (<div className={`btn btn-${v}`} style={style}>{children}</div>);
+const SLabel = ({ children, style={} }) => <div className="section-label" style={style}>{children}</div>;
+const Divider = ({ style={} }) => (<div style={{ height:1, background:'rgba(220,100,30,0.12)', ...style }} />);
+const Input = ({ value, placeholder, multiline=false, focused=false, error=false, style={} }) => {
+  const cls = `input-field ${value?'':'empty'} ${focused?'focused':''} ${error?'error':''}`;
+  if (multiline) return <div className={cls} style={{ minHeight:64, ...style }}>{value || placeholder}</div>;
+  return <div className={cls} style={style}>{value || placeholder}</div>;
+};
+const CamPill = ({ label, active }) => (<div className={active?'btn btn-cam':'btn btn-cam-inactive'}>{label}</div>);
+const Avatar = ({ initials, size=22 }) => (<div className="avatar" style={{ width:size, height:size, fontSize:Math.max(8,size*0.4) }}>{initials}</div>);
+
+const I = {
+  play: <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polygon points="3,2 10,6 3,10" fill="currentColor"/></svg>,
+  prev: <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polygon points="3,2 3,10 0,10 0,2" fill="currentColor"/><polygon points="3,6 10,2 10,10" fill="currentColor"/></svg>,
+  next: <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polygon points="0,2 6,6 0,10" fill="currentColor"/><polygon points="7,2 9,2 9,10 7,10" fill="currentColor"/></svg>,
+  lock: <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="2" y="4.5" width="7" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.2"/><path d="M3.5 4.5V3a2 2 0 014 0v1.5" stroke="currentColor" strokeWidth="1.2"/></svg>,
+  plus: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1.5v7M1.5 5h7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+  check: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  arrow: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5h6M5.5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  eye: <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 5.5s1.6-3 4.5-3 4.5 3 4.5 3-1.6 3-4.5 3-4.5-3-4.5-3z" stroke="currentColor" strokeWidth="1.1" fill="none"/><circle cx="5.5" cy="5.5" r="1.3" fill="currentColor"/></svg>,
+  eyeOff: <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 5.5s1.6-3 4.5-3 4.5 3 4.5 3-1.6 3-4.5 3-4.5-3-4.5-3z" stroke="currentColor" strokeWidth="1.1" fill="none"/><line x1="1" y1="10" x2="10" y2="1" stroke="currentColor" strokeWidth="1.2"/></svg>,
+  comment: <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 2.5h8v5h-3l-2 2v-2h-3z" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>,
+  more: <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="2.5" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="9.5" cy="6" r="1" fill="currentColor"/></svg>,
+  drag: <svg width="10" height="12" viewBox="0 0 10 12" fill="none"><circle cx="3" cy="2.5" r="1" fill="currentColor"/><circle cx="7" cy="2.5" r="1" fill="currentColor"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="7" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="9.5" r="1" fill="currentColor"/><circle cx="7" cy="9.5" r="1" fill="currentColor"/></svg>,
+  collapse: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M6.5 2l-3 3 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  expand: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3.5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  close: <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+};
+
+const Transport = ({ time='00:17', total='01:15', locked=false }) => (
+  <div className="transport" style={ locked ? {opacity:0.4, pointerEvents:'none', background:'rgba(8,4,2,0.98)'} : {}}>
+    <span style={{color:'var(--text2)'}}>{I.prev}</span>
+    <span style={{color:'var(--text)'}}>{I.play}</span>
+    <span style={{color:'var(--text2)'}}>{I.next}</span>
+    <div className="transport-track">
+      <div className="transport-fill" style={{ width:'28%', background: locked ? 'rgba(232,83,26,0.3)' : 'var(--ember)' }} />
+      {!locked && <div className="transport-head" style={{ left:'28%' }} />}
+    </div>
+    <Txt c="var(--text2)" s={10}>{time} / {total}{locked ? ' — locked' : ''}</Txt>
+  </div>
+);
+
+const StageBase = ({ children, cam='FOH' }) => (
+  <div className="stage-viewer">
+    <div className="stage-grid" />
+    <svg style={{ position:'absolute', inset:0, width:'100%', height:'100%', opacity:0.22 }} viewBox="0 0 700 420" preserveAspectRatio="xMidYMid slice">
+      {[0,1,2,3,4,5,6,7].map(i => (<line key={i} x1={350} y1={200} x2={i*100} y2={420} stroke="#E8531A" strokeWidth="0.6" />))}
+      {[0,1,2,3,4].map(i => (<line key={i} x1={0} y1={420-i*60} x2={700} y2={420-i*60} stroke="#E8531A" strokeWidth="0.4" />))}
+      <ellipse cx="350" cy="300" rx="200" ry="75" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="5 4" opacity="0.6"/>
+      <rect x="150" y="160" width="400" height="180" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="4 3" opacity="0.5"/>
+      <rect x="240" y="185" width="90" height="130" stroke="#E8531A" strokeWidth="0.7" fill="rgba(232,83,26,0.04)" opacity="0.7"/>
+      <rect x="370" y="185" width="90" height="130" stroke="#E8531A" strokeWidth="0.7" fill="rgba(232,83,26,0.04)" opacity="0.7"/>
+    </svg>
+    <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, rgba(5,3,2,0.65) 100%)', pointerEvents:'none' }} />
+    <div style={{ position:'absolute', top:10, left:12 }}>
+      <span style={{ color:'var(--cam)', background:'rgba(31,160,238,0.12)', border:'1px solid rgba(31,160,238,0.35)', borderRadius:4, padding:'2px 7px', fontSize:9, letterSpacing:'0.08em', fontWeight:600, boxShadow:'var(--cam-glow)' }}>● CAM: {cam}</span>
+    </div>
+    <div style={{ position:'absolute', bottom:12, left:14, color:'rgba(244,236,226,0.18)', fontSize:8, letterSpacing:'0.1em', textTransform:'uppercase' }}>3D Stage Viewer · Previz Engine</div>
+    {children}
+  </div>
+);
+
+const ClipItem = ({ index, label, time, active, feedbacks, hidden }) => (
+  <div style={{ display:'flex', gap:8, alignItems:'center', padding:'6px 8px', borderRadius:8, cursor:'default', background: active ? 'rgba(232,83,26,0.08)' : 'transparent', borderLeft: `2px solid ${active ? 'var(--ember)' : 'transparent'}`, opacity: hidden ? 0.5 : 1 }}>
+    <span style={{color:'var(--text4)'}}>{I.drag}</span>
+    <div className={`clip-thumb ${active?'active':''}`} style={{ width:46, height:30 }}><div className="clip-thumb-bg" /></div>
+    <C gap={1} style={{ flex:1, minWidth:0 }}>
+      <R gap={4}>
+        <Txt s={11} w={active?600:500} c={active?'var(--text)':'var(--text2)'} style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{label}</Txt>
+        {hidden && <span style={{color:'var(--text3)'}}>{I.eyeOff}</span>}
+      </R>
+      <Txt s={9} c="var(--text3)">{time} · #{index}</Txt>
+    </C>
+    {feedbacks > 0 && (<div style={{ background:'var(--amber)', borderRadius:9, padding:'1px 6px', fontSize:9, color:'#1a0a00', fontWeight:700 }}>{feedbacks}</div>)}
+  </div>
+);
+
+const RefImg = ({ label, w=68, h=46, hiddenFromClient=false, onReorder=false }) => (
+  <C gap={3} style={{ flexShrink:0, position:'relative' }}>
+    <div className="ref-img-block" style={{ width:w, height:h, opacity: hiddenFromClient ? 0.5 : 1 }}>
+      <div className="hatch" />
+      <Txt s={8} c="var(--text3)" style={{ position:'relative', zIndex:1 }}>ref img</Txt>
+      {onReorder && (<div style={{ position:'absolute', top:2, right:2, background:'rgba(0,0,0,0.6)', borderRadius:3, padding:'1px 3px', color:'var(--text2)', zIndex:2 }}>{I.drag}</div>)}
+    </div>
+    <R gap={3} style={{ alignSelf:'center' }}>
+      <Txt s={9} c="var(--text2)">{label}</Txt>
+      {hiddenFromClient && <span style={{color:'var(--text3)'}}>{I.eyeOff}</span>}
+    </R>
+  </C>
+);
+
+const FeedbackItem = ({ author, text, status, time, cam, ts, active=false, withActions=false }) => (
+  <div className={`feedback-item ${active?'active':''}`}>
+    <R gap={7} style={{ marginBottom:5 }}>
+      <Avatar initials={author[0]} size={20} />
+      <Txt s={11} w={600}>{author}</Txt>
+      <Tag type={status}>{status}</Tag>
+      <Sp f={1} />
+      <Txt s={9} c="var(--text3)">{time}</Txt>
+    </R>
+    <Txt s={11} c="var(--text2)" style={{ display:'block', paddingLeft:27, lineHeight:1.5 }}>{text}</Txt>
+    <R gap={5} style={{ marginTop:5, paddingLeft:27 }}>
+      {(cam || ts) && (<div style={{ background:'var(--cam-dim)', border:'1px solid rgba(31,160,238,0.3)', borderRadius:4, padding:'1px 6px', fontSize:9, color:'var(--cam)', fontWeight:500 }}>{cam}{ts ? ` · ${ts}` : ''}</div>)}
+    </R>
+    {withActions && (
+      <R gap={6} style={{ marginTop:7, paddingLeft:27 }}>
+        <div className="btn btn-ghost" style={{ padding:'2px 8px', fontSize:9 }}>{status === 'resolved' ? '↺ Reopen' : <>{I.check} Resolve</>}</div>
+        <div className="btn btn-ghost" style={{ padding:'2px 8px', fontSize:9 }}>{I.arrow} Jump to clip</div>
+      </R>
+    )}
+  </div>
+);
+
+/* ADMIN */
+const AdminScreen = ({ tab='context' }) => {
+  const isFeedback = tab === 'feedback';
+  return (
+  <div className="screen" style={{ width:1100, height:680, display:'flex', flexDirection:'column' }}>
+    <div className="topbar">
+      <div className="logo-mark">SV</div>
+      <Txt s={13} w={700}>StageViz</Txt>
+      <div className="topbar-divider" />
+      <C gap={1}>
+        <Txt s={11} w={500}>Coachella 2026 — Main Stage</Txt>
+        <R gap={6}>
+          <Txt s={9} c="var(--text3)">Draft from Published v4</Txt>
+          <span style={{ width:3, height:3, borderRadius:'50%', background:'var(--text4)' }}/>
+          <Txt s={9} c="var(--text3)">Last published 2h ago</Txt>
+        </R>
+      </C>
+      <Tag type="unsaved">● Unsaved changes</Tag>
+      <Sp f={1} />
+      <Btn v="ghost">{I.eye} Preview as client</Btn>
+      <Btn v="ghost">Save draft</Btn>
+      <Btn v="ember">{I.arrow} Publish</Btn>
+    </div>
+    <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div className="glass-panel" style={{ width:208, borderRadius:0, borderTop:'none', borderLeft:'none', borderBottom:'none', display:'flex', flexDirection:'column' }}>
+        <div className="panel-header"><R gap={6}><SLabel>Clips · 5 total</SLabel><Sp f={1}/><div className="btn btn-ghost" style={{padding:'3px 7px',fontSize:10}}>{I.plus} Clip</div></R></div>
+        <div style={{ flex:1, overflowY:'auto', padding:'6px 4px' }}>
+          <ClipItem index={1} label="Intro Logo Reveal" time="0:42" active feedbacks={2} />
+          <ClipItem index={2} label="Act 1 — Main Stage" time="1:15" feedbacks={1} />
+          <ClipItem index={3} label="LED Wall Test A" time="0:28" feedbacks={0} />
+          <ClipItem index={4} label="Confetti Burst" time="0:20" feedbacks={0} hidden />
+          <ClipItem index={5} label="Outro Flythrough" time="1:03" feedbacks={0} />
+        </div>
+        <div style={{ padding:'8px 10px', borderTop:'1px solid rgba(220,100,30,0.1)' }}><Txt s={9} c="var(--text3)">Drag rows to reorder</Txt></div>
+      </div>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', borderLeft:'1px solid var(--border)', borderRight:'1px solid var(--border)' }}>
+        <div style={{ padding:'7px 14px', background:'rgba(0,0,0,0.32)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:10 }}>
+          <Txt s={12} w={600}>Intro Logo Reveal</Txt>
+          <Txt s={10} c="var(--text3)">Clip 1 of 5</Txt>
+          <Sp f={1} />
+          <R gap={5}><CamPill label="FOH" active /><CamPill label="Stage-L" /><CamPill label="Overhead" /><CamPill label="Aerial" /></R>
+          <div style={{width:1,height:18,background:'rgba(220,100,30,0.2)'}}/>
+          <div className="menu-btn">{I.more}</div>
+        </div>
+        <StageBase cam="FOH" />
+        <Transport />
+      </div>
+      <div className="glass-panel" style={{ width:268, borderRadius:0, borderTop:'none', borderRight:'none', borderBottom:'none', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'8px 10px', borderBottom:'1px solid rgba(220,100,30,0.1)', display:'flex', gap:6 }}>
+          <div className={`review-tab ${!isFeedback?'active':'inactive'}`}>Context</div>
+          <div className={`review-tab ${isFeedback?'active':'inactive'}`}>Feedback<span style={{ background:'var(--amber)', borderRadius:8, padding:'0 5px', fontSize:8, color:'#1a0a00', fontWeight:700 }}>2</span></div>
+        </div>
+        {!isFeedback ? (
+          <div style={{ flex:1, overflowY:'auto', padding:'10px 12px' }}>
+            <C gap={11}>
+              <C gap={4}><SLabel>Clip Title</SLabel><Input value="Intro Logo Reveal" /></C>
+              <C gap={4}><SLabel>Subtitle</SLabel><Input value="Opening sequence · FOH camera" /></C>
+              <C gap={4}>
+                <R gap={6}><SLabel>Director's Note</SLabel><Sp f={1}/><R gap={4} style={{padding:'1px 6px',background:'rgba(43,199,130,0.1)',border:'1px solid rgba(43,199,130,0.3)',borderRadius:4}}><span style={{color:'var(--green)'}}>{I.eye}</span><Txt s={9} c="var(--green)" w={600}>Visible to client</Txt></R></R>
+                <Input multiline value="This intro uses a timed LED reveal synced to the kick drum. Logo appears at 0:12 with a full screen wash, then fades to the act 1 layout." />
+              </C>
+              <C gap={4}><SLabel>Default Camera</SLabel><R gap={5} wrap><CamPill label="FOH" active /><CamPill label="Stage-L" /><CamPill label="Overhead" /><CamPill label="Aerial" /></R></C>
+              <Divider />
+              <C gap={6}>
+                <R gap={6}><SLabel>References (3)</SLabel><Sp f={1}/><Txt s={9} c="var(--text3)">drag to reorder</Txt><div className="btn btn-ghost" style={{padding:'2px 7px',fontSize:10}}>{I.plus} Add</div></R>
+                <R gap={8} wrap><RefImg label="Mood board" w={70} h={48} onReorder /><RefImg label="LED layout" w={70} h={48} onReorder /><RefImg label="Lighting plot" w={70} h={48} hiddenFromClient onReorder /></R>
+              </C>
+              <Divider />
+              <C gap={6}>
+                <SLabel>Slide Actions</SLabel>
+                <R gap={6} wrap>
+                  <Btn v="ghost"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1.5" y="3.5" width="6" height="6" rx="0.8" stroke="currentColor" strokeWidth="1.1" fill="none"/><rect x="3.5" y="1.5" width="6" height="6" rx="0.8" stroke="currentColor" strokeWidth="1.1" fill="rgba(0,0,0,0.3)"/></svg> Duplicate</Btn>
+                  <Btn v="ghost">{I.eyeOff} Hide from client</Btn>
+                  <Btn v="ghost" style={{color:'rgba(232,83,26,0.7)',borderColor:'rgba(232,83,26,0.3)'}}>{I.close} Delete</Btn>
+                </R>
+              </C>
+            </C>
+          </div>
+        ) : (
+          <>
+            <div style={{ padding:'8px 12px', borderBottom:'1px solid rgba(220,100,30,0.08)', background:'rgba(0,0,0,0.2)' }}>
+              <C gap={3}>
+                <Txt s={11} w={600}>Feedback for Clip 1</Txt>
+                <R gap={6}><Tag type="pending">2 open</Tag><Tag type="resolved">1 resolved</Tag><Sp f={1}/><Txt s={9} c="var(--text3)">Attached to v4</Txt></R>
+              </C>
+            </div>
+            <div style={{ padding:'8px 12px', borderBottom:'1px solid rgba(220,100,30,0.08)', display:'flex', gap:5 }}>
+              <div className="review-tab active" style={{fontSize:9}}>All (3)</div>
+              <div className="review-tab inactive" style={{fontSize:9}}>Open (2)</div>
+              <div className="review-tab inactive" style={{fontSize:9}}>Resolved (1)</div>
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:'10px 12px'}}>
+              <C gap={7}>
+                <FeedbackItem author="Janet R" text="Love the LED reveal timing — can we see a slower fade?" status="pending" time="2h ago" cam="FOH" ts="00:12" withActions active />
+                <FeedbackItem author="Tom B" text="Confetti burst looks great from FOH angle" status="resolved" time="1d ago" cam="Overhead" ts="00:38" withActions />
+                <FeedbackItem author="Janet R" text="Stage-L camera feels cramped at 0:28" status="pending" time="3h ago" cam="Stage-L" ts="00:28" withActions />
+              </C>
+            </div>
+            <div style={{padding:'10px 12px',borderTop:'1px solid rgba(220,100,30,0.1)'}}><Btn v="ghost" style={{width:'100%',justifyContent:'center'}}>Open full Feedback Review {I.arrow}</Btn></div>
+          </>
+        )}
+      </div>
+    </div>
+  </div>);
+};
+
+const AdminPublishModal = () => (
+  <div className="screen" style={{ width:1100, height:680, display:'flex', flexDirection:'column', position:'relative' }}>
+    <div style={{position:'absolute',inset:0,filter:'blur(2px) brightness(0.5)',pointerEvents:'none'}}><AdminScreen /></div>
+    <div className="modal-backdrop">
+      <div className="modal" style={{ width:480 }}>
+        <div style={{ padding:'14px 18px', borderBottom:'1px solid rgba(220,100,30,0.18)' }}>
+          <R gap={8}><div style={{ width:8, height:8, borderRadius:'50%', background:'var(--ember)', boxShadow:'var(--ember-glow)' }}/><Txt s={15} w={700}>Publish New Version</Txt><Sp f={1}/><div className="menu-btn">{I.close}</div></R>
+          <Txt s={10} c="var(--text3)" style={{display:'block',marginTop:4}}>Coachella 2026 — Main Stage · was v4 · 2h ago</Txt>
+        </div>
+        <div style={{ padding:'14px 18px' }}>
+          <C gap={14}>
+            <C gap={5}><SLabel>Version Name</SLabel><Input value="v5 — slower LED fade + Stage-L widen" /></C>
+            <C gap={5}><SLabel>Release Notes (optional)</SLabel><Input multiline value="Adjusted LED reveal timing per Janet's feedback. Wider Stage-L framing on Act 1." style={{minHeight:60}} /></C>
+            <C gap={6}>
+              <SLabel>Snapshot Summary</SLabel>
+              <div style={{ background:'rgba(0,0,0,0.35)', border:'1px solid rgba(220,100,30,0.15)', borderRadius:8, padding:'10px 12px' }}>
+                <C gap={6}>
+                  <R gap={6}><Txt s={10} c="var(--text3)" style={{minWidth:80}}>Clips</Txt><Txt s={11}>5 total · 1 hidden from client</Txt></R>
+                  <R gap={6}><Txt s={10} c="var(--text3)" style={{minWidth:80}}>References</Txt><Txt s={11}>7 total · 1 hidden</Txt></R>
+                  <R gap={6}><Txt s={10} c="var(--text3)" style={{minWidth:80}}>Cameras</Txt><Txt s={11}>4 presets enabled</Txt></R>
+                  <R gap={6}><Txt s={10} c="var(--text3)" style={{minWidth:80}}>Total runtime</Txt><Txt s={11}>3:48</Txt></R>
+                </C>
+              </div>
+            </C>
+            <div style={{ background:'rgba(232,83,26,0.06)', border:'1px solid rgba(232,83,26,0.22)', borderRadius:8, padding:'10px 12px' }}>
+              <R gap={8} align="flex-start">
+                <span style={{color:'var(--ember2)',marginTop:2}}>{I.lock}</span>
+                <C gap={2}>
+                  <Txt s={11} w={600} c="var(--ember2)">Client feedback will attach to v5</Txt>
+                  <Txt s={10} c="var(--text2)" style={{lineHeight:1.5,display:'block'}}>All new feedback will be linked to this published version, the camera in view, and the timestamp it was captured at. Existing v4 feedback remains visible.</Txt>
+                </C>
+              </R>
+            </div>
+          </C>
+        </div>
+        <div style={{ padding:'12px 18px', borderTop:'1px solid rgba(220,100,30,0.14)', display:'flex', gap:8 }}>
+          <Sp f={1}/>
+          <Btn v="ghost">Cancel</Btn>
+          <Btn v="ghost">Save as Draft</Btn>
+          <Btn v="ember">{I.arrow} Publish v5</Btn>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const ClientScreen = ({ collapsed=false }) => (
+  <div className="screen" style={{ width:1100, height:680, display:'flex', flexDirection:'column' }}>
+    <div className="topbar">
+      <div className="logo-mark">SV</div>
+      <Txt s={13} w={700}>StageViz</Txt>
+      <div className="topbar-divider" />
+      <Txt s={11} w={500}>Coachella 2026 — Main Stage</Txt>
+      <Tag type="published">Published v4</Tag>
+      <Txt s={9} c="var(--text3)">Released 2h ago</Txt>
+      <Sp f={1} />
+      <Btn v="ember-outline">{I.comment} Leave Feedback</Btn>
+      <Avatar initials="JR" size={28} />
+    </div>
+    <div style={{ height:64, background:'rgba(0,0,0,0.42)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:10, padding:'0 16px', overflowX:'auto', flexShrink:0 }}>
+      {[{i:1,label:'Intro Logo',active:false,fb:2},{i:2,label:'Act 1 Stage',active:true,fb:1},{i:3,label:'LED Wall A',active:false,fb:0},{i:4,label:'Outro',active:false,fb:0}].map(c => (
+        <C key={c.i} gap={3} style={{alignItems:'center',flexShrink:0,position:'relative'}}>
+          <div className={`clip-thumb ${c.active?'active':''}`} style={{width:62,height:38}}><div className="clip-thumb-bg" style={{width:'100%',height:'100%'}} /></div>
+          <Txt s={10} w={c.active?600:400} c={c.active?'var(--text)':'var(--text2)'}>{c.label}</Txt>
+          {c.fb > 0 && <div style={{position:'absolute',top:-4,right:-4,background:'var(--amber)',borderRadius:9,padding:'1px 5px',fontSize:9,color:'#1a0a00',fontWeight:700}}>{c.fb}</div>}
+        </C>
+      ))}
+    </div>
+    <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+        <StageBase cam="FOH"><div style={{ position:'absolute', top:10, right:14, display:'flex', gap:5 }}><CamPill label="FOH" active /><CamPill label="Stage-L" /><CamPill label="Overhead" /></div></StageBase>
+        <Transport />
+      </div>
+      {collapsed ? (
+        <div className="collapsed-handle">
+          <div style={{ background:'rgba(232,83,26,0.1)', border:'1px solid rgba(232,83,26,0.3)', borderRadius:5, padding:'4px 5px', color:'var(--ember2)' }}>{I.expand}</div>
+          <Sp h={4} />
+          <div className="vertical-text"><Txt s={11} w={600}>Act 1 — Main Stage</Txt></div>
+          <Sp f={1} />
+          <C gap={6} style={{ alignItems:'center' }}>
+            <div style={{ background:'var(--amber)', borderRadius:9, padding:'1px 6px', fontSize:9, color:'#1a0a00', fontWeight:700 }}>1</div>
+            <span style={{ color:'var(--text3)' }}>{I.comment}</span>
+          </C>
+          <Sp h={6} />
+        </div>
+      ) : (
+        <div className="glass-panel" style={{ width:300, borderRadius:0, borderTop:'none', borderRight:'none', borderBottom:'none', display:'flex', flexDirection:'column' }}>
+          <div className="panel-header">
+            <R gap={8}>
+              <C gap={1} style={{flex:1}}>
+                <Txt s={15} w={700}>Act 1 — Main Stage</Txt>
+                <Txt s={10} c="var(--text2)">Opening sequence · FOH camera</Txt>
+              </C>
+              <div className="menu-btn">{I.collapse}</div>
+            </R>
+          </div>
+          <div style={{ flex:1, overflowY:'auto', padding:'12px 14px' }}>
+            <C gap={14}>
+              <C gap={5}><SLabel>Director's Note</SLabel><Txt s={12} style={{ lineHeight:1.65, display:'block' }}>This sequence opens with a timed LED reveal synced to the kick. Camera locks to FOH for maximum impact. Confetti burst fires at 0:38 — second screen simultaneous.</Txt></C>
+              <C gap={6}><SLabel>References</SLabel><R gap={9} wrap><RefImg label="Mood ref" w={84} h={56} /><RefImg label="LED map" w={84} h={56} /></R></C>
+              <Divider />
+              <C gap={6}>
+                <R gap={6}><SLabel>Feedback</SLabel><Sp f={1}/><Tag type="pending">2 open</Tag><Tag type="resolved">1 resolved</Tag></R>
+                <FeedbackItem author="Janet R" text="Love the LED reveal — can we see a slower fade in?" status="pending" time="2h ago" cam="FOH" ts="00:12" />
+                <FeedbackItem author="Tom B" text="Confetti burst looks great from FOH angle" status="resolved" time="1d ago" cam="Overhead" ts="00:38" />
+                <FeedbackItem author="Janet R" text="Stage-L feels cramped at 0:28" status="pending" time="3h ago" cam="Stage-L" ts="00:28" />
+                <Txt s={9} c="var(--text3)" style={{textAlign:'center',display:'block',padding:'4px 0'}}>Click any item to jump to its clip · camera · timestamp</Txt>
+              </C>
+            </C>
+          </div>
+          <div style={{ padding:'10px 14px', borderTop:'1px solid rgba(220,100,30,0.1)' }}><Btn v="ember" style={{ width:'100%', justifyContent:'center' }}>{I.comment} Leave Feedback</Btn></div>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const FeedbackDraftScreen = ({ valid=true }) => (
+  <div className="screen" style={{ width:1100, height:680, display:'flex', flexDirection:'column' }}>
+    <div className="topbar" style={{ background:'rgba(25,8,3,0.97)', borderBottom:'1px solid rgba(232,83,26,0.45)' }}>
+      <div className="logo-mark">SV</div>
+      <Txt s={12} w={700}>Capturing Feedback</Txt>
+      <div className="topbar-divider" style={{ background:'rgba(232,83,26,0.3)' }} />
+      <Tag type="locked">{I.lock} Camera & Clip Locked</Tag>
+      <div style={{ background:'rgba(232,83,26,0.1)', border:'1px solid rgba(232,83,26,0.35)', borderRadius:5, padding:'3px 10px', fontSize:10, color:'var(--ember2)', fontWeight:600 }}>Clip 2 · FOH · 00:17 · v4</div>
+      <Sp f={1} />
+      <Btn v="ghost">{I.close} Cancel</Btn>
+    </div>
+    <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'6px 14px', background:'rgba(20,6,2,0.92)', borderBottom:'1px solid rgba(232,83,26,0.25)', display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{color:'rgba(232,83,26,0.85)'}}>{I.lock}</span>
+          <Txt s={11} c="rgba(255,180,140,0.95)" w={500}>Feedback Draft · Act 1 — Main Stage · FOH camera · 00:17 · attached to v4</Txt>
+        </div>
+        <div className="stage-viewer" style={{ flex:1, position:'relative' }}>
+          <div className="stage-grid" />
+          <svg style={{ position:'absolute', inset:0, width:'100%', height:'100%', opacity:0.18 }} viewBox="0 0 700 420" preserveAspectRatio="xMidYMid slice">
+            {[0,1,2,3,4,5,6,7].map(i => <line key={i} x1={350} y1={200} x2={i*100} y2={420} stroke="#E8531A" strokeWidth="0.6"/>)}
+            <ellipse cx="350" cy="300" rx="200" ry="75" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="5 4" opacity="0.6"/>
+            <rect x="150" y="160" width="400" height="180" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="4 3" opacity="0.5"/>
+          </svg>
+          <div style={{ position:'absolute', inset:0, background:'rgba(20,5,2,0.22)', pointerEvents:'none' }}/>
+          <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, rgba(5,3,2,0.65) 100%)', pointerEvents:'none' }}/>
+          <div className="annot-circle" style={{ width:96, height:68, top:'36%', left:'40%' }} />
+          <div className="annot-pin" style={{ top:'33%', left:'52%' }}>1</div>
+          <div style={{ position:'absolute', top:10, left:14, background:'rgba(232,83,26,0.12)', border:'1px solid rgba(232,83,26,0.4)', borderRadius:5, padding:'4px 9px', display:'flex', alignItems:'center', gap:6 }}><span style={{color:'var(--ember)'}}>{I.lock}</span><Txt s={10} c="var(--ember2)" w={600}>FOH · 00:17 · LOCKED</Txt></div>
+          <div style={{ position:'absolute', bottom:14, left:'50%', transform:'translateX(-50%)', background:'rgba(8,5,3,0.94)', border:'1px solid rgba(232,83,26,0.3)', borderRadius:10, padding:'7px 14px', display:'flex', gap:10, alignItems:'center', backdropFilter:'blur(14px)' }}>
+            <Txt s={10} c="var(--text2)" w={600}>ANNOTATE:</Txt>
+            <div className="btn btn-ember-outline" style={{padding:'4px 10px',fontSize:10}}>○ Circle</div>
+            <div className="btn btn-ghost" style={{padding:'4px 10px',fontSize:10}}>□ Region</div>
+            <div style={{ width:1, height:18, background:'rgba(220,100,30,0.25)' }}/>
+            <div className="btn btn-ghost" style={{padding:'4px 10px',fontSize:10,color:'var(--text3)'}}>{I.close} Clear</div>
+          </div>
+        </div>
+        <Transport locked />
+      </div>
+      <div className="glass-panel" style={{ width:320, borderRadius:0, borderTop:'none', borderRight:'none', borderBottom:'none', borderLeft:'2px solid rgba(232,83,26,0.45)', display:'flex', flexDirection:'column' }}>
+        <div className="panel-header" style={{ background:'rgba(20,6,2,0.55)' }}>
+          <R gap={8}><div style={{ width:8, height:8, borderRadius:'50%', background:'var(--ember)', boxShadow:'var(--ember-glow)' }}/><Txt s={14} w={700} c="var(--ember2)">Feedback Draft</Txt></R>
+          <Txt s={10} c="var(--text2)" style={{ display:'block', marginTop:3 }}>Clip 2: Act 1 — Main Stage · FOH · 00:17 · v4</Txt>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'12px 14px' }}>
+          <C gap={12}>
+            <C gap={5}>
+              <R gap={5}><SLabel>Your Name</SLabel><span style={{color:'var(--ember2)',fontSize:10}}>*</span>{!valid && <Txt s={9} c="var(--ember2)" style={{marginLeft:'auto'}}>required</Txt>}</R>
+              <Input value={valid ? "Janet R" : ""} placeholder="Your name…" focused={!valid} error={!valid} />
+            </C>
+            <C gap={5}>
+              <R gap={5}><SLabel>Comment</SLabel><span style={{color:'var(--ember2)',fontSize:10}}>*</span>{!valid && <Txt s={9} c="var(--ember2)" style={{marginLeft:'auto'}}>required</Txt>}</R>
+              <Input multiline value={valid ? "The LED reveal looks great — can we try a slower fade in from black? Maybe 4 seconds instead of 2?" : ""} placeholder="What needs attention here?" focused={valid} error={!valid} />
+            </C>
+            <C gap={5}>
+              <R gap={5}><SLabel>Annotation</SLabel><Txt s={9} c="var(--text3)" style={{marginLeft:'auto'}}>optional</Txt></R>
+              {valid ? (
+                <R gap={8} style={{ background:'rgba(232,83,26,0.06)', border:'1px solid rgba(232,83,26,0.25)', borderRadius:8, padding:'8px 10px' }}>
+                  <div style={{ width:60, height:42, background:'rgba(20,6,2,0.7)', border:'1px solid rgba(232,83,26,0.35)', borderRadius:5, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><svg width="42" height="28" viewBox="0 0 42 28"><ellipse cx="21" cy="14" rx="14" ry="9" stroke="var(--ember)" strokeWidth="1.5" fill="none" strokeDasharray="3 2"/></svg></div>
+                  <C gap={3} style={{flex:1}}><Txt s={11} c="var(--ember2)" w={600}>1 circle linked</Txt><Txt s={9} c="var(--text3)">on FOH @ 00:17</Txt></C>
+                  <div className="btn btn-ghost" style={{padding:'3px 8px',fontSize:9}}>Remove</div>
+                </R>
+              ) : (
+                <div style={{ background:'rgba(0,0,0,0.3)', border:'1px dashed rgba(220,100,30,0.25)', borderRadius:8, padding:'10px 12px', textAlign:'center' }}><Txt s={10} c="var(--text3)">Use the toolbar on the stage to draw a circle or region (optional)</Txt></div>
+              )}
+            </C>
+            <Divider />
+            <C gap={5}>
+              <SLabel>Previous on this clip</SLabel>
+              <FeedbackItem author="Tom B" text="Confetti burst looks great from FOH" status="resolved" time="1d ago" cam="Overhead" ts="00:38" />
+              <FeedbackItem author="Janet R" text="Stage-L feels cramped at 0:28" status="pending" time="3h ago" cam="Stage-L" ts="00:28" />
+            </C>
+          </C>
+        </div>
+        <div style={{ padding:'10px 14px', borderTop:'1px solid rgba(220,100,30,0.14)', display:'flex', gap:8 }}>
+          <Btn v="ghost" style={{ flex:1, justifyContent:'center' }}>Cancel</Btn>
+          {valid ? (<Btn v="ember" style={{ flex:1, justifyContent:'center' }}>{I.arrow} Submit</Btn>) : (<Btn v="disabled" style={{ flex:1, justifyContent:'center' }}>Submit</Btn>)}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const AdminFeedbackReview = () => (
+  <div className="screen" style={{ width:1100, height:680, display:'flex', flexDirection:'column' }}>
+    <div className="topbar">
+      <div className="logo-mark">SV</div>
+      <Txt s={13} w={700}>StageViz</Txt>
+      <div className="topbar-divider" />
+      <Txt s={11} w={500}>Coachella 2026 — Feedback Review</Txt>
+      <Tag type="published">v4</Tag>
+      <Sp f={1} />
+      <Btn v="ghost">← Back to Editor</Btn>
+    </div>
+    <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div className="glass-panel" style={{ width:200, borderRadius:0, borderTop:'none', borderLeft:'none', borderBottom:'none', display:'flex', flexDirection:'column' }}>
+        <div className="panel-header"><SLabel>Filter</SLabel></div>
+        <div style={{ padding:'10px 10px', flex:1, overflowY:'auto' }}>
+          <C gap={11}>
+            <C gap={4}>
+              <SLabel>Status</SLabel>
+              {[['All feedback','all',true,'5'],['Open / Pending','pending',false,'3'],['Resolved','resolved',false,'2']].map(([l,v,a,n])=>(
+                <R key={v} gap={6} style={{padding:'4px 8px',borderRadius:5,background:a?'var(--ember-dim)':'transparent'}}>
+                  <div style={{width:6,height:6,borderRadius:'50%',background:a?'var(--ember)':v==='pending'?'var(--amber)':v==='resolved'?'var(--green)':'rgba(255,255,255,0.2)'}}/>
+                  <Txt s={11} c={a?'var(--ember2)':'var(--text2)'} w={a?600:400}>{l}</Txt>
+                  <Sp f={1}/>
+                  <Txt s={10} c="var(--text3)">{n}</Txt>
+                </R>
+              ))}
+            </C>
+            <Divider />
+            <C gap={4}>
+              <SLabel>Version</SLabel>
+              <R gap={6} style={{padding:'4px 8px',borderRadius:5}}><Txt s={11} w={600}>v4 — current</Txt></R>
+              <R gap={6} style={{padding:'4px 8px',borderRadius:5}}><Txt s={10} c="var(--text3)">v3</Txt></R>
+              <R gap={6} style={{padding:'4px 8px',borderRadius:5}}><Txt s={10} c="var(--text3)">v2</Txt></R>
+            </C>
+            <Divider />
+            <C gap={4}>
+              <SLabel>Clip</SLabel>
+              {['All Clips','Intro Logo (2)','Act 1 Stage (1)','LED Wall A (2)'].map((l,i)=>(<R key={l} gap={6} style={{padding:'4px 8px',borderRadius:5}}><Txt s={11} c={i===0?'var(--text)':'var(--text2)'} w={i===0?600:400}>{l}</Txt></R>))}
+            </C>
+            <Divider />
+            <C gap={4}>
+              <SLabel>Reviewer</SLabel>
+              {['All Reviewers','Janet R','Tom B'].map((l,i)=>(<R key={l} gap={6} style={{padding:'4px 8px',borderRadius:5}}>{i>0 && <Avatar initials={l[0]} size={16} />}<Txt s={11} c={i===0?'var(--text)':'var(--text2)'} w={i===0?600:400}>{l}</Txt></R>))}
+            </C>
+          </C>
+        </div>
+      </div>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', borderLeft:'1px solid var(--border)', borderRight:'1px solid var(--border)', overflow:'hidden' }}>
+        <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)', background:'rgba(0,0,0,0.32)', display:'flex', alignItems:'center', gap:10 }}>
+          <Txt s={13} w={600}>All Feedback</Txt><Tag type="pending">3 open</Tag><Tag type="resolved">2 resolved</Tag><Sp f={1}/><Btn v="ghost" style={{ fontSize:10 }}>Sort: Newest ↓</Btn>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'12px 16px' }}>
+          <C gap={14}>
+            {[
+              {clip:'Clip 1 — Intro Logo Reveal',items:[{author:'Janet R',text:'Love the LED reveal timing — can we see a slower fade?',status:'pending',time:'2h ago',cam:'FOH',ts:'00:12',active:true},{author:'Tom B',text:'Confetti burst looks really impactful from FOH. Approved.',status:'resolved',time:'1d ago',cam:'Overhead',ts:'00:38'}]},
+              {clip:'Clip 2 — Act 1 Main Stage',items:[{author:'Janet R',text:'Stage-L camera feels cramped at 0:28, can we widen?',status:'pending',time:'3h ago',cam:'Stage-L',ts:'00:28'}]},
+              {clip:'Clip 3 — LED Wall Test A',items:[{author:'Tom B',text:'LED colours look slightly warm — check with DOP.',status:'pending',time:'5h ago',cam:'FOH',ts:'00:10'},{author:'Janet R',text:'OK after review — approved.',status:'resolved',time:'2h ago',cam:'FOH',ts:'00:10'}]},
+            ].map(group => (
+              <C key={group.clip} gap={7}>
+                <R gap={8} style={{ paddingBottom:5, borderBottom:'1px solid rgba(220,100,30,0.12)' }}>
+                  <div style={{ width:3, height:14, background:'var(--ember)', borderRadius:2 }}/>
+                  <Txt s={12} w={600}>{group.clip}</Txt>
+                  <Txt s={10} c="var(--text3)">{group.items.length} comment{group.items.length>1?'s':''}</Txt>
+                </R>
+                <C gap={6}>{group.items.map((item,i) => (<FeedbackItem key={i} {...item} withActions />))}</C>
+              </C>
+            ))}
+          </C>
+        </div>
+      </div>
+      <div className="glass-panel" style={{ width:240, borderRadius:0, borderTop:'none', borderRight:'none', borderBottom:'none', display:'flex', flexDirection:'column' }}>
+        <div className="panel-header"><SLabel>Selected Feedback</SLabel></div>
+        <div style={{ flex:1, padding:'10px 12px', overflowY:'auto' }}>
+          <C gap={10}>
+            <div style={{ background:'rgba(232,83,26,0.06)', border:'1px solid rgba(232,83,26,0.22)', borderRadius:8, padding:'10px 12px' }}>
+              <C gap={6}>
+                <R gap={8}><Avatar initials="J" size={24} /><C gap={1}><Txt s={11} w={600}>Janet R</Txt><Txt s={9} c="var(--text3)">2h ago · v4</Txt></C><Sp f={1}/><Tag type="pending">open</Tag></R>
+                <Txt s={11} style={{ lineHeight:1.55, display:'block' }}>Love the LED reveal timing — can we see a slower fade in?</Txt>
+                <Divider />
+                <C gap={4}><SLabel>Context Snapshot</SLabel><R gap={5}><div style={{ background:'var(--cam-dim)', border:'1px solid rgba(31,160,238,0.35)', borderRadius:4, padding:'2px 7px', fontSize:9, color:'var(--cam)', fontWeight:600 }}>FOH</div><Txt s={10} c="var(--text2)">00:12 · Clip 1</Txt></R></C>
+                <C gap={4}><SLabel>Annotation</SLabel><div style={{ width:'100%', height:62, background:'rgba(10,5,2,0.85)', border:'1px solid rgba(232,83,26,0.25)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' }}><div style={{ position:'absolute', inset:0, background:'repeating-linear-gradient(135deg,#1a1410 0,#1a1410 3px,#201810 3px,#201810 9px)' }}/><svg style={{ position:'relative', zIndex:1 }} width="70" height="44" viewBox="0 0 70 44"><ellipse cx="35" cy="22" rx="22" ry="14" stroke="var(--ember)" strokeWidth="1.5" fill="none" strokeDasharray="3 2"/></svg></div></C>
+              </C>
+            </div>
+            <C gap={5}><SLabel>Admin Note (internal)</SLabel><Input multiline placeholder="Internal note for the team — not visible to client" style={{ minHeight:54 }} /></C>
+            <R gap={6}><Btn v="ghost" style={{ flex:1, justifyContent:'center', fontSize:10 }}>Save Note</Btn><Btn v="ember" style={{ flex:1, justifyContent:'center', fontSize:10 }}>{I.check} Resolve</Btn></R>
+          </C>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const MobileScreen = () => {
+  const [tab, setTab] = useState('context');
+  return (
+  <div className="screen" style={{ width:380, height:760, display:'flex', flexDirection:'column' }}>
+    <div className="mobile-status"><Txt s={9} c="var(--text2)" w={600}>9:41</Txt><Txt s={9} c="var(--text2)">●●● 5G ▮▮▮</Txt></div>
+    <div style={{ height:42, background:'rgba(8,5,3,0.96)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', padding:'0 14px', gap:10, flexShrink:0 }}>
+      <div className="logo-mark" style={{ width:20, height:20, fontSize:9 }}>SV</div>
+      <C gap={1} style={{ flex:1, minWidth:0 }}>
+        <Txt s={11} w={600}>Coachella 2026</Txt>
+        <Txt s={8} c="var(--text3)">Main Stage</Txt>
+      </C>
+      <Tag type="published">v4</Tag>
+      <div style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(220,100,30,0.2)', borderRadius:5, padding:'2px 8px', fontSize:10, fontWeight:600 }}>2/5</div>
+    </div>
+    <div style={{ flex:1, display:'flex', flexDirection:'column', position:'relative', minHeight:0 }}>
+      <div className="stage-viewer" style={{ flex:1, position:'relative' }}>
+        <div className="stage-grid" />
+        <svg style={{ position:'absolute', inset:0, width:'100%', height:'100%', opacity:0.2 }} viewBox="0 0 380 400" preserveAspectRatio="xMidYMid slice">
+          {[0,1,2,3,4].map(i=>(<line key={i} x1={190} y1={200} x2={i*95} y2={400} stroke="#E8531A" strokeWidth="0.8"/>))}
+          <ellipse cx="190" cy="300" rx="120" ry="50" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="4 3" opacity="0.7"/>
+          <rect x="80" y="180" width="220" height="110" stroke="#E8531A" strokeWidth="0.8" fill="none" strokeDasharray="3 3" opacity="0.5"/>
+        </svg>
+        <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, rgba(5,3,2,0.6) 100%)', pointerEvents:'none' }}/>
+        <div style={{ position:'absolute', top:10, left:14, background:'rgba(31,160,238,0.12)', border:'1px solid rgba(31,160,238,0.35)', borderRadius:4, padding:'3px 8px', fontSize:9, color:'var(--cam)', fontWeight:600 }}>● CAM: FOH</div>
+        <div style={{ position:'absolute', top:10, right:14, display:'flex', gap:5 }}><CamPill label="FOH" active /><CamPill label="Stage-L" /></div>
+      </div>
+      <div style={{ height:30, background:'rgba(5,3,2,0.98)', borderTop:'1px solid rgba(220,100,30,0.12)', display:'flex', alignItems:'center', gap:10, padding:'0 14px', flexShrink:0 }}>
+        <span style={{color:'var(--text)'}}>{I.play}</span>
+        <div className="transport-track" style={{ flex:1 }}><div className="transport-fill" style={{ width:'28%' }}/><div className="transport-head" style={{ left:'28%' }}/></div>
+        <Txt s={10} c="var(--text2)">00:17 / 01:15</Txt>
+      </div>
+    </div>
+    <div style={{ background:'rgba(10,7,5,0.98)', borderTop:'1px solid var(--border)', flexShrink:0 }}>
+      <div style={{ display:'flex' }}>
+        {[{id:'clips',label:'Clips',icon:'▦'},{id:'context',label:'Context',icon:'≡'},{id:'refs',label:'References',icon:'◫'}].map(t => (
+          <div key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:'9px 0 7px', display:'flex', flexDirection:'column', alignItems:'center', gap:3, cursor:'default', borderTop:`2px solid ${tab===t.id?'var(--ember)':'transparent'}`, background: tab===t.id ? 'rgba(232,83,26,0.05)' : 'transparent' }}>
+            <span style={{ fontSize:14, color: tab===t.id?'var(--ember2)':'var(--text3)' }}>{t.icon}</span>
+            <Txt s={10} c={tab===t.id?'var(--ember2)':'var(--text2)'} w={tab===t.id?600:500}>{t.label}</Txt>
+          </div>
+        ))}
+      </div>
+      <div style={{ height:220, overflowY:'auto', padding:'12px 14px' }}>
+        {tab === 'clips' && (
+          <C gap={6}>
+            {[{i:1,label:'Intro Logo Reveal',time:'0:42',active:false},{i:2,label:'Act 1 — Main Stage',time:'1:15',active:true},{i:3,label:'LED Wall Test A',time:'0:28',active:false},{i:4,label:'Outro Flythrough',time:'1:03',active:false}].map(c => (
+              <R key={c.i} gap={10} style={{ padding:'7px 8px', borderRadius:7, background: c.active ? 'rgba(232,83,26,0.08)' : 'rgba(255,255,255,0.02)', borderLeft: `2px solid ${c.active?'var(--ember)':'transparent'}` }}>
+                <div className={`clip-thumb ${c.active?'active':''}`} style={{ width:54, height:34 }}><div className="clip-thumb-bg" style={{ width:'100%', height:'100%' }}/></div>
+                <C gap={1} style={{ flex:1, minWidth:0 }}>
+                  <Txt s={12} w={c.active?600:500} c={c.active?'var(--text)':'var(--text2)'}>{c.label}</Txt>
+                  <Txt s={9} c="var(--text3)">{c.time} · #{c.i}</Txt>
+                </C>
+                {c.active && <Tag type="locked">playing</Tag>}
+              </R>
+            ))}
+          </C>
+        )}
+        {tab === 'context' && (
+          <C gap={10}>
+            <C gap={3}><Txt s={15} w={700}>Act 1 — Main Stage</Txt><Txt s={11} c="var(--text2)">Opening sequence · FOH camera</Txt></C>
+            <Txt s={12} style={{ lineHeight:1.65, display:'block' }}>LED reveal synced to kick drum. Camera locks FOH for maximum impact. Confetti burst at 0:38 — second screen simultaneous.</Txt>
+          </C>
+        )}
+        {tab === 'refs' && (
+          <C gap={10}>
+            <Txt s={11} c="var(--text2)">References for this clip · tap to view</Txt>
+            <R gap={10} wrap><RefImg label="Mood reference" w={100} h={66} /><RefImg label="LED layout" w={100} h={66} /><RefImg label="Lighting plot" w={100} h={66} /></R>
+          </C>
+        )}
+      </div>
+    </div>
+  </div>);
+};
+
+const App = () => (
+  <DesignCanvas title="StageViz — Hi-Fi v2 (revised)">
+    <DCSection id="admin" title="Admin Presentation Editor">
+      <DCArtboard id="admin-context" label="Admin · Context tab · clearer publish state" width={1100} height={680}><AdminScreen tab="context" /></DCArtboard>
+      <DCArtboard id="admin-feedback-tab" label="Admin · Feedback tab for current clip" width={1100} height={680}><AdminScreen tab="feedback" /></DCArtboard>
+      <DCArtboard id="admin-publish" label="Admin · Publish modal" width={1100} height={680}><AdminPublishModal /></DCArtboard>
+    </DCSection>
+    <DCSection id="client" title="Client Review (Desktop)">
+      <DCArtboard id="client-expanded" label="Client · Context panel expanded" width={1100} height={680}><ClientScreen /></DCArtboard>
+      <DCArtboard id="client-collapsed" label="Client · Context panel collapsed" width={1100} height={680}><ClientScreen collapsed /></DCArtboard>
+      <DCArtboard id="client-feedback-valid" label="Feedback Draft · valid (Submit enabled)" width={1100} height={680}><FeedbackDraftScreen valid /></DCArtboard>
+      <DCArtboard id="client-feedback-invalid" label="Feedback Draft · empty (Submit disabled)" width={1100} height={680}><FeedbackDraftScreen valid={false} /></DCArtboard>
+    </DCSection>
+    <DCSection id="admin-review" title="Admin Feedback Review">
+      <DCArtboard id="admin-fb-review" label="Admin · Full Feedback Review" width={1100} height={680}><AdminFeedbackReview /></DCArtboard>
+    </DCSection>
+    <DCSection id="mobile" title="Mobile Client (View-Only)">
+      <DCArtboard id="mobile-view" label="Mobile · View-only (Clips / Context / References)" width={380} height={760}><MobileScreen /></DCArtboard>
+    </DCSection>
+  </DesignCanvas>
+);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<div id="root"></div>
+</body>
+</html>
