@@ -12,3 +12,9 @@ test('presentation version RPC fallback treats Supabase REST missing RPC as miss
   assert.match(lib, /error\?\.code === 'PGRST202'/)
   assert.match(lib, /Could not find the function/)
 })
+
+test('loadDraft selects the same latest draft row that save_draft_version updates', () => {
+  const lib = read('src/lib/presentationVersions.js')
+
+  assert.match(lib, /export async function loadDraft\(projectId\)[\s\S]*\.order\('version_number', \{ ascending: false \}\)[\s\S]*\.limit\(1\)/)
+})

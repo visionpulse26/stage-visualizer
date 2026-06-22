@@ -1191,7 +1191,7 @@ export default function PresentationEditorPage() {
   const [rightTab,        setRightTab]        = useState('context')  // 'context' | 'feedback'
   const [isDirty,         setIsDirty]         = useState(false)
   const [isSaving,        setIsSaving]        = useState(false)
-  const [autoSaveStatus,  setAutoSaveStatus]  = useState('idle')  // 'idle'|'saving'|'saved'
+  const [autoSaveStatus,  setAutoSaveStatus]  = useState('idle')  // 'idle'|'saving'|'saved'|'error'
   const [saveError,       setSaveError]       = useState(null)
   const [showPublish,     setShowPublish]      = useState(false)
   const [showHistory,     setShowHistory]      = useState(false)
@@ -1357,21 +1357,30 @@ export default function PresentationEditorPage() {
     } catch (err) {
       if (isVersionConflict(err)) {
         // Another session saved while this tab had stale state (e.g. overnight open tab).
-        // Reload the server version and discard our stale auto-save attempt.
+        // Surface a conflict banner so the admin can choose to keep or discard local edits,
+        // rather than silently discarding them.
         const serverDraft = await loadDraft(projectId).catch(() => null)
         if (serverDraft?.snapshot_json) {
-          const snap = serverDraft.snapshot_json
-          if (Array.isArray(snap.slides)) setSlides(snap.slides)
-          if (Array.isArray(snap.cameraPresets)) setCameraPresets(snap.cameraPresets)
-          if (snap.projectName) setProjectName(snap.projectName)
-          lastSavedTokenRef.current = serverDraft.version_token  // prevent watcher re-firing for this token
-          setDraftVersion(serverDraft)
-          setIsDirty(false)
+          if (isDirtyRef.current) {
+            // Local edits exist — let the admin decide; don't silently discard.
+            setVersionConflict({ action: 'save', currentVersion: serverDraft, versionName: '', releaseNotes: '' })
+          } else {
+            const snap = serverDraft.snapshot_json
+            if (Array.isArray(snap.slides)) setSlides(snap.slides)
+            if (Array.isArray(snap.cameraPresets)) setCameraPresets(snap.cameraPresets)
+            if (snap.projectName) setProjectName(snap.projectName)
+            lastSavedTokenRef.current = serverDraft.version_token
+            setDraftVersion(serverDraft)
+            setIsDirty(false)
+          }
         }
+        setAutoSaveStatus('idle')
       } else {
         console.error('[AutoSave] failed:', err)
+        // Surface persistent errors so the admin knows the save did not reach the server.
+        setSaveError(err?.message ?? 'Auto-save failed. Your changes may not be saved.')
+        setAutoSaveStatus('error')
       }
-      setAutoSaveStatus('idle')
     }
   }, [projectId, projectName, cameraPresets, adminIdentity, adminUserId, isVersionConflict])
 
@@ -1441,19 +1450,22 @@ export default function PresentationEditorPage() {
 
   const persistDraftThumbnail = useCallback(async (sourceSlides, slideId, thumbnailUrl) => {
     if (!projectId || !isPersistedThumbnailUrl(thumbnailUrl)) return sourceSlides
+    const currentDraftToken = draftVersionRef.current?.version_token
+    if (!currentDraftToken) return sourceSlides
 
     const nextSlides = sourceSlides.map(s => (
       s.id === slideId ? { ...s, thumbnailUrl } : s
     ))
     const snapshot = buildSnapshot(projectName, nextSlides, cameraPresets)
     const savedDraft = await saveDraft(projectId, snapshot, {
-      expectedToken: draftVersion?.version_token ?? null,
+      expectedToken: currentDraftToken,
       createdBy: adminIdentity,
       createdByUserId: adminUserId,
     })
+    lastSavedTokenRef.current = savedDraft.version_token
     setDraftVersion(savedDraft)
     return nextSlides
-  }, [adminIdentity, adminUserId, cameraPresets, draftVersion?.version_token, projectId, projectName])
+  }, [adminIdentity, adminUserId, cameraPresets, projectId, projectName])
 
   // ── Load project from DB ──────────────────────────────────────────────────
   useEffect(() => {
@@ -2317,6 +2329,18 @@ export default function PresentationEditorPage() {
                 Draft v{draftVersion.version_number}
               </span>
             )}
+            {draftVersion?.updated_at && (
+              <>
+                <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.text4 }} />
+                <span style={{ fontSize: 10, color: draftVersion.created_by && draftVersion.created_by !== adminIdentity ? T.amber : T.text3 }}
+                  title={draftVersion.created_by ? `Created by: ${draftVersion.created_by}` : undefined}>
+                  {draftVersion.created_by && draftVersion.created_by !== adminIdentity
+                    ? `Saved by ${draftVersion.created_by.split('@')[0]} · ${formatRelative(draftVersion.updated_at)}`
+                    : `Saved ${formatRelative(draftVersion.updated_at)}`
+                  }
+                </span>
+              </>
+            )}
             {publishedVersion?.published_at && (
               <>
                 {draftVersion && <span style={{ width: 3, height: 3, borderRadius: '50%', background: T.text4 }} />}
@@ -2736,6 +2760,14 @@ export default function PresentationEditorPage() {
 
 // ── Auto-save status indicator ────────────────────────────────────────────────
 function AutoSaveIndicator({ status, isDirty }) {
+  if (status === 'error') {
+    return (
+      <span style={{ fontSize: 10, color: '#E8531A', fontFamily: 'Chakra Petch, sans-serif', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#E8531A' }} />
+        Save failed — check permissions
+      </span>
+    )
+  }
   if (status === 'saving') {
     return (
       <span style={{ fontSize: 10, color: 'rgba(200,184,168,0.6)', fontFamily: 'Chakra Petch, sans-serif', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 5 }}>

@@ -65,3 +65,11 @@ test('presentation editor persists clip ids in project media playlist', () => {
   assert.match(page, /function serializeMediaPlaylistForDb\(playlist\)/)
   assert.match(page, /id: c\.id/)
 })
+
+test('thumbnail persistence does not create or overwrite a draft before a draft token is loaded', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /const currentDraftToken = draftVersionRef\.current\?\.version_token/)
+  assert.match(page, /if \(!currentDraftToken\) return sourceSlides/)
+  assert.match(page, /expectedToken: currentDraftToken/)
+})

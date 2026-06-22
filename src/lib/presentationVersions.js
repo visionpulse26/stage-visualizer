@@ -207,7 +207,7 @@ export async function loadDraft(projectId) {
     .select('*')
     .eq('project_id', projectId)
     .eq('status', 'draft')
-    .order('created_at', { ascending: false })
+    .order('version_number', { ascending: false })
     .limit(1)
     .maybeSingle()
 
