@@ -207,7 +207,7 @@ function ClipThumbnail({ src, active, width = 46, height = 30, radius = 5 }) {
   )
 }
 
-function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploading = false, uploadStatus = '', uploadError = '' }) {
+function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploading = false, uploadStatus = '', uploadError = '', ledMapsInfo = null }) {
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
 
@@ -237,6 +237,16 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploadin
             + Clip
           </GhostBtn>
         </Row>
+        {ledMapsInfo?.multi && (
+          <div style={{ marginTop: 7, padding: '6px 8px', borderRadius: 6, background: 'rgba(43,199,130,0.10)', border: '1px solid rgba(43,199,130,0.30)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: T.green, fontFamily: 'Chakra Petch, sans-serif' }}>
+              {ledMapsInfo.count} LED MAPS · {ledMapsInfo.label}
+            </div>
+            <div style={{ fontSize: 9, color: T.text3, marginTop: 3, lineHeight: 1.45, fontFamily: 'Chakra Petch, sans-serif' }}>
+              Select all {ledMapsInfo.count} map videos <b style={{ color: T.text2 }}>together</b> in one + Clip to sync them as one visual.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Slide rows */}
@@ -2554,6 +2564,7 @@ export default function PresentationEditorPage() {
           uploading={isUploadingClips}
           uploadStatus={clipUploadStatus}
           uploadError={clipUploadError}
+          ledMapsInfo={{ multi: stageIsMultiMapled, count: ledTargets.length, label: ledTargets.map(t => t.label).join(' · ') }}
         />
         <input
           ref={clipUploadInputRef}
