@@ -9,3 +9,6 @@ supabase/functions/.env
 .vercel
 supabase/.temp/
 .env*
+
+# Obsidian app workspace state (churny per-machine layout; vault content lives in _obsidian/)
+.obsidian/
