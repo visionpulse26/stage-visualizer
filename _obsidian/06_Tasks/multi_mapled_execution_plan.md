@@ -152,13 +152,18 @@ Quyết định #2 (scan + selector) cho phép admin gán role kể cả khi nam
 ### Phase C — Editor upload UX (hybrid: auto theo tên + sửa tay)
 **File:** `src/pages/PresentationEditorPage.jsx`, `src/utils/r2Upload.js`, `src/utils/clipThumbnails.js`.
 
-- [ ] Multi-file picker. Parser tách `baseName` + `suffix` (vd `Opening_MAIN.mp4` → base `Opening`, suffix `MAIN`). **Gom theo `baseName`** = 1 multi-mapled clip.
-- [ ] Fuzzy-match `suffix` → `targetId` dựa trên targets resolved ở Phase A (MAIN/SIDE/LEFT/RIGHT/CENTER…; chấp nhận biến thể L/R, TRAI/PHAI…).
-- [ ] **Bảng gán editable** (selector từ quyết định #2): mỗi file 1 dòng, cột "Map" = dropdown các target của model → user sửa nếu đoán sai. Cảnh báo nếu **thiếu map** (target chưa có file) hoặc **thừa file** (không khớp target nào).
-- [ ] Upload từng file qua `r2Upload` (đã có), build clip bằng `buildMultiMapledClip` (đã có). Thumbnail lấy từ **source master** (`clipThumbnails.js`).
-- [ ] Single-file upload vẫn đi đường cũ → clip đơn (không phá vỡ gì).
+- [x] `src/utils/mapledUpload.js` (mới, +8 test): `parseMapledFilename` (base+suffix), `matchSuffixToTarget` (role token/alias/số), `groupFilesIntoMapledClips` (gom theo base, auto-gán target, cờ missing/conflict).
+- [x] Fuzzy-match suffix → targetId (MAIN/SIDE/LEFT/RIGHT/CENTER + alias TRAI/PHAI/CHINH/CANH + số theo order).
+- [x] **Bảng gán editable** — component `MapledAssignModal`: mỗi file 1 dòng + dropdown target, cảnh báo conflict (2 file 1 map → chặn Upload) / missing (map không có file → "stays dark").
+- [x] `uploadMediaFile` (transcode+presign+upload dùng chung) → `handleUploadMapledGroups` build clip qua `buildMultiMapledClip` → `appendUploadedClip`.
+- [x] `onClipFilesSelected` route: stage multi-map + nhóm ≥2 file → modal; ngược lại → `handleUploadClips` cũ (**không phá path đơn**).
+- [x] Wire `meshScan`+`useLedTargets`+`ledTargetMap` (từ scene_config) vào editor; pass `onMeshScanChange`/`ledTargetMap` xuống StageCanvas.
+- [x] **Fix persistence:** `serializeMediaPlaylistForDb` delegate `serializeClipForPlaylist` → giữ `playbackMode`+`sources[]` (Phase E sớm 1 phần). Editor + ClientPage restore spread `...item` → giữ sources.
+- [x] Compile sạch; 9/9 editor test + 67 util/lib test pass.
 
-**Done khi:** kéo 2 file vào → ra 1 clip multi-mapled gán đúng map, sửa tay được; kéo 1 file → clip đơn như cũ.
+**Done khi:** kéo 2 file vào → ra 1 clip multi-mapled gán đúng map, sửa tay được; kéo 1 file → clip đơn như cũ. → **Luồng upload/assign + lưu data ✅. Nhìn-thấy-2-map-khác-nhau cần Phase D** (cả editor preview lẫn client hiện vẫn chiếu master lên mọi map vì `mediaByTarget` chưa được set lúc playback).
+
+> ⚠️ **Publish path (AdminPage) chưa fix** — nếu publish 1 project có clip multi-mapled, cần verify AdminPage không strip `sources` (Phase E). Editor ghi thẳng `projects.media_playlist` nên test raw playlist (không qua publish) sẽ giữ sources.
 
 ---
 

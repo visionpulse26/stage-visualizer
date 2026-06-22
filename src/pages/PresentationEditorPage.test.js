@@ -73,3 +73,22 @@ test('thumbnail persistence does not create or overwrite a draft before a draft 
   assert.match(page, /if \(!currentDraftToken\) return sourceSlides/)
   assert.match(page, /expectedToken: currentDraftToken/)
 })
+
+test('media playlist serialization preserves multi-mapled sources via serializeClipForPlaylist', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  // delegates to the shared serializer so playbackMode + sources[] survive DB writes
+  assert.match(page, /serializeClipForPlaylist\(c\)/)
+  assert.match(page, /import \{ buildMultiMapledClip, serializeClipForPlaylist \} from '\.\.\/utils\/mapledMedia'/)
+})
+
+test('multi-mapled upload routes through the assign modal before uploading', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  assert.match(page, /groupFilesIntoMapledClips\(valid, ledTargets\)/)
+  assert.match(page, /setMapledAssignment\(\{ groups \}\)/)
+  assert.match(page, /buildMultiMapledClip\(\{ name: group\.clipName, index: nextClipNumber, sources \}\)/)
+  assert.match(page, /<MapledAssignModal/)
+  // single-clip path stays intact as the fallback
+  assert.match(page, /handleUploadClips\(valid\)/)
+})

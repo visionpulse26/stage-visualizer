@@ -32,6 +32,9 @@ import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAsse
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
 import { shouldTranscodeVideo, transcodeToHalfRes } from '../utils/videoTranscode'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
+import { buildMultiMapledClip, serializeClipForPlaylist } from '../utils/mapledMedia'
+import { groupFilesIntoMapledClips } from '../utils/mapledUpload'
+import useLedTargets from '../hooks/useLedTargets'
 import BrandedLoadingScreen from '../components/BrandedLoadingScreen'
 import { useStageLoading } from '../hooks/useStageLoading'
 import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
@@ -1167,6 +1170,11 @@ export default function PresentationEditorPage() {
     barThickness: 0.08, barThicknessX: 0.08, barThicknessY: 0.08, glow: 1.4, opacity: 0.95,
   })
 
+  // ── LED maps (multi-mapled) ───────────────────────────────────────────────
+  const [meshMetadata, setMeshMetadata] = useState([])
+  const [ledTargetMap,  setLedTargetMap]  = useState({})   // surfaceKey → { targetId, label, order }
+  const { targets: ledTargets, isMultiMapled: stageIsMultiMapled } = useLedTargets(meshMetadata, ledTargetMap)
+
   const { loadingManager, loaded: stageLoaded, reset: resetStageLoading } = useStageLoading()
   const { add: addBlob, revokeAll: revokeAllBlobs } = useBlobUrlCache()
 
@@ -1207,6 +1215,7 @@ export default function PresentationEditorPage() {
   const [clipBackgroundJob, setClipBackgroundJob] = useState(null)
   const [showClipTranscodeModal, setShowClipTranscodeModal] = useState(false)
   const [clipBackgroundActive, setClipBackgroundActive] = useState(false)
+  const [mapledAssignment, setMapledAssignment] = useState(null)  // { groups } when the assign modal is open
 
   // ── Annotation mode (admin drawing annotation for a director note) ─────────
   const [annotatingNoteId,    setAnnotatingNoteId]    = useState(null)
@@ -1501,6 +1510,7 @@ export default function PresentationEditorPage() {
           setTransparentLedConfig(prev => ({ ...prev, ...(cfg.transparentLedConfig || cfg.transparentLed || {}) }))
           if (cfg.sunPosition?.length) setSunPosition(cfg.sunPosition)
           if (cfg.sunIntensity != null) setSunIntensity(cfg.sunIntensity)
+          if (cfg.ledTargetMap && typeof cfg.ledTargetMap === 'object') setLedTargetMap(cfg.ledTargetMap)
           if (cfg.customHdriUrl) {
             const hdriSrc = cfg.customHdriUrl.replace('visual.tooawake.online', 'visual.tooawake.mov')
             const ext = (hdriSrc.split('?')[0].split('.').pop() || 'hdr').toLowerCase()
@@ -1930,6 +1940,88 @@ export default function PresentationEditorPage() {
       }
     })()
   }, [appendUploadedClip, projectId])
+
+  // ── Multi-mapled upload ────────────────────────────────────────────────────
+  // Upload one file (transcoding first when needed) and return its final URL +
+  // media type. Shared by every source of a multi-mapled clip.
+  const uploadMediaFile = useCallback(async (file, onStatus) => {
+    let uploadFile = file
+    if (await shouldTranscodeVideo(file)) {
+      uploadFile = await transcodeToHalfRes(file, {
+        onStatus: (msg) => onStatus?.(msg),
+        onProgress: (pct) => onStatus?.(`Converting: ${pct}%`),
+      })
+    }
+    onStatus?.(`Uploading ${uploadFile.name}`)
+    const contentType = getMediaMimeType(uploadFile)
+    const { putUrl, publicUrl } = await getPresignedUploadUrl({
+      filename: uploadFile.name,
+      contentType,
+      contentLength: uploadFile.size,
+      projectId: projectId || undefined,
+      type: 'media',
+    })
+    const finalUrl = await uploadFileToPresignedUrl(putUrl, uploadFile, publicUrl,
+      (pct) => onStatus?.(`Uploading ${uploadFile.name}: ${pct}%`), contentType)
+    const ext = (uploadFile.name.split('.').pop() || '').toLowerCase()
+    const type = /^(png|jpe?g|webp|gif)$/.test(ext) ? 'image' : 'video'
+    return { finalUrl, type }
+  }, [projectId])
+
+  // Upload the (admin-confirmed) groups: each group → one multi-mapled clip with
+  // a source per assigned LED map. Reuses appendUploadedClip for persistence.
+  const handleUploadMapledGroups = useCallback(async (groups) => {
+    setMapledAssignment(null)
+    setIsUploadingClips(true)
+    setClipUploadError('')
+    try {
+      let added = 0
+      for (const group of groups) {
+        const valid = group.assignments.filter(a => a.targetId && a.file)
+        if (!valid.length) continue
+        const sources = []
+        for (let i = 0; i < valid.length; i += 1) {
+          const a = valid[i]
+          setClipUploadStatus(`[${group.clipName}] ${a.targetLabel} ${i + 1}/${valid.length}`)
+          const { finalUrl, type } = await uploadMediaFile(
+            a.file,
+            (s) => setClipUploadStatus(`[${group.clipName} · ${a.targetLabel}] ${s}`),
+          )
+          sources.push({ targetId: a.targetId, targetLabel: a.targetLabel, url: finalUrl, type, external: true })
+        }
+        const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, 0) + 1
+        const clip = buildMultiMapledClip({ name: group.clipName, index: nextClipNumber, sources })
+        await appendUploadedClip(clip, added === 0)
+        added += 1
+      }
+      setClipUploadStatus(`Added ${added} multi-mapled clip${added === 1 ? '' : 's'}`)
+    } catch (err) {
+      console.error('[mapled upload] failed:', err)
+      setClipUploadError(getUploadErrorMessage(err))
+      setClipUploadStatus('')
+    } finally {
+      setIsUploadingClips(false)
+    }
+  }, [appendUploadedClip, uploadMediaFile])
+
+  // Entry point from the file picker: route to the multi-mapled assign modal
+  // when the stage has >1 LED map and the selection bundles into multi clips;
+  // otherwise fall through to the unchanged single-clip upload path.
+  const onClipFilesSelected = useCallback((selectedFiles) => {
+    const valid = selectedFiles.filter(file => validatePresentationMediaFile(file))
+    if (!valid.length) {
+      setClipUploadError('Select MP4/WEBM/MOV video or WEBP/PNG/JPG/GIF image files')
+      return
+    }
+    if (stageIsMultiMapled) {
+      const { isMultiMapled, groups } = groupFilesIntoMapledClips(valid, ledTargets)
+      if (isMultiMapled) {
+        setMapledAssignment({ groups })
+        return
+      }
+    }
+    handleUploadClips(valid)
+  }, [stageIsMultiMapled, ledTargets, handleUploadClips])
 
   const duplicateSlide = useCallback(() => {
     if (!activeSlide) return
@@ -2439,10 +2531,19 @@ export default function PresentationEditorPage() {
             const selectedFiles = e.target.files ? Array.from(e.target.files) : []
             e.target.value = ''
             if (selectedFiles.length === 0) return
-            handleUploadClips(selectedFiles)
+            onClipFilesSelected(selectedFiles)
           }}
           style={{ display: 'none' }}
         />
+
+        {mapledAssignment && (
+          <MapledAssignModal
+            groups={mapledAssignment.groups}
+            targets={ledTargets}
+            onCancel={() => setMapledAssignment(null)}
+            onConfirm={handleUploadMapledGroups}
+          />
+        )}
 
         {/* ── CENTER: Stage + transport ── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderLeft: `1px solid ${T.border}`, borderRight: `1px solid ${T.border}` }}>
@@ -2486,6 +2587,8 @@ export default function PresentationEditorPage() {
                 modelUrl={modelUrl}
                 videoElement={videoElement}
                 activeImageUrl={activeImageUrl}
+                ledTargetMap={ledTargetMap}
+                onMeshScanChange={setMeshMetadata}
                 onLedMaterialStatus={() => {}}
                 sunPosition={sunPosition}
                 sunIntensity={sunIntensity}
@@ -2754,6 +2857,83 @@ export default function PresentationEditorPage() {
         />
       )}
 
+    </div>
+  )
+}
+
+// ── Multi-mapled clip assignment modal ────────────────────────────────────────
+// Lets the admin confirm/correct which uploaded file drives which LED map before
+// the upload runs. One section per detected clip (grouped by base filename).
+function MapledAssignModal({ groups: initialGroups, targets, onCancel, onConfirm }) {
+  const [groups, setGroups] = useState(initialGroups)
+
+  const setTarget = (gi, ai, targetId) => {
+    setGroups(prev => prev.map((g, i) => i !== gi ? g : {
+      ...g,
+      assignments: g.assignments.map((a, j) => j !== ai ? a : {
+        ...a,
+        targetId: targetId || null,
+        targetLabel: targets.find(t => t.targetId === targetId)?.label || '',
+        auto: false,
+      }),
+    }))
+  }
+
+  const groupState = (g) => {
+    const counts = new Map()
+    g.assignments.forEach(a => { if (a.targetId) counts.set(a.targetId, (counts.get(a.targetId) || 0) + 1) })
+    return {
+      missing: targets.filter(t => !counts.has(t.targetId)).map(t => t.label),
+      conflict: [...counts].filter(([, n]) => n > 1).length > 0,
+      anyAssigned: g.assignments.some(a => a.targetId),
+    }
+  }
+
+  const canUpload = groups.some(g => g.assignments.some(a => a.targetId)) &&
+    !groups.some(g => groupState(g).conflict)
+
+  const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }
+  const card = { width: 'min(620px, 94vw)', maxHeight: '86vh', overflow: 'auto', background: T.bg, border: `1px solid ${T.border2}`, borderRadius: 12, padding: 20, fontFamily: 'Chakra Petch, sans-serif', color: T.text }
+  const sel = { background: T.glass2, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '4px 6px', fontSize: 11, fontFamily: 'inherit' }
+
+  return (
+    <div style={overlay} onClick={onCancel}>
+      <div style={card} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Assign LED maps</div>
+        <div style={{ fontSize: 11, color: T.text3, marginBottom: 14 }}>
+          Each visual drives {targets.length} LED maps. Confirm which file goes to which map — they’ll play in sync as one clip.
+        </div>
+
+        {groups.map((g, gi) => {
+          const st = groupState(g)
+          return (
+            <div key={g.key} style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 650, marginBottom: 8 }}>{g.clipName || 'Untitled clip'}</div>
+              {g.assignments.map((a, ai) => (
+                <div key={ai} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ flex: 1, fontSize: 11, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.file?.name}</span>
+                  {a.auto && a.targetId && <span style={{ fontSize: 9, color: T.text4 }}>auto</span>}
+                  <select value={a.targetId || ''} onChange={(e) => setTarget(gi, ai, e.target.value)} style={sel}>
+                    <option value="">— none —</option>
+                    {targets.map(t => <option key={t.targetId} value={t.targetId}>{t.label}</option>)}
+                  </select>
+                </div>
+              ))}
+              {st.conflict && (
+                <div style={{ fontSize: 10, color: '#E8531A', marginTop: 4 }}>⚠ Two files target the same map — fix before uploading.</div>
+              )}
+              {!st.conflict && st.missing.length > 0 && (
+                <div style={{ fontSize: 10, color: T.amber || '#E0A030', marginTop: 4 }}>No file for: {st.missing.join(', ')} (that map stays dark)</div>
+              )}
+            </div>
+          )
+        })}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+          <button onClick={onCancel} style={{ background: 'none', border: `1px solid ${T.border}`, color: T.text3, borderRadius: 6, padding: '6px 14px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={() => onConfirm(groups)} disabled={!canUpload} style={{ background: canUpload ? T.accent || '#E8531A' : T.glass2, border: 'none', color: canUpload ? '#fff' : T.text4, borderRadius: 6, padding: '6px 16px', fontSize: 11, fontWeight: 650, cursor: canUpload ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>Upload</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -3069,14 +3249,10 @@ function currentPlaylistClipCount(playlist, uploadedCount) {
 }
 
 function serializeMediaPlaylistForDb(playlist) {
-  return (playlist || []).map(c => ({
-    id: c.id,
-    name: c.name,
-    url: c.url,
-    type: c.type,
-    external: c.external ?? true,
-    ...(c.thumbnailUrl || c.thumbnail_url ? { thumbnailUrl: c.thumbnailUrl || c.thumbnail_url } : {}),
-  }))
+  // Delegates to serializeClipForPlaylist so multi-mapled clips keep their
+  // `playbackMode` + `sources[]` (single clips serialize to the same shape as
+  // before: { id, name, url, type, external, thumbnailUrl? }).
+  return (playlist || []).map(c => ({ id: c.id, ...serializeClipForPlaylist(c) }))
 }
 
 function isDefaultStagePreviewClip(clip) {
