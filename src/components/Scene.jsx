@@ -473,6 +473,40 @@ function createStableStageMaterial(sourceMaterial, presetSettings, envIntensity,
   return material
 }
 
+// Cap on LED spill lights. Each pointLight multiplies fragment-shader cost across
+// all stage geometry in the forward renderer, so a multi-mapled stage split into
+// many LED panel meshes (gate + side walls + center, each several meshes) can
+// spawn dozens of lights and tank FPS. The spill glow only needs a handful of
+// representative sources — cluster the per-mesh centres down to this many.
+const MAX_LED_LIGHTS = 8
+
+// Grid-bin LED centres into <= max spatially-spread lights, averaging each cell.
+// Binning on X/Y (LED surfaces are roughly planar in depth) keeps a light near
+// each physical panel cluster instead of dropping whole regions.
+function reduceLedLightPositions(positions, max = MAX_LED_LIGHTS) {
+  if (positions.length <= max) return positions
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const [x, y] of positions) {
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  const cells = Math.max(1, Math.ceil(Math.sqrt(max)))
+  const spanX = (maxX - minX) || 1
+  const spanY = (maxY - minY) || 1
+  const buckets = new Map()
+  for (const p of positions) {
+    const cx = Math.min(cells - 1, Math.floor(((p[0] - minX) / spanX) * cells))
+    const cy = Math.min(cells - 1, Math.floor(((p[1] - minY) / spanY) * cells))
+    const key = `${cx}_${cy}`
+    const b = buckets.get(key) || { x: 0, y: 0, z: 0, n: 0 }
+    b.x += p[0]; b.y += p[1]; b.z += p[2]; b.n += 1
+    buckets.set(key, b)
+  }
+  return [...buckets.values()].slice(0, max).map((b) => [b.x / b.n, b.y / b.n, b.z / b.n])
+}
+
 // ── LED screen light sources ──────────────────────────────────────────────────
 function LedLights({ positions, color, active }) {
   if (!active || positions.length === 0) return null
@@ -968,7 +1002,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
       })
     })
 
-    setLedPositions(newLedPositions)
+    setLedPositions(reduceLedLightPositions(newLedPositions))
     onLedMaterialStatus(found)
 
     const box    = new THREE.Box3().setFromObject(clonedScene)
