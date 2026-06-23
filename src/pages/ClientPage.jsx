@@ -1174,6 +1174,8 @@ function ClientPage() {
         loadingManager: modelUrl ? loadingManager : null,
         videoElement,
         activeImageUrl,
+        mediaByTarget,
+        ledTargetMap,
         onLedMaterialStatus: () => {},
         sunPosition,
         sunIntensity,
