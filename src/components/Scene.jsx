@@ -650,6 +650,17 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
   const prevLedMaterialsRef = useRef([])
   const onImageLoadedRef = useRef(onImageTextureLoaded)
   onImageLoadedRef.current = onImageTextureLoaded
+  // Output callbacks are notifications, not build inputs. Keep them in refs and
+  // OUT of the material-pass effect deps, otherwise an unstable parent callback
+  // (e.g. an inline `onLedMaterialStatus={() => {}}`) re-runs the whole pass —
+  // and since the pass calls onMeshScan -> parent setState -> re-render, that
+  // forms an infinite loop that pins the main thread (editor 12fps vs 144 fps).
+  const onLedMaterialStatusRef = useRef(onLedMaterialStatus)
+  onLedMaterialStatusRef.current = onLedMaterialStatus
+  const onModelMetricsRef = useRef(onModelMetrics)
+  onModelMetricsRef.current = onModelMetrics
+  const onMeshScanRef = useRef(onMeshScan)
+  onMeshScanRef.current = onMeshScan
 
   const [ledPositions, setLedPositions] = useState([])
   const [ledColor,     setLedColor]     = useState('#ffffff')
@@ -1036,7 +1047,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
     })
 
     setLedPositions(reduceLedLightPositions(newLedPositions))
-    onLedMaterialStatus(found)
+    onLedMaterialStatusRef.current?.(found)
 
     const box    = new THREE.Box3().setFromObject(clonedScene)
     const center = box.getCenter(new THREE.Vector3())
@@ -1049,22 +1060,22 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
     const normalizedSize = normalizedBox.getSize(new THREE.Vector3())
     const normalizedCenter = normalizedBox.getCenter(new THREE.Vector3())
     const radius = normalizedSize.length() * 0.5
-    if (onMeshScan) {
+    if (onMeshScanRef.current) {
       // Idle-chunked scan so a 5000+ raycast pass doesn't freeze the first frame
       // after model load. Fall back to sync if the async loop throws.
-      scanStageMeshesAsync(clonedScene).then(onMeshScan).catch((err) => {
+      scanStageMeshesAsync(clonedScene).then(onMeshScanRef.current).catch((err) => {
         if (import.meta.env.DEV) console.warn('[Scene] async mesh scan failed; falling back', err)
-        try { onMeshScan(scanStageMeshes(clonedScene)) } catch (_) { /* ignore */ }
+        try { onMeshScanRef.current(scanStageMeshes(clonedScene)) } catch (_) { /* ignore */ }
       })
     }
-    onModelMetrics?.({
+    onModelMetricsRef.current?.({
       box: normalizedBox.clone(),
       center: normalizedCenter.clone(),
       size: normalizedSize.clone(),
       radius,
     })
 
-  }, [clonedScene, activeTexture, texturesByTarget, texturesVersion, ledTargetMap, onLedMaterialStatus, protectLed, envIntensity, transparentLedConfig, onModelMetrics, onMeshScan])
+  }, [clonedScene, activeTexture, texturesByTarget, texturesVersion, ledTargetMap, protectLed, envIntensity, transparentLedConfig])
 
   // ── Per-frame: video texture refresh + emissive fade-in ──────────────────
   useFrame((_, delta) => {
