@@ -127,6 +127,39 @@ function shouldDebugLed() {
   }
 }
 
+// Authored LED maps are often huge (e.g. a 5760×3328 gate ≈ 19 MP). Uploading
+// several at full resolution costs hundreds of MB of VRAM and stutters on weaker
+// GPUs. The 3D preview never samples an LED at more than ~2K across, so downscale
+// oversized stills to this longest-edge cap before the GPU upload. This is a
+// render-time GPU optimization only — the source file on R2 is untouched; it does
+// NOT reduce upload/storage size (that's the upload-pipeline concern, deferred).
+const MAX_LED_TEXTURE_DIM = 2048
+
+// Return the image as-is, or a downscaled <canvas> when it exceeds the cap.
+// Both are valid texture sources for THREE.Texture.
+function fitImageToMaxDim(image, maxDim = MAX_LED_TEXTURE_DIM) {
+  const w = image?.naturalWidth || image?.width || 0
+  const h = image?.naturalHeight || image?.height || 0
+  if (!w || !h) return image
+  const longest = Math.max(w, h)
+  if (longest <= maxDim) return image
+  const scale = maxDim / longest
+  const cw = Math.max(1, Math.round(w * scale))
+  const ch = Math.max(1, Math.round(h * scale))
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = cw
+    canvas.height = ch
+    const ctx = canvas.getContext('2d')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(image, 0, 0, cw, ch)
+    return canvas
+  } catch {
+    return image
+  }
+}
+
 function configureLedMediaTexture(texture) {
   if (!texture) return null
   texture.minFilter = THREE.LinearFilter
@@ -579,7 +612,7 @@ function useTexturesByTarget(mediaByTarget) {
         img.onload = () => {
           if (cancelled || !img.naturalWidth || !img.naturalHeight) return
           try {
-            const t = new THREE.Texture(img)
+            const t = new THREE.Texture(fitImageToMaxDim(img))
             t.colorSpace = THREE.SRGBColorSpace
             t.flipY = false
             configureLedMediaTexture(t)
@@ -702,7 +735,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
       //    new THREE.Texture(img) + needsUpdate uploads pixels to the GPU without
       //    making an additional XHR — the blob URL is only consumed once here.
       try {
-        const t = new THREE.Texture(img)
+        const t = new THREE.Texture(fitImageToMaxDim(img))
         t.colorSpace  = THREE.SRGBColorSpace
         t.flipY       = false
         configureLedMediaTexture(t)
