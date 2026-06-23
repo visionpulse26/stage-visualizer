@@ -66,6 +66,47 @@ function GlDomElementBridge({ targetRef }) {
 }
 
 
+// ── Perf HUD — measures the real bottleneck (gated behind ?perf=1) ────────────
+// Reads the live WebGLRenderer.info each ~0.5s: FPS plus draw calls / triangles
+// (geometry & draw-call bound) vs textures / programs / render targets (fragment
+// & memory bound). Lets us fix the actual cost instead of guessing.
+function shouldShowPerfHud() {
+  if (typeof window === 'undefined') return false
+  try {
+    return new URLSearchParams(window.location.search).has('perf') ||
+      window.localStorage?.getItem('stageviz:perf') === '1'
+  } catch {
+    return false
+  }
+}
+
+function PerfHud({ onSample }) {
+  const gl = useThree((s) => s.gl)
+  const frames = useRef(0)
+  const acc = useRef(0)
+  useFrame((_, delta) => {
+    frames.current += 1
+    acc.current += delta
+    if (acc.current >= 0.5) {
+      const info = gl.info
+      onSample({
+        fps: Math.round(frames.current / acc.current),
+        calls: info.render?.calls ?? 0,
+        triangles: info.render?.triangles ?? 0,
+        geometries: info.memory?.geometries ?? 0,
+        textures: info.memory?.textures ?? 0,
+        programs: info.programs?.length ?? 0,
+        dpr: Math.round((gl.getPixelRatio?.() ?? 1) * 100) / 100,
+        drawW: gl.domElement?.width ?? 0,
+        drawH: gl.domElement?.height ?? 0,
+      })
+      frames.current = 0
+      acc.current = 0
+    }
+  })
+  return null
+}
+
 // ── Reflective floor with MeshReflectorMaterial ───────────────────────────────
 function ReflectiveFloor() {
   return (
@@ -592,6 +633,8 @@ function StageCanvas({
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
+  const showPerfHud = useMemo(() => shouldShowPerfHud(), [])
+  const [perfStats, setPerfStats] = useState(null)
   const [povEvalAllowed, setPovEvalAllowed] = useState(null)
   const handleModelMetrics = useCallback(
     (m) => {
@@ -819,6 +862,7 @@ function StageCanvas({
           sectionColor="#666666"
         />
 
+        {showPerfHud && <PerfHud onSample={setPerfStats} />}
         {loadingManager && <FirstFrameReporter loadingManager={loadingManager} />}
         <Suspense fallback={null}>
           {modelUrl && (
@@ -901,6 +945,25 @@ function StageCanvas({
         </EffectComposer>
       </Canvas>
       </StageErrorBoundary>
+
+      {showPerfHud && perfStats && (
+        <div
+          className="absolute top-2 left-2 z-50 rounded-md px-3 py-2 text-[11px] leading-tight font-mono pointer-events-none"
+          style={{
+            background: 'rgba(8,6,4,0.82)',
+            color: perfStats.fps >= 50 ? '#2BC782' : perfStats.fps >= 30 ? '#E89518' : '#FF5F1F',
+            border: '1px solid rgba(220,100,30,0.32)',
+            whiteSpace: 'pre',
+          }}
+        >
+          {`FPS ${perfStats.fps}\n`}
+          <span style={{ color: '#C8B8A8' }}>
+            {`calls ${perfStats.calls}  tris ${perfStats.triangles.toLocaleString()}\n`}
+            {`geos ${perfStats.geometries}  texs ${perfStats.textures}  progs ${perfStats.programs}\n`}
+            {`dpr ${perfStats.dpr}  buf ${perfStats.drawW}×${perfStats.drawH}`}
+          </span>
+        </div>
+      )}
 
       {children}
     </div>
