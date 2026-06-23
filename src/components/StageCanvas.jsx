@@ -648,6 +648,30 @@ function StageCanvas({
   const [modelMetrics, setModelMetrics] = useState(null)
   const showPerfHud = useMemo(() => shouldShowPerfHud(), [])
   const [perfStats, setPerfStats] = useState(null)
+  // Browser-level rAF FPS, independent of the three.js render loop. Decisive
+  // CPU-vs-GPU split: if this also tanks, the main thread is blocked (CPU/JS);
+  // if it stays ~60 while three.js FPS is low, the cost is in render/driver.
+  const [pageFps, setPageFps] = useState(null)
+  useEffect(() => {
+    if (!showPerfHud || typeof requestAnimationFrame === 'undefined') return
+    let raf = 0
+    let frames = 0
+    let acc = 0
+    let prev = performance.now()
+    const tick = (now) => {
+      frames += 1
+      acc += now - prev
+      prev = now
+      if (acc >= 500) {
+        setPageFps(Math.round((frames * 1000) / acc))
+        frames = 0
+        acc = 0
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [showPerfHud])
   // Perf bisect toggles (read once; see perfFlag)
   const perf = useMemo(() => ({
     noLogDepth: perfFlag('perfNoLogDepth'),
@@ -984,7 +1008,7 @@ function StageCanvas({
             whiteSpace: 'pre',
           }}
         >
-          {`FPS ${perfStats.fps}\n`}
+          {`FPS ${perfStats.fps}   page ${pageFps ?? '—'}\n`}
           <span style={{ color: '#C8B8A8' }}>
             {`calls ${perfStats.calls}  tris ${perfStats.triangles.toLocaleString()}\n`}
             {`geos ${perfStats.geometries}  texs ${perfStats.textures}  progs ${perfStats.programs}\n`}
