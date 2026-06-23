@@ -27,7 +27,7 @@ async function getFFmpeg() {
   return ffmpegLoading
 }
 
-function includesAscii(bytes, token) {
+function indexOfAscii(bytes, token) {
   const needle = new TextEncoder().encode(token)
   for (let i = 0; i <= bytes.length - needle.length; i += 1) {
     let matched = true
@@ -37,9 +37,13 @@ function includesAscii(bytes, token) {
         break
       }
     }
-    if (matched) return true
+    if (matched) return i
   }
-  return false
+  return -1
+}
+
+function includesAscii(bytes, token) {
+  return indexOfAscii(bytes, token) >= 0
 }
 
 export function detectMp4VideoCodecFromBytes(bytes) {
@@ -196,4 +200,59 @@ export async function transcodeToHalfRes(file, { onProgress, onStatus } = {}) {
 
   onStatus?.('Done')
   return new File([data.buffer], file.name.replace(/\.[^/.]+$/, '') + '_converted.mp4', { type: 'video/mp4' })
+}
+
+// True when the mp4's `moov` atom precedes `mdat` — i.e. the file is already
+// "faststart" (progressive). Such files stream and seek immediately, so they
+// need no remux. A non-faststart mp4 keeps `moov` at the very end, forcing the
+// browser to fetch the tail before the first frame and stalling follower seeks
+// in multi-mapled lockstep.
+export function detectFaststartFromBytes(bytes) {
+  if (!bytes) return false
+  const moov = indexOfAscii(bytes, 'moov')
+  const mdat = indexOfAscii(bytes, 'mdat')
+  if (moov < 0) return false   // moov not in the head → it's at the end
+  if (mdat < 0) return true    // moov present, mdat not seen yet → moov is early
+  return moov < mdat
+}
+
+async function isFaststartMp4(file) {
+  if (!isMp4Like(file) || !file?.slice) return false
+  const head = new Uint8Array(await file.slice(0, Math.min(file.size, MP4_METADATA_SCAN_BYTES)).arrayBuffer())
+  return detectFaststartFromBytes(head)
+}
+
+/**
+ * Ensure an mp4 streams well: relocate `moov` to the front via a cheap remux
+ * (`-c copy -movflags +faststart`) — no re-encode, no quality loss. No-op for
+ * non-video, non-mp4, or already-faststart files (and returns BEFORE loading
+ * ffmpeg for those, so image uploads pay nothing).
+ *
+ * Use this on the upload path for videos that skip transcodeToHalfRes (already
+ * browser-friendly h264) — transcoded files already get +faststart.
+ *
+ * @param {File} file
+ * @param {{ onProgress?: (percent: number) => void, onStatus?: (msg: string) => void }} opts
+ * @returns {Promise<File>}
+ */
+export async function ensureFaststartMp4(file, { onProgress, onStatus } = {}) {
+  if (!isVideoLike(file) || !isMp4Like(file)) return file
+  if (await isFaststartMp4(file)) return file
+
+  onStatus?.('Optimizing for streaming…')
+  const ff = await getFFmpeg()
+  ff.on('progress', ({ progress }) => onProgress?.(Math.round(progress * 100)))
+
+  const inputName = 'fsin_' + Date.now() + '.' + (file.name.split('.').pop() || 'mp4')
+  const outputName = 'fsout_' + Date.now() + '.mp4'
+
+  await ff.writeFile(inputName, await fetchFile(file))
+  await ff.exec(['-i', inputName, '-c', 'copy', '-movflags', '+faststart', '-y', outputName])
+  const data = await ff.readFile(outputName)
+
+  await ff.deleteFile(inputName)
+  await ff.deleteFile(outputName)
+
+  onStatus?.('Done')
+  return new File([data.buffer], file.name, { type: 'video/mp4' })
 }

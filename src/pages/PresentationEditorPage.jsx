@@ -29,8 +29,10 @@ import {
 } from '../lib/presentationVersions'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 import { fetchAndCacheAsset, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { resolvePlayableSrc } from '../utils/streamUrl'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl, getUploadErrorMessage } from '../utils/r2Upload'
-import { shouldTranscodeVideo, transcodeToHalfRes } from '../utils/videoTranscode'
+import { shouldTranscodeVideo, transcodeToHalfRes, ensureFaststartMp4 } from '../utils/videoTranscode'
+import { generateLqip } from '../utils/lqip'
 import { uploadClipThumbnail } from '../utils/clipThumbnails'
 import { buildMultiMapledClip, serializeClipForPlaylist, isMultiMapledClip, getClipSources, buildImageMediaByTarget, getClipMediaType } from '../utils/mapledMedia'
 import { groupFilesIntoMapledClips } from '../utils/mapledUpload'
@@ -74,7 +76,7 @@ const CLIP_UPLOAD_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'hevc', 'm4v'
 const CLIP_UPLOAD_IMAGE_EXT = ['webp', 'png', 'jpg', 'jpeg', 'gif']
 const CLIP_UPLOAD_VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime', 'video/mov', 'video/x-matroska', 'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/mp2t', 'video/mxf']
 const CLIP_UPLOAD_IMAGE_MIME = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
-const MAX_MEDIA_IMAGE_BYTES = 25 * 1024 * 1024
+const MAX_MEDIA_IMAGE_BYTES = 150 * 1024 * 1024 // mirrors MAX_IMAGE_BYTES in api/get-upload-url.js
 
 // ── Tiny layout helpers ───────────────────────────────────────────────────────
 const Row = ({ children, gap = 6, align = 'center', wrap = false, style = {} }) => (
@@ -1703,14 +1705,16 @@ export default function PresentationEditorPage() {
     setCurrentTime(0)
     setActiveDuration(0)
     setIsPlaying(false)
-    const isRemote = clip.url.startsWith('http://') || clip.url.startsWith('https://')
+    // Video streams from the media Worker (when configured); images keep the blob
+    // loader. Falls back to blob for all when streaming isn't deployed.
+    const blobFallback = async (u) => {
+      const b = await fetchAsBlobUrlWithCache(u)
+      addBlob(b)
+      return b
+    }
     let url = clip.url
     try {
-      if (isRemote) {
-        const blobUrl = await fetchAsBlobUrlWithCache(clip.url)
-        addBlob(blobUrl)
-        url = blobUrl
-      }
+      url = await resolvePlayableSrc({ url: clip.url, projectId, isVideo: getClipMediaType(clip) === 'video', blobFallback })
     } catch { url = clip.url }
 
     // Tear down any previous multi-mapled followers before re-activating
@@ -1756,9 +1760,7 @@ export default function PresentationEditorPage() {
         for (let i = 1; i < sources.length; i += 1) {
           let fu = sources[i].url
           try {
-            if (fu.startsWith('http://') || fu.startsWith('https://')) {
-              const b = await fetchAsBlobUrlWithCache(fu); addBlob(b); fu = b
-            }
+            fu = await resolvePlayableSrc({ url: sources[i].url, projectId, isVideo: true, blobFallback })
           } catch { /* fall back to raw url */ }
           followers.push({ targetId: sources[i].targetId, url: fu })
         }
@@ -1887,7 +1889,7 @@ export default function PresentationEditorPage() {
     }
     const oversizedImage = files.find(file => isPresentationImageFile(file) && file.size > MAX_MEDIA_IMAGE_BYTES)
     if (oversizedImage) {
-      setClipUploadError('Images must be 25 MB or smaller')
+      setClipUploadError('Images must be 150 MB or smaller')
       return
     }
 
@@ -1953,6 +1955,15 @@ export default function PresentationEditorPage() {
             })
             completedConvert += 1
             setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, completedConvert } : prev)
+          } else {
+            // Browser-friendly h264 skips transcode — still remux to faststart so
+            // it streams + seeks immediately. No-op for images / already-faststart.
+            uploadFile = await ensureFaststartMp4(file, {
+              onStatus: (msg) => {
+                setClipUploadStatus(`${msg} (${i + 1}/${uploadPlan.length})`)
+                setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, status: `${msg} (${file.name})` } : prev)
+              },
+            })
           }
 
           setClipUploadStatus(`Uploading ${i + 1}/${uploadPlan.length}: ${uploadFile.name}`)
@@ -1976,7 +1987,8 @@ export default function PresentationEditorPage() {
           )
 
           const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, 0) + 1
-          const clip = makeUploadedClip(uploadFile, finalUrl, nextClipNumber)
+          const lqip = await generateLqip(file) // '' for video — instant placeholder for big stills
+          const clip = makeUploadedClip(uploadFile, finalUrl, nextClipNumber, lqip)
           await appendUploadedClip(clip, completedFiles === 0)
           completedFiles += 1
           setClipBackgroundJob(prev => prev?.id === jobId ? { ...prev, completedFiles } : prev)
@@ -2016,6 +2028,9 @@ export default function PresentationEditorPage() {
         onStatus: (msg) => onStatus?.(msg),
         onProgress: (pct) => onStatus?.(`Converting: ${pct}%`),
       })
+    } else {
+      // h264 skips transcode — remux to faststart so it streams immediately.
+      uploadFile = await ensureFaststartMp4(file, { onStatus: (msg) => onStatus?.(msg) })
     }
     onStatus?.(`Uploading ${uploadFile.name}`)
     const contentType = getMediaMimeType(uploadFile)
@@ -2052,7 +2067,8 @@ export default function PresentationEditorPage() {
             a.file,
             (s) => setClipUploadStatus(`[${group.clipName} · ${a.targetLabel}] ${s}`),
           )
-          sources.push({ targetId: a.targetId, targetLabel: a.targetLabel, url: finalUrl, type, external: true })
+          const lqip = await generateLqip(a.file) // '' for video sources
+          sources.push({ targetId: a.targetId, targetLabel: a.targetLabel, url: finalUrl, type, external: true, ...(lqip ? { lqip } : {}) })
         }
         const nextClipNumber = currentPlaylistClipCount(videoPlaylistRef.current, 0) + 1
         const clip = buildMultiMapledClip({ name: group.clipName, index: nextClipNumber, sources })
@@ -3276,7 +3292,7 @@ function makeSlideFromClip(clip, index, cameraPresets = []) {
   }
 }
 
-function makeUploadedClip(file, finalUrl, nextClipNumber) {
+function makeUploadedClip(file, finalUrl, nextClipNumber, lqip = '') {
   const id = `clip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   // Use extension-based detection so images are correctly classified even when file.type is empty
   const ext = (file.name.split('.').pop() || '').toLowerCase()
@@ -3292,6 +3308,7 @@ function makeUploadedClip(file, finalUrl, nextClipNumber) {
     type: mediaType,
     external: true,
     thumbnailUrl: isImage ? finalUrl : '',
+    ...(lqip ? { lqip } : {}),
   }
 }
 

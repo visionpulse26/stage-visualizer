@@ -36,7 +36,10 @@ const MAX_BYTES = {
   media: 500 * 1024 * 1024,
 }
 
-const MAX_IMAGE_BYTES = 25 * 1024 * 1024
+// Large stills are expected (e.g. 19MP+ PNG). VRAM is already protected by the
+// renderer's fitImageToMaxDim downscale, so the only real ceiling is upload time
+// — keep a generous cap well below the 500MB video limit.
+const MAX_IMAGE_BYTES = 150 * 1024 * 1024
 
 const ALLOWED_EXTENSIONS = {
   stage: ['.glb', '.gltf'],

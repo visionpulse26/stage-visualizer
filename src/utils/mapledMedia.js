@@ -14,6 +14,7 @@ export function getClipSources(clip) {
       url: source.url,
       type: source.type || clip.type || 'video',
       external: source.external ?? clip.external ?? true,
+      ...(source.lqip ? { lqip: source.lqip } : {}),
     }))
 }
 
@@ -45,6 +46,7 @@ export function buildMultiMapledClip({
       url: source.url,
       type: source.type || 'video',
       external: source.external ?? true,
+      ...(source.lqip ? { lqip: source.lqip } : {}),
     }))
   const fallbackName = `Multi Mapled Clip ${index}`
   const cleanName = String(name || '').trim() || fallbackName
@@ -61,6 +63,7 @@ export function buildMultiMapledClip({
     sources: normalizedSources,
     external: true,
     thumbnailUrl: '',
+    ...(normalizedSources[0]?.lqip ? { lqip: normalizedSources[0].lqip } : {}),
   }
 }
 
@@ -79,6 +82,17 @@ export async function buildImageMediaByTarget(clip, resolveUrl = (u) => u) {
   return map
 }
 
+// Synchronous `mediaByTarget` of LQIP placeholders (tiny inline data URLs stored
+// on each source). Shown instantly while buildImageMediaByTarget downloads the
+// full-res blobs, then swapped out. Empty when no source carries an `lqip`.
+export function buildLqipMediaByTarget(clip) {
+  const map = new Map()
+  for (const source of getClipSources(clip)) {
+    if (source.lqip) map.set(source.targetId, { imageUrl: source.lqip })
+  }
+  return map
+}
+
 export function serializeClipForPlaylist(clip) {
   const base = {
     ...(clip.id ? { id: clip.id } : {}),
@@ -87,6 +101,7 @@ export function serializeClipForPlaylist(clip) {
     type: clip.type,
     external: clip.external ?? true,
     ...(clip.thumbnailUrl || clip.thumbnail_url ? { thumbnailUrl: clip.thumbnailUrl || clip.thumbnail_url } : {}),
+    ...(clip.lqip ? { lqip: clip.lqip } : {}),
   }
 
   if (!isMultiMapledClip(clip)) return base

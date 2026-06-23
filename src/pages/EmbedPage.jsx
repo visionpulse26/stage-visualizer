@@ -8,6 +8,7 @@ import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { supabase } from '../lib/supabaseClient'
 import { recordClientPageView } from '../lib/analyticsTracker'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { resolvePlayableSrc } from '../utils/streamUrl'
 import { setCameraTargetPreset } from '../utils/animateCameraToPreset'
 
 /**
@@ -120,28 +121,30 @@ export default function EmbedPage() {
     v.load()
   }, [])
 
+  // Video streams from the media Worker (when configured); images keep the blob
+  // loader. Falls back to blob for everything when streaming isn't deployed.
+  const blobFallback = useCallback(async (u) => {
+    const b = await fetchAsBlobUrlWithCache(u)
+    addBlob(b)
+    return b
+  }, [addBlob])
+
   const loadMediaPlaylist = useCallback(
-    async (items) => {
-      const isRemote = (u) =>
-        u && (u.startsWith('http://') || u.startsWith('https://'))
+    async (items, projectId) => {
       const restored = []
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
         let url = item.url
-        if (isRemote(url)) {
-          try {
-            const blobUrl = await fetchAsBlobUrlWithCache(url)
-            addBlob(blobUrl)
-            url = blobUrl
-          } catch {
-            /* keep remote */
-          }
+        try {
+          url = await resolvePlayableSrc({ url: item.url, projectId, isVideo: item.type !== 'image', blobFallback })
+        } catch {
+          /* keep remote */
         }
         restored.push({ id: Date.now() + i, name: item.name, url, type: item.type })
       }
       return restored
     },
-    [addBlob]
+    [blobFallback]
   )
 
   useEffect(() => {
@@ -185,7 +188,7 @@ export default function EmbedPage() {
         setModelUrl(modelSrc || null)
 
         if (data.media_playlist && data.media_playlist.length > 0) {
-          const restored = await loadMediaPlaylist(data.media_playlist)
+          const restored = await loadMediaPlaylist(data.media_playlist, data.id)
           const first = restored[0]
           if (first?.type === 'image') {
             setActiveImageUrl(first.url)
@@ -194,14 +197,10 @@ export default function EmbedPage() {
           }
         } else if (data.video_url) {
           let vidUrl = data.video_url
-          if (isRemote(vidUrl)) {
-            try {
-              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
-              addBlob(blobUrl)
-              vidUrl = blobUrl
-            } catch {
-              /* use raw */
-            }
+          try {
+            vidUrl = await resolvePlayableSrc({ url: data.video_url, projectId: data.id, isVideo: true, blobFallback })
+          } catch {
+            /* use raw */
           }
           const id = Date.now()
           activateVideo(id, vidUrl)

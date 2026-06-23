@@ -9,5 +9,5 @@ test('upload errors show media size limit instead of a generic failure', () => {
   const upload = read('src/utils/r2Upload.js')
 
   assert.match(upload, /File exceeds media upload size limit/i)
-  assert.match(upload, /Image is too large\. Use an image 25 MB or smaller\./)
+  assert.match(upload, /Image is too large\. Use an image 150 MB or smaller\./)
 })

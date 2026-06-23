@@ -18,7 +18,7 @@ test('presentation editor + Clip uploads multiple video and image files', () => 
   assert.match(page, /uploadFile = await transcodeToHalfRes\(file/)
   assert.match(page, /getPresignedUploadUrl\(\{[\s\S]*contentLength:\s*uploadFile\.size[\s\S]*type:\s*'media'/)
   assert.match(page, /uploadFileToPresignedUrl\(putUrl, uploadFile, publicUrl/)
-  assert.match(page, /makeUploadedClip\(uploadFile, finalUrl, nextClipNumber\)/)
+  assert.match(page, /makeUploadedClip\(uploadFile, finalUrl, nextClipNumber, lqip\)/)
   assert.match(page, /makeSlideFromClip\(clip, baseSlides\.length, cameraPresets\)/)
   assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(nextPlaylist\)/)
 })
@@ -53,10 +53,10 @@ test('presentation editor + Clip button opens file picker instead of adding a bl
 test('presentation editor rejects oversized image clips before requesting an upload URL', () => {
   const page = read('src/pages/PresentationEditorPage.jsx')
 
-  assert.match(page, /const MAX_MEDIA_IMAGE_BYTES = 25 \* 1024 \* 1024/)
+  assert.match(page, /const MAX_MEDIA_IMAGE_BYTES = 150 \* 1024 \* 1024/)
   assert.match(page, /function isPresentationImageFile\(file\)/)
   assert.match(page, /isPresentationImageFile\(file\) && file\.size > MAX_MEDIA_IMAGE_BYTES/)
-  assert.match(page, /Images must be 25 MB or smaller/)
+  assert.match(page, /Images must be 150 MB or smaller/)
 })
 
 test('presentation editor persists clip ids in project media playlist', () => {

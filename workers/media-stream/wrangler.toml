@@ -1,0 +1,28 @@
+# media-stream Worker — signed, Range-capable streaming proxy for R2 video.
+# Deploy: cd workers/media-stream && wrangler deploy
+# Secret:  wrangler secret put MEDIA_STREAM_SECRET   (must equal Vercel's value)
+#
+# Bind this Worker to the custom domain that serves media (e.g.
+# media.stage.tooawake.mov) via a route, OR put it behind a Custom Domain in the
+# Cloudflare dashboard. VITE_MEDIA_STREAM_BASE in the app must point at it.
+
+name = "media-stream"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# The public media bucket (same bucket R2_PUBLIC_BASE_URL / get-upload-url write to).
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "stage-visualizer-media"        # ← set to the real R2 bucket name
+
+[vars]
+# CORS allow-list for <video crossOrigin="anonymous"> — comma-separated origins.
+ALLOWED_ORIGINS = "https://stage.tooawake.mov,http://localhost:5173"
+
+# Route the Worker on the media subdomain. Replace zone_name with the real zone.
+# (Alternatively configure a Custom Domain in the dashboard and delete this.)
+[[routes]]
+pattern = "media.stage.tooawake.mov/v/*"
+zone_name = "tooawake.mov"
+
+# MEDIA_STREAM_SECRET is a secret — set via `wrangler secret put`, never here.

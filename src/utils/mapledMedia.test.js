@@ -3,12 +3,46 @@ import assert from 'node:assert/strict'
 import {
   buildMultiMapledClip,
   buildImageMediaByTarget,
+  buildLqipMediaByTarget,
   getClipMediaType,
   getClipPrimaryUrl,
   getClipSources,
   isMultiMapledClip,
   serializeClipForPlaylist,
 } from './mapledMedia.js'
+
+test('carries LQIP placeholders through build, sources, serialize and the lqip map', () => {
+  const clip = buildMultiMapledClip({
+    name: 'Stills',
+    sources: [
+      { targetId: 'main', url: 'https://cdn/main.png', type: 'image', lqip: 'data:image/jpeg;base64,AAA' },
+      { targetId: 'side', url: 'https://cdn/side.png', type: 'image', lqip: 'data:image/jpeg;base64,BBB' },
+    ],
+    idFactory: () => 'c1',
+  })
+
+  assert.equal(clip.lqip, 'data:image/jpeg;base64,AAA') // clip-level mirrors source[0]
+  assert.equal(getClipSources(clip)[1].lqip, 'data:image/jpeg;base64,BBB')
+
+  const serialized = serializeClipForPlaylist(clip)
+  assert.equal(serialized.lqip, 'data:image/jpeg;base64,AAA')
+  assert.equal(serialized.sources[0].lqip, 'data:image/jpeg;base64,AAA')
+
+  const lqMap = buildLqipMediaByTarget(clip)
+  assert.deepEqual(lqMap.get('main'), { imageUrl: 'data:image/jpeg;base64,AAA' })
+  assert.deepEqual(lqMap.get('side'), { imageUrl: 'data:image/jpeg;base64,BBB' })
+})
+
+test('omits lqip keys entirely when sources have no placeholder', () => {
+  const clip = buildMultiMapledClip({
+    name: 'NoLqip',
+    sources: [{ targetId: 'main', url: 'https://cdn/main.mp4', type: 'video' }],
+    idFactory: () => 'c2',
+  })
+  assert.equal('lqip' in clip, false)
+  assert.equal('lqip' in serializeClipForPlaylist(clip), false)
+  assert.equal(buildLqipMediaByTarget(clip).size, 0)
+})
 
 test('builds a multi-mapled clip from targeted uploads', () => {
   const clip = buildMultiMapledClip({

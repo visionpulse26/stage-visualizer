@@ -13,6 +13,7 @@ import { useBlobUrlCache } from '../hooks/useBlobUrlCache'
 import { useProjectStats } from '../hooks/useProjectStats'
 import { supabase } from '../lib/supabaseClient'
 import { fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { resolvePlayableSrc } from '../utils/streamUrl'
 import { transcodeToHalfRes } from '../utils/videoTranscode'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { isTouchDevice } from '../utils/isTouchDevice'
@@ -317,18 +318,22 @@ function CollabPage() {
         const modelSrc = data.stage_url
         setModelUrl(modelSrc || null)
 
+        // Video streams from the media Worker (when configured); images keep the
+        // blob loader. Falls back to blob for all when streaming isn't deployed.
+        const blobFallback = async (u) => {
+          const b = await fetchAsBlobUrlWithCache(u)
+          addBlob(b)
+          return b
+        }
+
         const loadMediaPlaylist = async (items) => {
           const restored = []
           for (let i = 0; i < items.length; i++) {
             const item = items[i]
             let url = item.url
-            if (isRemote(url)) {
-              try {
-                const blobUrl = await fetchAsBlobUrlWithCache(url)
-                addBlob(blobUrl)
-                url = blobUrl
-              } catch {}
-            }
+            try {
+              url = await resolvePlayableSrc({ url: item.url, projectId, isVideo: item.type !== 'image', blobFallback })
+            } catch {}
             restored.push({ id: Date.now() + i, name: item.name, url, type: item.type, external: true })
           }
           return restored
@@ -348,13 +353,9 @@ function CollabPage() {
           }
         } else if (data.video_url) {
           let vidUrl = data.video_url
-          if (isRemote(vidUrl)) {
-            try {
-              const blobUrl = await fetchAsBlobUrlWithCache(vidUrl)
-              addBlob(blobUrl)
-              vidUrl = blobUrl
-            } catch {}
-          }
+          try {
+            vidUrl = await resolvePlayableSrc({ url: data.video_url, projectId, isVideo: true, blobFallback })
+          } catch {}
           const id = Date.now()
           clipCountRef.current = 1
           setVideoPlaylist([{ id, name: 'Published Video', type: 'video', url: vidUrl, external: true }])

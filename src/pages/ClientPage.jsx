@@ -12,9 +12,10 @@ import { useAnalyticsConsent } from '../hooks/useAnalyticsConsent'
 import { useClientSessionTracking } from '../hooks/useClientSessionTracking'
 import { supabase } from '../lib/supabaseClient'
 import { clearMemCache, fetchAsBlobUrlWithCache } from '../utils/secureAssetLoader'
+import { resolvePlayableSrc, isStreamingConfigured, getStreamToken, buildVideoStreamUrl } from '../utils/streamUrl'
 import { deleteFeedback, loadPublishedVersion, loadVersionById, submitFeedback, loadFeedback, updateFeedback, hydrateSnapshot } from '../lib/presentationVersions'
 import { getPresignedUploadUrl, uploadFileToPresignedUrl } from '../utils/r2Upload'
-import { isMultiMapledClip, getClipSources, buildImageMediaByTarget, getClipMediaType } from '../utils/mapledMedia'
+import { isMultiMapledClip, getClipSources, buildImageMediaByTarget, buildLqipMediaByTarget, getClipMediaType } from '../utils/mapledMedia'
 import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
 import { FeedbackDraftPanel, AnnotationLayer, AnnotationToolbar, FeedbackTopBar, FeedbackLockBanner, StageLockBanner, StageLockBadge } from '../components/FeedbackDraftPanel'
 import GuestGate, { getStoredGuest } from '../components/GuestGate'
@@ -383,12 +384,29 @@ function ClientPage() {
   }, [])
 
   // ── Video activation ──────────────────────────────────────────────────────
-  const resolvePlayableUrl = useCallback(async (clip) => {
-    if (!clip?.url || !isRemoteUrl(clip.url)) return clip?.url
-    const blobUrl = await fetchAsBlobUrlWithCache(clip.url)
-    addBlob(blobUrl)
-    return blobUrl
+  // Video: stream directly from the media Worker (HTTP Range → first frame in
+  // ~1s) when configured; otherwise fall back to the blob loader (download whole
+  // file then play). Images deliberately stay on the blob loader (IP protection).
+  const blobFallback = useCallback(async (u) => {
+    const b = await fetchAsBlobUrlWithCache(u)
+    addBlob(b)
+    return b
   }, [addBlob])
+
+  const resolveVideoSrc = useCallback(
+    (remoteUrl) => resolvePlayableSrc({ url: remoteUrl, projectId, isVideo: true, blobFallback }),
+    [projectId, blobFallback],
+  )
+
+  const resolvePlayableUrl = useCallback(
+    (clip) => resolvePlayableSrc({
+      url: clip?.url,
+      projectId,
+      isVideo: getClipMediaType(clip) === 'video',
+      blobFallback,
+    }),
+    [projectId, blobFallback],
+  )
 
   const teardownMapledController = useCallback(() => {
     if (mapledControllerRef.current) {
@@ -468,16 +486,12 @@ function ClientPage() {
     setCurrentTime(0)
     setActiveDuration(0)
 
-    let url = clip.url
-    try {
-      url = await resolvePlayableUrl(clip)
-    } catch {
-      url = clip.url
-    }
-    if (activationSeq !== activationSeqRef.current) return
-
     if (slideId != null) setActiveSlideId(slideId)
 
+    // ── Image clip — show the instant LQIP, then swap to full-res ──────────────
+    // The LQIP (tiny inline data URL) paints immediately so the LED isn't blank
+    // while the full-res blob downloads; the "switching" overlay clears as soon
+    // as the placeholder is up.
     if (getClipMediaType(clip) === 'image') {
       if (videoRef.current) {
         videoRef.current.pause()
@@ -489,21 +503,35 @@ function ClientPage() {
       setActiveVideoId(clip.id)
       setIsPlaying(false)
 
-      // Multi-mapled stills: one image per LED map (no video controller needed).
       if (isMultiMapledClip(clip)) {
+        const lq = buildLqipMediaByTarget(clip)
+        setActiveImageUrl(null)
+        if (lq.size) { setMediaByTarget(lq); setIsSwitchingClip(false) }
         const map = await buildImageMediaByTarget(clip, async (u) => {
           if (isRemoteUrl(u)) { const b = await fetchAsBlobUrlWithCache(u); addBlob(b); return b }
           return u
         })
         if (activationSeq !== activationSeqRef.current) return
-        setActiveImageUrl(null)
         setMediaByTarget(map)
       } else {
+        if (clip.lqip) { setActiveImageUrl(clip.lqip); setIsSwitchingClip(false) }
+        let url = clip.url
+        try { url = await resolvePlayableUrl(clip) } catch { url = clip.url }
+        if (activationSeq !== activationSeqRef.current) return
         setActiveImageUrl(url)
       }
       setIsSwitchingClip(false)
       return
     }
+
+    // ── Video clip ────────────────────────────────────────────────────────────
+    let url = clip.url
+    try {
+      url = await resolvePlayableUrl(clip)
+    } catch {
+      url = clip.url
+    }
+    if (activationSeq !== activationSeqRef.current) return
 
     setActiveImageUrl(null)
 
@@ -515,7 +543,7 @@ function ClientPage() {
       for (let i = 1; i < sources.length; i += 1) {
         let fu = sources[i].url
         try {
-          if (isRemoteUrl(fu)) { const b = await fetchAsBlobUrlWithCache(fu); addBlob(b); fu = b }
+          fu = await resolveVideoSrc(sources[i].url)
         } catch { /* fall back to the raw url */ }
         followers.push({ targetId: sources[i].targetId, url: fu })
       }
@@ -525,7 +553,32 @@ function ClientPage() {
     }
 
     activateVideo(clip.id, url, activationSeq)
-  }, [activateVideo, addBlob, projectId, resolvePlayableUrl, startClipWatch, teardownMapledController])
+  }, [activateVideo, addBlob, projectId, resolvePlayableUrl, resolveVideoSrc, startClipWatch, teardownMapledController])
+
+  // Best-effort cache warming for the NEXT clip so switching is near-instant.
+  // Images: pull the full-res blob into the session cache (the LQIP already
+  // paints, this makes the swap instant). Streamed video: fetch just the first
+  // bytes (moov + first frames) to warm the browser/edge cache. Blob-fallback
+  // video is skipped — pre-downloading whole videos would waste bandwidth.
+  const prefetchClip = useCallback(async (clip) => {
+    if (!clip) return
+    const urls = isMultiMapledClip(clip)
+      ? getClipSources(clip).map(s => s.url)
+      : [clip.url]
+    try {
+      if (getClipMediaType(clip) === 'image') {
+        for (const u of urls) {
+          if (isRemoteUrl(u)) fetchAsBlobUrlWithCache(u).then(addBlob).catch(() => {})
+        }
+      } else if (isStreamingConfigured()) {
+        const token = await getStreamToken(projectId)
+        for (const u of urls) {
+          const su = buildVideoStreamUrl(u, token)
+          if (su) fetch(su, { headers: { Range: 'bytes=0-262143' }, mode: 'cors' }).catch(() => {})
+        }
+      }
+    } catch { /* best-effort */ }
+  }, [projectId, addBlob])
 
   const applySlideDefaultCamera = useCallback(function applySlideDefaultCamera(slide, presets = cameraPresets) {
     if (!slide?.defaultCameraPresetId) return
@@ -741,6 +794,12 @@ function ClientPage() {
       activateClip(clip, { slideId })
     }
 
+    // Warm the next slide's clip so advancing is near-instant.
+    const nextSlide = presentationSlides[slideIndex + 1]
+    if (nextSlide) {
+      prefetchClip(findClipForSlide(nextSlide, videoPlaylist, slideIndex + 1))
+    }
+
     // Switch default camera
     if (slide.defaultCameraPresetId) {
       const preset = findPreset(cameraPresets, slide.defaultCameraPresetId)
@@ -751,12 +810,14 @@ function ClientPage() {
         recordClientInteraction(projectId, 'camera_change', preset.name || String(preset.id))
       }
     }
-  }, [activateClip, cameraPresets, presentationSlides, videoPlaylist, projectId])
+  }, [activateClip, cameraPresets, presentationSlides, videoPlaylist, projectId, prefetchClip])
 
   // If no presentation snapshot, fall back to raw playlist clip switching
   const activateRawClip = useCallback((clip) => {
     activateClip(clip)
-  }, [activateClip])
+    const idx = videoPlaylist.findIndex(c => c.id === clip?.id)
+    if (idx >= 0) prefetchClip(videoPlaylist[idx + 1])
+  }, [activateClip, videoPlaylist, prefetchClip])
 
   const handlePlay  = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true) }, [])
   const handlePause = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])

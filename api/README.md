@@ -51,8 +51,25 @@ Returns a presigned PUT URL so the frontend can upload files directly to Cloudfl
 | `SUPABASE_URL` | Supabase project URL. Falls back to `VITE_SUPABASE_URL` for local dev. |
 | `SUPABASE_ANON_KEY` | Supabase anon key used server-side to verify bearer tokens. Falls back to `VITE_SUPABASE_ANON_KEY` for local dev. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key used server-side to verify project ownership before signing project-scoped uploads. |
+| `MEDIA_STREAM_SECRET` | Shared HMAC secret for video streaming. `POST /api/get-stream-token` signs tokens the media-stream Worker verifies. **Server-only — never a `VITE_` var** (those are inlined into the client bundle). Must equal the Worker's secret. Unset → `/api/get-stream-token` returns 503 and the client falls back to the blob loader. |
 
 Do not set a `VITE_UPLOAD_SECRET`; upload authorization is based on the user's Supabase session.
+
+## Video streaming (media-stream Worker)
+
+Video is streamed directly by `<video>` via HTTP Range through a Cloudflare
+Worker, instead of being downloaded whole into a blob first. See
+[`workers/media-stream/README.md`](../workers/media-stream/README.md) for deploy
+steps. Two env values switch it on (until both are set, the app uses the blob
+loader automatically — deploy order is safe):
+
+| Variable | Where | Description |
+|----------|-------|-------------|
+| `MEDIA_STREAM_SECRET` | Vercel **and** Worker | Same HMAC secret on both sides. |
+| `VITE_MEDIA_STREAM_BASE` | Vite build env | Public Worker base URL, e.g. `https://media.stage.tooawake.mov`. Inlined into the bundle (public — safe). |
+
+Images are **not** streamed — they keep the blob loader (IP protection). Only
+`/api/get-stream-token` (mint) and the Worker (verify + Range proxy) are involved.
 
 ## R2 CORS
 

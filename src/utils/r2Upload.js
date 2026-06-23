@@ -98,7 +98,7 @@ export function getUploadErrorMessage(err) {
     console.error('[upload]', msg)
   }
   if (/File exceeds media upload size limit/i.test(msg)) {
-    return 'Image is too large. Use an image 25 MB or smaller.'
+    return 'Image is too large. Use an image 150 MB or smaller.'
   }
   if (/File exceeds .* upload size limit/i.test(msg)) {
     return 'File is too large for this upload type.'

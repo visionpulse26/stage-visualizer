@@ -93,6 +93,10 @@ Khi deploy từ `main`, trong **Project → Settings → Environment Variables**
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, dùng cho API upload kiểm tra owner project)
 - Toàn bộ `R2_*` như trong `.env.example`
+- **(Tùy chọn) Video streaming** — bật stream trực tiếp `<video>` qua Cloudflare Worker thay vì tải nguyên file thành blob:
+  - `MEDIA_STREAM_SECRET` — secret HMAC dùng chung giữa Vercel và Worker (**server-only, KHÔNG đặt tiền tố `VITE_`** — biến `VITE_` bị inline vào bundle, lộ trong DevTools).
+  - `VITE_MEDIA_STREAM_BASE` — URL public của Worker, ví dụ `https://media.stage.tooawake.mov`.
+  - Chưa đặt 2 biến này thì app tự fallback về blob loader như cũ. Hướng dẫn deploy Worker: `workers/media-stream/README.md`.
 
 Cron / analytics (nếu dùng): `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, v.v. — xem `api/README.md`.
 
