@@ -644,7 +644,7 @@ function useTexturesByTarget(mediaByTarget) {
   return [mapRef.current, version]
 }
 
-function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
+function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, onImageTextureLoaded, onModelMetrics, onMeshScan, disableLedLights }) {
   const videoTextureRef = useRef(null)
   const imageTextureRef = useRef(null)
   const prevLedMaterialsRef = useRef([])
@@ -1088,7 +1088,7 @@ function ModelContent({ gltf, videoElement, activeImageUrl, mediaByTarget, ledTa
   return (
     <>
       <primitive object={clonedScene} />
-      <LedLights positions={ledPositions} color={ledColor} active={(!!activeTexture || texturesByTarget.size > 0) && sunIntensity > 0} />
+      <LedLights positions={ledPositions} color={ledColor} active={!disableLedLights && (!!activeTexture || texturesByTarget.size > 0) && sunIntensity > 0} />
     </>
   )
 }
@@ -1122,7 +1122,7 @@ function ManualModelLoader({ url, loadingManager, onImageTextureLoaded, ...rest 
   return <ModelContent gltf={gltf} onImageTextureLoaded={onImageTextureLoaded} {...rest} />
 }
 
-function Scene({ modelUrl, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onMeshScan }) {
+function Scene({ modelUrl, videoElement, activeImageUrl, mediaByTarget, ledTargetMap, onLedMaterialStatus, protectLed, sunIntensity, envIntensity, transparentLedConfig, loadingManager, onImageTextureLoaded, onModelMetrics, onMeshScan, disableLedLights }) {
   const common = {
     videoElement,
     activeImageUrl,
@@ -1135,6 +1135,7 @@ function Scene({ modelUrl, videoElement, activeImageUrl, mediaByTarget, ledTarge
     transparentLedConfig,
     onModelMetrics,
     onMeshScan,
+    disableLedLights,
   }
   return (
     <group>

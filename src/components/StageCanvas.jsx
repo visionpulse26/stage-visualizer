@@ -80,6 +80,19 @@ function shouldShowPerfHud() {
   }
 }
 
+// Perf bisect toggles — disable one expensive render feature at a time via the
+// URL (e.g. ?perf=1&perfNoLogDepth=1) to find the real bottleneck. Each defaults
+// OFF (feature stays enabled). Read once at mount; changing requires a reload
+// because some flags configure the WebGL context at Canvas creation.
+function perfFlag(name) {
+  if (typeof window === 'undefined') return false
+  try {
+    return new URLSearchParams(window.location.search).get(name) === '1'
+  } catch {
+    return false
+  }
+}
+
 function PerfHud({ onSample }) {
   const gl = useThree((s) => s.gl)
   const frames = useRef(0)
@@ -635,6 +648,16 @@ function StageCanvas({
   const [modelMetrics, setModelMetrics] = useState(null)
   const showPerfHud = useMemo(() => shouldShowPerfHud(), [])
   const [perfStats, setPerfStats] = useState(null)
+  // Perf bisect toggles (read once; see perfFlag)
+  const perf = useMemo(() => ({
+    noLogDepth: perfFlag('perfNoLogDepth'),
+    noPreserveBuffer: perfFlag('perfNoPreserveBuffer'),
+    noShadows: perfFlag('perfNoShadows'),
+    noBloom: perfFlag('perfNoBloom'),
+    noLedLights: perfFlag('perfNoLedLights'),
+    noEnv: perfFlag('perfNoEnv'),
+    noContactShadows: perfFlag('perfNoContactShadows'),
+  }), [])
   const [povEvalAllowed, setPovEvalAllowed] = useState(null)
   const handleModelMetrics = useCallback(
     (m) => {
@@ -744,12 +767,12 @@ function StageCanvas({
         gl={{
           antialias:             true,
           alpha:                 false,
-          logarithmicDepthBuffer: true,
-          preserveDrawingBuffer: true,
+          logarithmicDepthBuffer: !perf.noLogDepth,
+          preserveDrawingBuffer: !perf.noPreserveBuffer,
           toneMapping:           THREE.ACESFilmicToneMapping,
           toneMappingExposure:   0.62,
         }}
-        shadows
+        shadows={!perf.noShadows}
       >
         <WebGLContextLossHandler
           onContextLost={handleContextLost}
@@ -768,14 +791,14 @@ function StageCanvas({
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
             hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
         <>
-          {!hasEnv && (
+          {!perf.noEnv && !hasEnv && (
             <LocalStudioEnvironment
               intensity={resolvedEnvInt}
               background={resolvedShowBg}
               bgBlur={resolvedBgBlur}
             />
           )}
-          {hasEnv && (
+          {!perf.noEnv && hasEnv && (
           <>
             {customHdriUrl ? (
               <LiteHdriEnvironment
@@ -840,15 +863,17 @@ function StageCanvas({
 
         {/* Reflective helper floor is only useful before a real stage model exists. */}
         {!modelLoaded && <ReflectiveFloor />}
-        <ContactShadows
-          position={[0, -0.055, 0]}
-          opacity={0.38}
-          scale={90}
-          blur={1.8}
-          far={40}
-          resolution={512}
-          frames={1}
-        />
+        {!perf.noContactShadows && (
+          <ContactShadows
+            position={[0, -0.055, 0]}
+            opacity={0.38}
+            scale={90}
+            blur={1.8}
+            far={40}
+            resolution={512}
+            frames={1}
+          />
+        )}
 
         {/* Infinite grid */}
         <Grid
@@ -881,6 +906,7 @@ function StageCanvas({
               onImageTextureLoaded={onImageTextureLoaded}
               onModelMetrics={handleModelMetrics}
               onMeshScan={onMeshScanChange}
+              disableLedLights={perf.noLedLights}
             />
           )}
         </Suspense>
@@ -936,13 +962,15 @@ function StageCanvas({
 
         {/* Bloom only. HDRI background blur is handled by Environment; a full-scene
             DoF depth pass is unstable with transparent/coplanar GLB LED surfaces. */}
-        <EffectComposer>
-          <Bloom
-            luminanceThreshold={resolvedThreshold}
-            luminanceSmoothing={0.9}
-            intensity={resolvedBloom}
-          />
-        </EffectComposer>
+        {!perf.noBloom && (
+          <EffectComposer>
+            <Bloom
+              luminanceThreshold={resolvedThreshold}
+              luminanceSmoothing={0.9}
+              intensity={resolvedBloom}
+            />
+          </EffectComposer>
+        )}
       </Canvas>
       </StageErrorBoundary>
 
