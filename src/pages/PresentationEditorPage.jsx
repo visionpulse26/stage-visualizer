@@ -1463,9 +1463,12 @@ export default function PresentationEditorPage() {
     videoPlaylistRef.current = nextPlaylist
     setVideoPlaylist(nextPlaylist)
 
+    // Route through the serializer like every other media_playlist write so the
+    // persisted shape is uniform and multi-mapled sources are normalized (not the
+    // raw in-memory clip objects).
     const { error } = await supabase
       .from('projects')
-      .update({ media_playlist: nextPlaylist })
+      .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
       .eq('id', projectId)
 
     if (error) throw error

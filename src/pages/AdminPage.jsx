@@ -17,6 +17,7 @@ import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitContr
 import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 import { captureScreenshotWithWatermark } from '../utils/screenshotWithWatermark'
 import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
+import { serializeClipForPlaylist } from '../utils/mapledMedia'
 
 function AdminPage() {
   const navigate = useNavigate()
@@ -993,14 +994,12 @@ function AdminPage() {
       const finalVideoUrl = null
       const finalMediaPlaylist = videoPlaylist
         .filter(c => c?.url && !c.url.startsWith('blob:') && !c.url.startsWith('data:'))
-        .map(c => ({
-          id: c.id,
-          name: c.name,
-          url: c.url,
-          type: c.type,
-          external: c.external ?? true,
-          ...(c.thumbnailUrl || c.thumbnail_url ? { thumbnailUrl: c.thumbnailUrl || c.thumbnail_url } : {}),
-        }))
+        // serializeClipForPlaylist keeps multi-mapled `playbackMode` + `sources[]`
+        // (single clips serialize to the same { id, name, url, type, external,
+        // thumbnailUrl? } shape as before). Hand-mapping here previously dropped
+        // sources, which would collapse a multi-mapled clip to a single map on the
+        // brand-new-project save path.
+        .map(c => ({ id: c.id, ...serializeClipForPlaylist(c) }))
 
       // 2b. PRESERVE media_playlist — clips are owned by the StageViz Presentation
       // editor. This classic stage editor intentionally clears its in-memory

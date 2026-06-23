@@ -37,3 +37,13 @@ test('admin publish persists media playlist clip ids for presentation clients', 
   assert.match(page, /finalMediaPlaylist = videoPlaylist/)
   assert.match(page, /id: c\.id/)
 })
+
+test('admin publish keeps multi-mapled sources via serializeClipForPlaylist (Phase E)', () => {
+  const page = read('src/pages/AdminPage.jsx')
+
+  // The brand-new-project save path must serialize through serializeClipForPlaylist
+  // so multi-mapled playbackMode + sources[] survive instead of being hand-mapped
+  // down to a single url (which would collapse a clip to one LED map).
+  assert.match(page, /import \{[^}]*\bserializeClipForPlaylist\b[^}]*\} from '\.\.\/utils\/mapledMedia'/)
+  assert.match(page, /\.map\(c => \(\{ id: c\.id, \.\.\.serializeClipForPlaylist\(c\) \}\)\)/)
+})
