@@ -501,6 +501,7 @@ function ClientPage() {
       } else {
         setActiveImageUrl(url)
       }
+      setIsSwitchingClip(false)
       return
     }
 
