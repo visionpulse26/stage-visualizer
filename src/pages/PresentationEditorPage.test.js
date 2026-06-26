@@ -92,3 +92,25 @@ test('multi-mapled upload routes through the assign modal before uploading', () 
   // single-clip path stays intact as the fallback
   assert.match(page, /handleUploadClips\(valid\)/)
 })
+
+test('editor load falls back to the published snapshot order, not raw upload order', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  // After publish the draft is consumed, so loadDraft returns null. The load path
+  // must prefer the published snapshot's slide order before seeding from the raw
+  // media_playlist — otherwise a just-published reorder reverts to upload order.
+  assert.match(page, /const baseSnapshotSlides = draft\?\.snapshot_json\?\.slides\?\.length/)
+  assert.match(page, /:\s*\(published\?\.snapshot_json\?\.slides\?\.length \? published\.snapshot_json\.slides : null\)/)
+  assert.match(page, /if \(baseSnapshotSlides\)/)
+})
+
+test('reordering slides persists the new order into media_playlist', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  // The raw-playlist fallback (client without a snapshot, editor first load) reads
+  // media_playlist order, so a drag-reorder must rewrite it to match the slides.
+  assert.match(page, /const persistPlaylistOrder = useCallback/)
+  assert.match(page, /if \(reorderedClips\.length !== current\.length\) return/)
+  assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(reorderedClips\)/)
+  assert.match(page, /if \(reordered\) persistPlaylistOrder\(reordered\)/)
+})

@@ -1560,24 +1560,34 @@ export default function PresentationEditorPage() {
         setDraftVersion(draft)
         setPublishedVersion(published)
 
-        let slidesData
-        if (draft?.snapshot_json?.slides?.length) {
-          // Filter default clips from saved drafts too
-          const draftSlides = draft.snapshot_json.slides.filter(s => !isDefaultStagePreviewClip({ id: s.clipId }))
+        // Slide order is owned by the presentation snapshot, NOT by media_playlist.
+        // Prefer (1) the active draft, then (2) the published snapshot — the latter
+        // is essential: after publishing, the draft is promoted/consumed so loadDraft
+        // returns null. Falling straight through to media_playlist here would rebuild
+        // slides in raw upload order and silently revert any drag-to-reorder that was
+        // just published. Only with neither snapshot do we seed from the playlist.
+        const baseSnapshotSlides = draft?.snapshot_json?.slides?.length
+          ? draft.snapshot_json.slides
+          : (published?.snapshot_json?.slides?.length ? published.snapshot_json.slides : null)
 
-          // Merge: clips added to media_playlist after the draft was saved won't be
+        let slidesData
+        if (baseSnapshotSlides) {
+          // Filter default clips from saved snapshots too
+          const baseSlides = baseSnapshotSlides.filter(s => !isDefaultStagePreviewClip({ id: s.clipId }))
+
+          // Merge: clips added to media_playlist after the snapshot was saved won't be
           // in snapshot_json. Append them so two admins uploading concurrently don't
           // silently lose each other's clips.
-          const draftClipIds = new Set(draftSlides.map(s => String(s.clipId)))
-          const newClips = playlist.filter(c => !draftClipIds.has(String(c.id)))
+          const baseClipIds = new Set(baseSlides.map(s => String(s.clipId)))
+          const newClips = playlist.filter(c => !baseClipIds.has(String(c.id)))
           if (newClips.length > 0) {
             const appended = newClips.map((clip, i) =>
-              makeSlideFromClip(clip, draftSlides.length + i, p.camera_presets)
+              makeSlideFromClip(clip, baseSlides.length + i, p.camera_presets)
             )
-            slidesData = [...draftSlides, ...appended]
+            slidesData = [...baseSlides, ...appended]
             setIsDirty(true)
           } else {
-            slidesData = draftSlides
+            slidesData = baseSlides
           }
         } else {
           slidesData = playlist.map((clip, i) => makeSlideFromClip(clip, i, p.camera_presets))
@@ -2164,7 +2174,42 @@ export default function PresentationEditorPage() {
     markDirty()
   }, [activeSlide, activeSlideId, slides, broadcastOp, markDirty, projectId])
 
+  // Reorder media_playlist to match the presentation slide order. The snapshot is
+  // the source of truth for order, but raw-playlist fallbacks (a client viewing a
+  // project with no published snapshot, or the editor's first load) read
+  // media_playlist order — without this they keep showing the original upload order.
+  const persistPlaylistOrder = useCallback(async (orderedSlides) => {
+    if (!projectId) return
+    const current = videoPlaylistRef.current
+    if (!current.length) return
+
+    const byId = new Map(current.map(c => [String(c.id), c]))
+    const seen = new Set()
+    const reorderedClips = []
+    for (const slide of orderedSlides) {
+      const clip = byId.get(String(slide.clipId))
+      if (clip && !seen.has(String(clip.id))) {
+        reorderedClips.push(clip)
+        seen.add(String(clip.id))
+      }
+    }
+    // Keep any clips not referenced by a slide (defensive — never drop media)
+    for (const clip of current) {
+      if (!seen.has(String(clip.id))) reorderedClips.push(clip)
+    }
+    if (reorderedClips.length !== current.length) return  // safety: bail rather than lose clips
+
+    videoPlaylistRef.current = reorderedClips
+    setVideoPlaylist(reorderedClips)
+    const { error } = await supabase
+      .from('projects')
+      .update({ media_playlist: serializeMediaPlaylistForDb(reorderedClips) })
+      .eq('id', projectId)
+    if (error) console.error('[PresentationEditor] failed to persist playlist order after reorder', error)
+  }, [projectId])
+
   const reorderSlides = useCallback((dragId, dropId) => {
+    let reordered = null
     setSlides(prev => {
       const arr = [...prev]
       const fromIdx = arr.findIndex(s => s.id === dragId)
@@ -2172,11 +2217,13 @@ export default function PresentationEditorPage() {
       if (fromIdx < 0 || toIdx < 0) return prev
       const [item] = arr.splice(fromIdx, 1)
       arr.splice(toIdx, 0, item)
+      reordered = arr
       return arr
     })
     broadcastOp({ type: 'slide_reorder', dragId, dropId })
     markDirty()
-  }, [broadcastOp, markDirty])
+    if (reordered) persistPlaylistOrder(reordered)
+  }, [broadcastOp, markDirty, persistPlaylistOrder])
 
   // ── Annotation mode ───────────────────────────────────────────────────────
   const enterAnnotationMode = useCallback((noteId) => {
