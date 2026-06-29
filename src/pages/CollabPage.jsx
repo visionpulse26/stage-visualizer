@@ -20,6 +20,11 @@ import { isTouchDevice } from '../utils/isTouchDevice'
 import { enterPovMode, captureOrbitState, restoreOrbitState, reconnectOrbitControls } from '../utils/povCamera'
 import { buildPovCollidersFromConfig } from '../components/pov/buildPovCollidersFromConfig'
 import { usePovHeadlessMedia } from '../hooks/usePovHeadlessMedia'
+import MapledAssignModal from '../components/MapledAssignModal'
+import useLedTargets from '../hooks/useLedTargets'
+import { groupFilesIntoMapledClips } from '../utils/mapledUpload'
+import { createMapledPlaybackController } from '../utils/multiMapledPlayback'
+import { buildMultiMapledClip, isMultiMapledClip, getClipSources, getClipMediaType } from '../utils/mapledMedia'
 
 function CollabPage() {
   const { projectId } = useParams()
@@ -117,6 +122,15 @@ function CollabPage() {
   // Store the "synced" video element from Admin so we can restore when local camera stops
   const syncedVideoElementRef = useRef(null)
   const syncedImageUrlRef = useRef(null)
+
+  // ── Multi-mapled (2+ LED maps) ──────────────────────────────────────────────
+  const [ledTargetMap, setLedTargetMap] = useState({})   // surfaceKey → { targetId, label, order }
+  const { targets: ledTargets, isMultiMapled: stageIsMultiMapled } = useLedTargets(meshMetadata, ledTargetMap)
+  const [mediaByTarget, setMediaByTarget] = useState(null)        // Map<targetId, { videoElement?, imageUrl? }>
+  const [mapledAssignment, setMapledAssignment] = useState(null)  // { groups } while the assign modal is open
+  const [assignedClipByTarget, setAssignedClipByTarget] = useState({}) // targetId → clip (manual per-map assign)
+  const mediaCleanupRef = useRef(null)   // tears down videos/controller behind the current mediaByTarget
+  const activeVideosRef = useRef([])     // every <video> currently driving the stage (for transport fan-out)
 
   // ── Media playlist ────────────────────────────────────────────────────────
   const [videoPlaylist, setVideoPlaylist] = useState([])
@@ -266,6 +280,7 @@ function CollabPage() {
     v.addEventListener('loadeddata', () => {
       v.play().catch(() => {})
       videoRef.current = v
+      activeVideosRef.current = [v]
       setVideoElement(v)
       setVideoLoaded(true)
       setActiveVideoId(id)
@@ -274,6 +289,104 @@ function CollabPage() {
     })
     v.load()
   }, [])
+
+  // ── Multi-mapled compositing ────────────────────────────────────────────────
+  // Drive N LED maps at once from N sources. `synced: true` (grouped same-song
+  // upload) keeps the maps frame-locked via the master/follower controller;
+  // `synced: false` (manual per-map assign of different clips) loops each map
+  // independently. Local sandbox = blob URLs, so no network resolution needed.
+  const createLoopVideo = useCallback((url) => {
+    const v = document.createElement('video')
+    v.crossOrigin = 'anonymous'
+    v.muted = true; v.setAttribute('muted', '')
+    v.playsInline = true; v.setAttribute('playsinline', '')
+    v.loop = true; v.preload = 'auto'; v.src = url; v.load()
+    return v
+  }, [])
+
+  const teardownMediaByTarget = useCallback(() => {
+    if (mediaCleanupRef.current) { try { mediaCleanupRef.current() } catch (_) {} mediaCleanupRef.current = null }
+    activeVideosRef.current = []
+    setMediaByTarget(null)
+  }, [])
+
+  const applyMapledSources = useCallback((sources, { synced }) => {
+    // Replace any prior single/multi playback.
+    teardownMediaByTarget()
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+    setVideoElement(null)
+    setActiveImageUrl(null)
+
+    const valid = (sources || []).filter(s => s?.targetId && s?.url)
+    const images = valid.filter(s => s.type === 'image')
+    const videos = valid.filter(s => s.type !== 'image')
+    const map = new Map()
+    const cleanups = []
+    const activeVideos = []
+
+    images.forEach(s => map.set(s.targetId, { imageUrl: s.url }))
+
+    if (synced && videos.length > 1) {
+      // Master owns the timeline; followers lockstep to it.
+      const [master, ...followers] = videos
+      const mv = createLoopVideo(master.url)
+      videoRef.current = mv
+      const controller = createMapledPlaybackController({
+        masterVideo: mv,
+        masterTargetId: master.targetId,
+        followers: followers.map(f => ({ targetId: f.targetId, url: f.url })),
+      })
+      for (const [k, v] of controller.mediaByTarget) map.set(k, v)
+      cleanups.push(() => controller.destroy())
+      activeVideos.push(mv)
+      mv.play().catch(() => {})
+    } else {
+      // Independent loops (manual per-map assign, or a single video source).
+      videos.forEach(s => {
+        const v = createLoopVideo(s.url)
+        map.set(s.targetId, { videoElement: v })
+        v.play().catch(() => {})
+        activeVideos.push(v)
+        cleanups.push(() => { try { v.pause(); v.removeAttribute('src'); v.load() } catch (_) {} })
+      })
+      if (activeVideos[0]) videoRef.current = activeVideos[0]
+    }
+
+    mediaCleanupRef.current = () => { cleanups.forEach(c => { try { c() } catch (_) {} }) }
+    activeVideosRef.current = activeVideos
+    setMediaByTarget(map)
+    setVideoLoaded(activeVideos.length > 0 || images.length > 0)
+    setIsPlaying(activeVideos.length > 0)
+    setIsLooping(true)
+  }, [teardownMediaByTarget, createLoopVideo])
+
+  // Manual per-map assignment: rebuild the composite whenever the map→clip
+  // assignment changes. Cleared to {} when a normal clip is activated.
+  useEffect(() => {
+    const entries = Object.entries(assignedClipByTarget).filter(([, c]) => c)
+    if (!entries.length) return
+    const sources = entries.map(([targetId, c]) => ({
+      targetId,
+      url: c.url,
+      type: getClipMediaType(c) === 'image' ? 'image' : 'video',
+    }))
+    applyMapledSources(sources, { synced: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedClipByTarget])
+
+  const assignClipToTarget = useCallback((clip, targetId) => {
+    if (!clip || !targetId) return
+    setActiveVideoId(null)
+    setAssignedClipByTarget(prev => ({ ...prev, [targetId]: clip }))
+  }, [])
+
+  const handleResetMaps = useCallback(() => {
+    setAssignedClipByTarget({})
+    teardownMediaByTarget()
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+    setVideoElement(null); setActiveImageUrl(null)
+    setVideoLoaded(false); setIsPlaying(false); setActiveVideoId(null)
+  }, [teardownMediaByTarget])
 
   const resetPovSession = useCallback(() => {
     if (document.pointerLockElement) {
@@ -423,6 +536,7 @@ function CollabPage() {
           if (cfg.autoplayIntervalSeconds != null) setAutoplayIntervalSeconds(cfg.autoplayIntervalSeconds)
           if (cfg.cameraFlyDurationSeconds != null) setCameraFlyDurationSeconds(cfg.cameraFlyDurationSeconds)
           if (cfg.versionStatus != null) setVersionStatus(cfg.versionStatus)
+          if (cfg.ledTargetMap && typeof cfg.ledTargetMap === 'object') setLedTargetMap(cfg.ledTargetMap)
           setPovColliderConfig(cfg.povColliderConfig ?? { overrides: {} })
         }
       } catch {
@@ -483,46 +597,115 @@ function CollabPage() {
     const id   = Date.now()
     const name = isImg ? `Image ${clipCountRef.current}` : `Clip ${clipCountRef.current}`
     setVideoPlaylist(prev => [...prev, { id, name, url, type: isImg ? 'image' : 'video', file: processedFile }])
+    teardownMediaByTarget()
+    setAssignedClipByTarget({})
     if (isImg) {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+      activeVideosRef.current = []
       setVideoElement(null); setActiveImageUrl(url)
       setActiveVideoId(id); setVideoLoaded(true); setIsPlaying(false)
     } else {
       setActiveImageUrl(null); activateVideo(id, url)
     }
-  }, [activateVideo, validateMediaFile])
+  }, [activateVideo, validateMediaFile, teardownMediaByTarget])
+
+  // Build one local multi-mapled clip per confirmed group: transcode + blob each
+  // assigned file, bundle as sources, add to the playlist, and play it synced.
+  const handleUploadMapledGroups = useCallback(async (groups) => {
+    setMapledAssignment(null)
+    for (const group of groups) {
+      const valid = group.assignments.filter(a => a.targetId && a.file)
+      if (!valid.length) continue
+      const sources = []
+      for (const a of valid) {
+        const isImg = a.file.type.startsWith('image/')
+        let processed = a.file
+        if (!isImg) {
+          setTranscodeStatus('Loading converter…')
+          try {
+            processed = await transcodeToHalfRes(a.file, {
+              onStatus: (msg) => setTranscodeStatus(`[${a.targetLabel}] ${msg}`),
+              onProgress: (pct) => setTranscodeStatus(`[${a.targetLabel}] Converting… ${pct}%`),
+            })
+          } finally { setTranscodeStatus(null) }
+        }
+        const url = URL.createObjectURL(processed)
+        localBlobUrlsRef.current.push(url)
+        sources.push({ targetId: a.targetId, targetLabel: a.targetLabel, url, type: isImg ? 'image' : 'video' })
+      }
+      clipCountRef.current += 1
+      const clip = buildMultiMapledClip({ name: group.clipName || `Visual ${clipCountRef.current}`, index: clipCountRef.current, sources })
+      setVideoPlaylist(prev => [...prev, clip])
+      setActiveVideoId(clip.id)
+      setAssignedClipByTarget({})
+      applyMapledSources(sources.map(s => ({ targetId: s.targetId, url: s.url, type: s.type })), { synced: true })
+    }
+  }, [applyMapledSources])
+
+  // File picker entry point: route a multi-file selection that bundles by suffix
+  // (_M / _S …) on a multi-mapled stage to the assign modal; otherwise upload
+  // each file as a normal single clip.
+  const handleClipFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []).filter(validateMediaFile)
+    if (!files.length) return
+    if (stageIsMultiMapled && files.length > 1) {
+      const { isMultiMapled, groups } = groupFilesIntoMapledClips(files, ledTargets)
+      if (isMultiMapled) { setMapledAssignment({ groups }); return }
+    }
+    for (const f of files) { await handleVideoUpload(f) }
+  }, [stageIsMultiMapled, ledTargets, validateMediaFile, handleVideoUpload])
 
   const handleActivateVideo = useCallback((clip) => {
-    if (clip.type === 'image') {
+    setAssignedClipByTarget({})  // leaving manual per-map assign mode
+    if (isMultiMapledClip(clip)) {
+      setActiveVideoId(clip.id)
+      const sources = getClipSources(clip).map(s => ({ targetId: s.targetId, url: s.url, type: s.type }))
+      applyMapledSources(sources, { synced: true })
+      return
+    }
+    teardownMediaByTarget()
+    if (getClipMediaType(clip) === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
+      activeVideosRef.current = []
       setVideoElement(null); setActiveImageUrl(clip.url)
       setActiveVideoId(clip.id); setVideoLoaded(true); setIsPlaying(false)
     } else {
       setActiveImageUrl(null); activateVideo(clip.id, clip.url)
     }
-  }, [activateVideo])
+  }, [activateVideo, applyMapledSources, teardownMediaByTarget])
 
   const handleClearPlaylist = useCallback(() => {
+    teardownMediaByTarget()
+    setAssignedClipByTarget({})
     if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
     setVideoPlaylist(prev => {
+      // Revoke every blob a clip owns (single url + multi-mapled source urls),
+      // but leave non-clip blobs (e.g. the custom HDRI) in localBlobUrlsRef.
+      const urls = []
       prev.forEach(c => {
-        if (localBlobUrlsRef.current.includes(c.url)) {
-          try { URL.revokeObjectURL(c.url) } catch (_) {}
-        }
+        if (c.url) urls.push(c.url)
+        getClipSources(c).forEach(s => urls.push(s.url))
       })
+      urls.forEach(u => {
+        if (localBlobUrlsRef.current.includes(u)) { try { URL.revokeObjectURL(u) } catch (_) {} }
+      })
+      localBlobUrlsRef.current = localBlobUrlsRef.current.filter(u => !urls.includes(u))
       return []
     })
     setVideoElement(null); setActiveImageUrl(null)
     setVideoLoaded(false); setActiveVideoId(null); setIsPlaying(false)
     clipCountRef.current = 0
-    localBlobUrlsRef.current = []
-  }, [])
+  }, [teardownMediaByTarget])
 
-  const handlePlay       = useCallback(() => { videoRef.current?.play().catch(() => {}); setIsPlaying(true)  }, [])
-  const handlePause      = useCallback(() => { videoRef.current?.pause(); setIsPlaying(false) }, [])
+  const transportVideos = useCallback(
+    () => (activeVideosRef.current.length ? activeVideosRef.current : (videoRef.current ? [videoRef.current] : [])),
+    [],
+  )
+  const handlePlay       = useCallback(() => { transportVideos().forEach(v => v?.play().catch(() => {})); setIsPlaying(true)  }, [transportVideos])
+  const handlePause      = useCallback(() => { transportVideos().forEach(v => v?.pause()); setIsPlaying(false) }, [transportVideos])
   const handleToggleLoop = useCallback(() => {
-    if (videoRef.current) { videoRef.current.loop = !videoRef.current.loop; setIsLooping(videoRef.current.loop) }
-  }, [])
+    setIsLooping(prev => { const next = !prev; transportVideos().forEach(v => { if (v) v.loop = next }); return next })
+  }, [transportVideos])
 
   // ── Custom HDRI — local preview only, blob URL ──
   const handleCustomHdriUpload = useCallback((file) => {
@@ -782,11 +965,22 @@ function CollabPage() {
         status={status}
       />
 
+      {mapledAssignment && (
+        <MapledAssignModal
+          groups={mapledAssignment.groups}
+          targets={ledTargets}
+          onCancel={() => setMapledAssignment(null)}
+          onConfirm={handleUploadMapledGroups}
+        />
+      )}
+
       <StageCanvas
         modelUrl={modelUrl}
         loadingManager={modelUrl ? loadingManager : null}
         videoElement={videoElement}
         activeImageUrl={activeImageUrl}
+        mediaByTarget={mediaByTarget}
+        ledTargetMap={ledTargetMap}
         onLedMaterialStatus={setLedMaterialFound}
         sunPosition={sunPosition}
         sunIntensity={sunIntensity}
@@ -820,6 +1014,7 @@ function CollabPage() {
         <CollabPanel
           // ── Media ────────────────────────────────────────────────────────
           onVideoUpload={handleVideoUpload}
+          onClipFilesSelected={handleClipFiles}
           transcodeStatus={transcodeStatus}
           videoLoaded={videoLoaded}
           ledMaterialFound={ledMaterialFound}
@@ -827,6 +1022,12 @@ function CollabPage() {
           activeVideoId={activeVideoId}
           onActivateVideo={handleActivateVideo}
           onClearPlaylist={handleClearPlaylist}
+          // ── Multi-mapled (2+ LED maps) ───────────────────────────────────
+          ledTargets={ledTargets}
+          stageIsMultiMapled={stageIsMultiMapled}
+          assignedClipByTarget={assignedClipByTarget}
+          onAssignClipToTarget={assignClipToTarget}
+          onResetMaps={handleResetMaps}
           isPlaying={isPlaying}
           isLooping={isLooping}
           onPlay={handlePlay}

@@ -72,10 +72,14 @@ function Toggle({ label, hint, active, onToggle }) {
 function CollabPanel({
   // ── Media ──────────────────────────────────────────────────────────────────
   onVideoUpload,
+  onClipFilesSelected,
   transcodeStatus,
   videoLoaded,
   videoPlaylist, activeVideoId, onActivateVideo, onClearPlaylist,
   isPlaying, isLooping, onPlay, onPause, onToggleLoop,
+  // ── Multi-mapled (2+ LED maps) ───────────────────────────────────────────────
+  ledTargets = [], stageIsMultiMapled = false,
+  assignedClipByTarget = {}, onAssignClipToTarget, onResetMaps,
   // ── LOCAL Virtual Camera (OBS/NDI - local-only, no sync) ───────────────────
   availableCameras, selectedCameraId, onCameraSelect,
   isLocalCameraActive, onStartLocalCamera, onStopLocalCamera,
@@ -230,39 +234,105 @@ function CollabPanel({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept=".mp4,.webm,.mov,.mkv,.avi,.hevc,.m4v,.ts,.wmv,.flv,.webp,.png,.jpg,.jpeg,.gif"
                 className="hidden"
-                onChange={e => { onVideoUpload(e.target.files?.[0]); e.target.value = '' }}
+                onChange={e => {
+                  const files = e.target.files
+                  if (onClipFilesSelected) onClipFilesSelected(files)
+                  else onVideoUpload(files?.[0])
+                  e.target.value = ''
+                }}
               />
               <p className="text-[10px] text-white/25 text-center mt-1.5 leading-snug">
                 Local only — files disappear when you close this tab.
               </p>
+              {stageIsMultiMapled && (
+                <p className="text-[10px] text-cyan-300/40 text-center mt-1 leading-snug">
+                  This stage has {ledTargets.length} LED maps — select files together named
+                  <span className="text-cyan-300/70"> _M</span> /<span className="text-cyan-300/70"> _S</span> to drive each map in sync.
+                </p>
+              )}
 
               {videoPlaylist.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {videoPlaylist.map(clip => (
-                    <button
-                      key={clip.id}
-                      onClick={() => onActivateVideo(clip)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
-                        clip.id === activeVideoId
-                          ? 'bg-cyan-500/15 border border-cyan-500/25 text-white/90'
-                          : 'bg-white/5 border border-transparent hover:bg-white/8 text-white/50 hover:text-white/70'
-                      }`}
-                    >
-                      <span className="flex-1 truncate">{clip.name}</span>
-                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
-                        {clip.file && (
-                          <span className="text-[8px] font-bold tracking-widest bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded px-1 py-0.5 uppercase">
-                            Local
+                  {videoPlaylist.map(clip => {
+                    const isMulti = clip.playbackMode === 'multi-mapled' && Array.isArray(clip.sources)
+                    return (
+                      <div
+                        key={clip.id}
+                        className={`rounded-lg border transition-all ${
+                          clip.id === activeVideoId
+                            ? 'bg-cyan-500/15 border-cyan-500/25'
+                            : 'bg-white/5 border-transparent hover:bg-white/8'
+                        }`}
+                      >
+                        <button
+                          onClick={() => onActivateVideo(clip)}
+                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-all ${
+                            clip.id === activeVideoId ? 'text-white/90' : 'text-white/50 hover:text-white/70'
+                          }`}
+                        >
+                          <span className="flex-1 truncate">{clip.name}</span>
+                          <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                            {isMulti && (
+                              <span className="text-[8px] font-bold tracking-widest bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 rounded px-1 py-0.5 uppercase">
+                                {clip.sources.length} LED maps
+                              </span>
+                            )}
+                            <span className="text-[8px] font-bold tracking-widest bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded px-1 py-0.5 uppercase">
+                              Local
+                            </span>
+                            {clip.id === activeVideoId && (
+                              <span className="text-[9px] text-cyan-400 uppercase">Active</span>
+                            )}
                           </span>
+                        </button>
+                        {/* Extra: assign a single clip straight onto one LED map */}
+                        {stageIsMultiMapled && !isMulti && onAssignClipToTarget && (
+                          <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
+                            <span className="text-[9px] text-white/25 self-center mr-0.5">→</span>
+                            {ledTargets.map(t => {
+                              const on = assignedClipByTarget[t.targetId]?.id === clip.id
+                              return (
+                                <button
+                                  key={t.targetId}
+                                  onClick={() => onAssignClipToTarget(clip, t.targetId)}
+                                  className={`text-[9px] uppercase tracking-wide rounded px-1.5 py-0.5 border transition-all ${
+                                    on
+                                      ? 'bg-cyan-500/25 border-cyan-500/40 text-cyan-200'
+                                      : 'bg-white/5 border-white/10 text-white/40 hover:text-cyan-300 hover:border-cyan-500/30'
+                                  }`}
+                                  title={`Show this clip on ${t.label}`}
+                                >
+                                  {t.label}
+                                </button>
+                              )
+                            })}
+                          </div>
                         )}
-                        {clip.id === activeVideoId && (
-                          <span className="text-[9px] text-cyan-400 uppercase">Active</span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
+                      </div>
+                    )
+                  })}
+
+                  {/* Live per-map assignment summary + reset */}
+                  {stageIsMultiMapled && Object.keys(assignedClipByTarget).length > 0 && (
+                    <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/8 border border-cyan-500/15 space-y-0.5">
+                      {ledTargets.map(t => (
+                        <div key={t.targetId} className="flex items-center gap-2 text-[9px]">
+                          <span className="text-cyan-300/60 uppercase tracking-wide w-16 flex-shrink-0 truncate">{t.label}</span>
+                          <span className="text-white/50 truncate">{assignedClipByTarget[t.targetId]?.name || '— empty —'}</span>
+                        </div>
+                      ))}
+                      <button
+                        onClick={onResetMaps}
+                        className="w-full mt-1 py-1 rounded border border-white/10 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/70 text-[9px] uppercase tracking-wide transition-all"
+                      >
+                        Reset maps
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     onClick={onClearPlaylist}
                     className="w-full py-1.5 mt-1 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400/60 hover:text-red-400 text-[11px] transition-all"
