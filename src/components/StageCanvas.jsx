@@ -65,61 +65,6 @@ function GlDomElementBridge({ targetRef }) {
   return null
 }
 
-
-// ── Perf HUD — measures the real bottleneck (gated behind ?perf=1) ────────────
-// Reads the live WebGLRenderer.info each ~0.5s: FPS plus draw calls / triangles
-// (geometry & draw-call bound) vs textures / programs / render targets (fragment
-// & memory bound). Lets us fix the actual cost instead of guessing.
-function shouldShowPerfHud() {
-  if (typeof window === 'undefined') return false
-  try {
-    return new URLSearchParams(window.location.search).has('perf') ||
-      window.localStorage?.getItem('stageviz:perf') === '1'
-  } catch {
-    return false
-  }
-}
-
-// Perf bisect toggles — disable one expensive render feature at a time via the
-// URL (e.g. ?perf=1&perfNoLogDepth=1) to find the real bottleneck. Each defaults
-// OFF (feature stays enabled). Read once at mount; changing requires a reload
-// because some flags configure the WebGL context at Canvas creation.
-function perfFlag(name) {
-  if (typeof window === 'undefined') return false
-  try {
-    return new URLSearchParams(window.location.search).get(name) === '1'
-  } catch {
-    return false
-  }
-}
-
-function PerfHud({ onSample }) {
-  const gl = useThree((s) => s.gl)
-  const frames = useRef(0)
-  const acc = useRef(0)
-  useFrame((_, delta) => {
-    frames.current += 1
-    acc.current += delta
-    if (acc.current >= 0.5) {
-      const info = gl.info
-      onSample({
-        fps: Math.round(frames.current / acc.current),
-        calls: info.render?.calls ?? 0,
-        triangles: info.render?.triangles ?? 0,
-        geometries: info.memory?.geometries ?? 0,
-        textures: info.memory?.textures ?? 0,
-        programs: info.programs?.length ?? 0,
-        dpr: Math.round((gl.getPixelRatio?.() ?? 1) * 100) / 100,
-        drawW: gl.domElement?.width ?? 0,
-        drawH: gl.domElement?.height ?? 0,
-      })
-      frames.current = 0
-      acc.current = 0
-    }
-  })
-  return null
-}
-
 // ── Reflective floor with MeshReflectorMaterial ───────────────────────────────
 function ReflectiveFloor() {
   return (
@@ -646,42 +591,6 @@ function StageCanvas({
   const presetRef = cameraTargetPresetRef ?? internalPresetRef
   const [contextLost, setContextLost] = useState(false)
   const [modelMetrics, setModelMetrics] = useState(null)
-  const showPerfHud = useMemo(() => shouldShowPerfHud(), [])
-  const [perfStats, setPerfStats] = useState(null)
-  // Browser-level rAF FPS, independent of the three.js render loop. Decisive
-  // CPU-vs-GPU split: if this also tanks, the main thread is blocked (CPU/JS);
-  // if it stays ~60 while three.js FPS is low, the cost is in render/driver.
-  const [pageFps, setPageFps] = useState(null)
-  useEffect(() => {
-    if (!showPerfHud || typeof requestAnimationFrame === 'undefined') return
-    let raf = 0
-    let frames = 0
-    let acc = 0
-    let prev = performance.now()
-    const tick = (now) => {
-      frames += 1
-      acc += now - prev
-      prev = now
-      if (acc >= 500) {
-        setPageFps(Math.round((frames * 1000) / acc))
-        frames = 0
-        acc = 0
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [showPerfHud])
-  // Perf bisect toggles (read once; see perfFlag)
-  const perf = useMemo(() => ({
-    noLogDepth: perfFlag('perfNoLogDepth'),
-    noPreserveBuffer: perfFlag('perfNoPreserveBuffer'),
-    noShadows: perfFlag('perfNoShadows'),
-    noBloom: perfFlag('perfNoBloom'),
-    noLedLights: perfFlag('perfNoLedLights'),
-    noEnv: perfFlag('perfNoEnv'),
-    noContactShadows: perfFlag('perfNoContactShadows'),
-  }), [])
   const [povEvalAllowed, setPovEvalAllowed] = useState(null)
   const handleModelMetrics = useCallback(
     (m) => {
@@ -791,12 +700,12 @@ function StageCanvas({
         gl={{
           antialias:             true,
           alpha:                 false,
-          logarithmicDepthBuffer: !perf.noLogDepth,
-          preserveDrawingBuffer: !perf.noPreserveBuffer,
+          logarithmicDepthBuffer: true,
+          preserveDrawingBuffer: true,
           toneMapping:           THREE.ACESFilmicToneMapping,
           toneMappingExposure:   0.62,
         }}
-        shadows={!perf.noShadows}
+        shadows
       >
         <WebGLContextLossHandler
           onContextLost={handleContextLost}
@@ -815,14 +724,14 @@ function StageCanvas({
             customHdriUrl  → LiteHdriEnvironment (url_low only, no rotation)
             hdriPreset     → drei <Environment preset> (backward compat, small 1K files) */}
         <>
-          {!perf.noEnv && !hasEnv && (
+          {!hasEnv && (
             <LocalStudioEnvironment
               intensity={resolvedEnvInt}
               background={resolvedShowBg}
               bgBlur={resolvedBgBlur}
             />
           )}
-          {!perf.noEnv && hasEnv && (
+          {hasEnv && (
           <>
             {customHdriUrl ? (
               <LiteHdriEnvironment
@@ -887,17 +796,15 @@ function StageCanvas({
 
         {/* Reflective helper floor is only useful before a real stage model exists. */}
         {!modelLoaded && <ReflectiveFloor />}
-        {!perf.noContactShadows && (
-          <ContactShadows
-            position={[0, -0.055, 0]}
-            opacity={0.38}
-            scale={90}
-            blur={1.8}
-            far={40}
-            resolution={512}
-            frames={1}
-          />
-        )}
+        <ContactShadows
+          position={[0, -0.055, 0]}
+          opacity={0.38}
+          scale={90}
+          blur={1.8}
+          far={40}
+          resolution={512}
+          frames={1}
+        />
 
         {/* Infinite grid */}
         <Grid
@@ -911,7 +818,6 @@ function StageCanvas({
           sectionColor="#666666"
         />
 
-        {showPerfHud && <PerfHud onSample={setPerfStats} />}
         {loadingManager && <FirstFrameReporter loadingManager={loadingManager} />}
         <Suspense fallback={null}>
           {modelUrl && (
@@ -930,7 +836,7 @@ function StageCanvas({
               onImageTextureLoaded={onImageTextureLoaded}
               onModelMetrics={handleModelMetrics}
               onMeshScan={onMeshScanChange}
-              disableLedLights={perf.noLedLights}
+              disableLedLights={false}
             />
           )}
         </Suspense>
@@ -986,36 +892,15 @@ function StageCanvas({
 
         {/* Bloom only. HDRI background blur is handled by Environment; a full-scene
             DoF depth pass is unstable with transparent/coplanar GLB LED surfaces. */}
-        {!perf.noBloom && (
-          <EffectComposer>
-            <Bloom
-              luminanceThreshold={resolvedThreshold}
-              luminanceSmoothing={0.9}
-              intensity={resolvedBloom}
-            />
-          </EffectComposer>
-        )}
+        <EffectComposer>
+          <Bloom
+            luminanceThreshold={resolvedThreshold}
+            luminanceSmoothing={0.9}
+            intensity={resolvedBloom}
+          />
+        </EffectComposer>
       </Canvas>
       </StageErrorBoundary>
-
-      {showPerfHud && perfStats && (
-        <div
-          className="absolute top-2 left-2 z-50 rounded-md px-3 py-2 text-[11px] leading-tight font-mono pointer-events-none"
-          style={{
-            background: 'rgba(8,6,4,0.82)',
-            color: perfStats.fps >= 50 ? '#2BC782' : perfStats.fps >= 30 ? '#E89518' : '#FF5F1F',
-            border: '1px solid rgba(220,100,30,0.32)',
-            whiteSpace: 'pre',
-          }}
-        >
-          {`FPS ${perfStats.fps}   page ${pageFps ?? '—'}\n`}
-          <span style={{ color: '#C8B8A8' }}>
-            {`calls ${perfStats.calls}  tris ${perfStats.triangles.toLocaleString()}\n`}
-            {`geos ${perfStats.geometries}  texs ${perfStats.textures}  progs ${perfStats.programs}\n`}
-            {`dpr ${perfStats.dpr}  buf ${perfStats.drawW}×${perfStats.drawH}`}
-          </span>
-        </div>
-      )}
 
       {children}
     </div>

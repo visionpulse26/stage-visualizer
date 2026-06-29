@@ -1,28 +1,36 @@
 # media-stream Worker — signed, Range-capable streaming proxy for R2 video.
-# Deploy: cd workers/media-stream && wrangler deploy
-# Secret:  wrangler secret put MEDIA_STREAM_SECRET   (must equal Vercel's value)
 #
-# Bind this Worker to the custom domain that serves media (e.g.
-# media.stage.tooawake.mov) via a route, OR put it behind a Custom Domain in the
-# Cloudflare dashboard. VITE_MEDIA_STREAM_BASE in the app must point at it.
+# Deploy (from this folder):
+#   wrangler login                              # one-time, opens browser
+#   wrangler secret put MEDIA_STREAM_SECRET     # paste the shared secret
+#   wrangler deploy                             # → prints the workers.dev URL
+#
+# Fastest path: deploy to *.workers.dev (no DNS needed). The Worker reads R2 via
+# the binding below, so it streams regardless of domain. Point the app at the
+# printed URL via VITE_MEDIA_STREAM_BASE. Move to a custom domain later for the
+# CDN cache tier (see the commented [[routes]] block at the bottom).
 
 name = "media-stream"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
+account_id = "cd3d4b82a0e0ae58478a93a8743085fc"
+workers_dev = true
 
-# The public media bucket (same bucket R2_PUBLIC_BASE_URL / get-upload-url write to).
+# The bucket get-upload-url.js / R2_PUBLIC_BASE_URL already write media to.
 [[r2_buckets]]
 binding = "MEDIA"
-bucket_name = "stage-visualizer-media"        # ← set to the real R2 bucket name
+bucket_name = "stage-visualizer-assets"
 
 [vars]
 # CORS allow-list for <video crossOrigin="anonymous"> — comma-separated origins.
-ALLOWED_ORIGINS = "https://stage.tooawake.mov,http://localhost:5173"
-
-# Route the Worker on the media subdomain. Replace zone_name with the real zone.
-# (Alternatively configure a Custom Domain in the dashboard and delete this.)
-[[routes]]
-pattern = "media.stage.tooawake.mov/v/*"
-zone_name = "tooawake.mov"
+ALLOWED_ORIGINS = "https://stage.tooawake.mov,http://localhost:5173,http://localhost:3000"
 
 # MEDIA_STREAM_SECRET is a secret — set via `wrangler secret put`, never here.
+
+# ── Later: custom domain (better caching) ────────────────────────────────────
+# Requires the zone (e.g. tooawake.mov) to be on Cloudflare. Then bind a Custom
+# Domain in the dashboard (Workers → media-stream → Settings → Domains & Routes),
+# or uncomment and `wrangler deploy`:
+# [[routes]]
+# pattern = "media.stage.tooawake.mov/v/*"
+# zone_name = "tooawake.mov"
