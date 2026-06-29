@@ -310,6 +310,19 @@ function CollabPage() {
     setMediaByTarget(null)
   }, [])
 
+  // Scene's single-image path (activeImageUrl) revokes its blob URL after the
+  // GPU upload (IP protection / free RAM), so a clip's stored `url` can be dead
+  // by the time it's reused (re-activated, or dropped onto an LED map). Mint a
+  // fresh object URL from the File we keep on every local clip.
+  const freshClipUrl = useCallback((clip) => {
+    if (clip?.file) {
+      const url = URL.createObjectURL(clip.file)
+      localBlobUrlsRef.current.push(url)
+      return url
+    }
+    return clip?.url
+  }, [])
+
   const applyMapledSources = useCallback((sources, { synced }) => {
     // Replace any prior single/multi playback.
     teardownMediaByTarget()
@@ -367,7 +380,7 @@ function CollabPage() {
     if (!entries.length) return
     const sources = entries.map(([targetId, c]) => ({
       targetId,
-      url: c.url,
+      url: freshClipUrl(c),
       type: getClipMediaType(c) === 'image' ? 'image' : 'video',
     }))
     applyMapledSources(sources, { synced: false })
@@ -667,12 +680,12 @@ function CollabPage() {
     if (getClipMediaType(clip) === 'image') {
       if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current = null }
       activeVideosRef.current = []
-      setVideoElement(null); setActiveImageUrl(clip.url)
+      setVideoElement(null); setActiveImageUrl(freshClipUrl(clip))
       setActiveVideoId(clip.id); setVideoLoaded(true); setIsPlaying(false)
     } else {
-      setActiveImageUrl(null); activateVideo(clip.id, clip.url)
+      setActiveImageUrl(null); activateVideo(clip.id, freshClipUrl(clip))
     }
-  }, [activateVideo, applyMapledSources, teardownMediaByTarget])
+  }, [activateVideo, applyMapledSources, teardownMediaByTarget, freshClipUrl])
 
   const handleClearPlaylist = useCallback(() => {
     teardownMediaByTarget()
