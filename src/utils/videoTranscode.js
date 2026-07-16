@@ -6,6 +6,13 @@ let ffmpegLoading = null
 const MP4_METADATA_SCAN_BYTES = 8 * 1024 * 1024
 
 export const VIDEO_TRANSCODE_BITRATE_THRESHOLD_BPS = 50_000_000
+// Hardware h264 decoders (NVDEC, most mobile SoCs) cap at 4096×4096; larger
+// frames decode to black in Chrome even though metadata/duration load fine.
+export const MAX_BROWSER_SAFE_VIDEO_DIM = 4096
+// AVCProfileIndication values browsers can decode: ≤100 (Baseline/Main/High
+// 8-bit 4:2:0). 110 = High 10, 122 = High 4:2:2, 244 = High 4:4:4 — all
+// undecodable in <video> (black frames) despite carrying the `avc1` tag.
+export const MAX_BROWSER_SAFE_H264_PROFILE = 100
 
 async function getFFmpeg() {
   if (ffmpegInstance) return ffmpegInstance
@@ -53,17 +60,31 @@ export function detectMp4VideoCodecFromBytes(bytes) {
   return 'unknown'
 }
 
-async function detectMp4VideoCodec(file) {
-  if (!file?.slice || !file?.size) return 'unknown'
+// AVCProfileIndication from the avcC decoder-config box: content layout is
+// configurationVersion(+4), AVCProfileIndication(+5). 0 = box not found.
+export function detectH264ProfileFromBytes(bytes) {
+  if (!bytes) return 0
+  const idx = indexOfAscii(bytes, 'avcC')
+  if (idx < 0 || idx + 5 >= bytes.length) return 0
+  return bytes[idx + 5]
+}
+
+async function scanMp4Metadata(file) {
+  if (!file?.slice || !file?.size) return { codec: 'unknown', h264Profile: 0 }
 
   const head = new Uint8Array(await file.slice(0, Math.min(file.size, MP4_METADATA_SCAN_BYTES)).arrayBuffer())
   let codec = detectMp4VideoCodecFromBytes(head)
-  if (codec !== 'unknown' || file.size <= MP4_METADATA_SCAN_BYTES) return codec
+  let h264Profile = detectH264ProfileFromBytes(head)
+  if ((codec !== 'unknown' && h264Profile > 0) || file.size <= MP4_METADATA_SCAN_BYTES) {
+    return { codec, h264Profile }
+  }
 
+  // moov (and avcC inside it) may live at the tail of a non-faststart mp4.
   const tailStart = Math.max(0, file.size - MP4_METADATA_SCAN_BYTES)
   const tail = new Uint8Array(await file.slice(tailStart, file.size).arrayBuffer())
-  codec = detectMp4VideoCodecFromBytes(tail)
-  return codec
+  if (codec === 'unknown') codec = detectMp4VideoCodecFromBytes(tail)
+  if (h264Profile === 0) h264Profile = detectH264ProfileFromBytes(tail)
+  return { codec, h264Profile }
 }
 
 function canUseObjectUrlMetadataProbe() {
@@ -74,7 +95,7 @@ function canUseObjectUrlMetadataProbe() {
 
 function loadVideoElementMetadata(file, timeoutMs = 5000) {
   if (!canUseObjectUrlMetadataProbe()) {
-    return Promise.resolve({ canLoadInBrowser: false, durationSeconds: 0 })
+    return Promise.resolve({ canLoadInBrowser: false, durationSeconds: 0, videoWidth: 0, videoHeight: 0 })
   }
 
   return new Promise((resolve) => {
@@ -95,17 +116,22 @@ function loadVideoElementMetadata(file, timeoutMs = 5000) {
       resolve(result)
     }
     const timer = setTimeout(() => {
-      finish({ canLoadInBrowser: false, durationSeconds: 0 })
+      finish({ canLoadInBrowser: false, durationSeconds: 0, videoWidth: 0, videoHeight: 0 })
     }, timeoutMs)
 
     video.preload = 'metadata'
     video.muted = true
     video.onloadedmetadata = () => {
       const durationSeconds = Number.isFinite(video.duration) ? video.duration : 0
-      finish({ canLoadInBrowser: true, durationSeconds })
+      finish({
+        canLoadInBrowser: true,
+        durationSeconds,
+        videoWidth: video.videoWidth || 0,
+        videoHeight: video.videoHeight || 0,
+      })
     }
     video.onerror = () => {
-      finish({ canLoadInBrowser: false, durationSeconds: 0 })
+      finish({ canLoadInBrowser: false, durationSeconds: 0, videoWidth: 0, videoHeight: 0 })
     }
     video.src = url
     video.load()
@@ -116,8 +142,16 @@ export function shouldTranscodeByMetadata({
   codec,
   canLoadInBrowser = false,
   bitrateBps = 0,
+  h264Profile = 0,
+  videoWidth = 0,
+  videoHeight = 0,
 } = {}) {
-  if (codec === 'h264') return false
+  if (codec === 'h264') {
+    // avc1 tag alone doesn't mean the browser can decode it.
+    if (h264Profile > MAX_BROWSER_SAFE_H264_PROFILE) return true       // High 10 / 4:2:2 / 4:4:4
+    if (!canLoadInBrowser) return true
+    return Math.max(videoWidth, videoHeight) > MAX_BROWSER_SAFE_VIDEO_DIM // hw decoders cap at 4096
+  }
   if (codec === 'h265') {
     if (!canLoadInBrowser) return true
     return !Number.isFinite(bitrateBps) || bitrateBps > VIDEO_TRANSCODE_BITRATE_THRESHOLD_BPS
@@ -139,9 +173,11 @@ export async function shouldTranscodeVideo(file) {
   if (!isVideoLike(file)) return false
   if (!isMp4Like(file)) return true
 
-  const codec = await detectMp4VideoCodec(file)
-  if (codec === 'h264') return false
-  if (codec !== 'h265') return true
+  const { codec, h264Profile } = await scanMp4Metadata(file)
+  if (codec !== 'h264' && codec !== 'h265') return true
+  // Unsupported h264 flavor — no need to probe the video element, it would
+  // load metadata fine (container parses) while frames stay black.
+  if (codec === 'h264' && h264Profile > MAX_BROWSER_SAFE_H264_PROFILE) return true
 
   const metadata = await loadVideoElementMetadata(file)
   const bitrateBps = metadata.durationSeconds > 0
@@ -152,6 +188,9 @@ export async function shouldTranscodeVideo(file) {
     codec,
     canLoadInBrowser: metadata.canLoadInBrowser,
     bitrateBps,
+    h264Profile,
+    videoWidth: metadata.videoWidth,
+    videoHeight: metadata.videoHeight,
   })
 }
 
