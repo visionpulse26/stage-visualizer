@@ -1778,7 +1778,13 @@ export default function PresentationEditorPage() {
         if (activationSeq !== activationSeqRef.current) return
       }
 
-      if (!videoRef.current) videoRef.current = document.createElement('video')
+      if (!videoRef.current) {
+        videoRef.current = document.createElement('video')
+        // Without this, streamed (cross-origin Worker) video still plays but
+        // taints the WebGL canvas — VideoTexture uploads are rejected and every
+        // LED map renders black. Blob URLs are unaffected either way.
+        videoRef.current.crossOrigin = 'anonymous'
+      }
       const vid = videoRef.current
       vid.pause()
       vid.src = url

@@ -114,3 +114,11 @@ test('reordering slides persists the new order into media_playlist', () => {
   assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(reorderedClips\)/)
   assert.match(page, /if \(reordered\) persistPlaylistOrder\(reordered\)/)
 })
+
+test('editor playback video element is CORS-clean for streamed sources', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  // Streamed video comes from the cross-origin media Worker; without
+  // crossOrigin the video plays but taints WebGL -> LED maps render black.
+  assert.match(page, /videoRef\.current = document\.createElement\('video'\)[\s\S]{0,400}videoRef\.current\.crossOrigin = 'anonymous'/)
+})
