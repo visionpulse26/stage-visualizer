@@ -182,10 +182,14 @@ export async function transcodeToHalfRes(file, { onProgress, onStatus } = {}) {
   onStatus?.('Converting…')
   await ff.exec([
     '-i', inputName,
-    '-vf', 'scale=iw/2:ih/2',   // half width × half height
+    // Half size, forced to EVEN dimensions (libx264 rejects odd width/height).
+    '-vf', 'scale=trunc(iw/4)*2:trunc(ih/4)*2',
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-crf', '28',                // quality ~good enough for LED preview
+    // 8-bit 4:2:0 — without this, 10-bit/4:2:2 sources (ProRes, HEVC) produce
+    // High 10 / High 4:2:2 h264 that browsers cannot decode (black frames).
+    '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', '128k',
     '-movflags', '+faststart',

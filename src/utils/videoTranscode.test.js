@@ -44,6 +44,10 @@ test('transcode command uses a faster h264 preset while preserving audio', () =>
 
   assert.match(source, /'-preset', 'veryfast'/)
   assert.match(source, /'-crf', '28'/)
+  // Browser-decodable output: 8-bit 4:2:0 (10-bit/4:2:2 sources otherwise
+  // yield High 10 / High 4:2:2 h264 → black frames) + even dimensions.
+  assert.match(source, /'-pix_fmt', 'yuv420p'/)
+  assert.match(source, /scale=trunc\(iw\/4\)\*2:trunc\(ih\/4\)\*2/)
   assert.match(source, /'-c:a', 'aac'/)
   assert.doesNotMatch(source, /'-an'/)
 })
