@@ -426,8 +426,11 @@ function WelcomeBackState({ guest, onConfirm, onNotMe, loading, logoSrc }) {
  * @param {function} [props.onConfirmed] — callback mode: called when gate passes, renders nothing.
  *   Use this when you need an early-return pattern (e.g. ClientPage).
  *   If omitted, renders children when confirmed (wrapper mode).
+ * @param {function} [props.onDismiss] — if provided, shows a close control (X button,
+ *   backdrop click, Escape key) so the gate can be opened on-demand (e.g. only when
+ *   a viewer tries to leave feedback) instead of blocking the whole page.
  */
-export default function GuestGate({ presentationId, isAdmin = false, logoSrc, onConfirmed, children }) {
+export default function GuestGate({ presentationId, isAdmin = false, logoSrc, onConfirmed, onDismiss, children }) {
   // 'checking' | 'gate' | 'welcome-back' | 'confirmed'
   const [phase, setPhase] = useState('checking')
   // 'signup' | 'login' — controls the gate form layout
@@ -442,6 +445,14 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
       onConfirmed(pendingGuest || getStoredGuest(presentationId))
     }
   }, [phase, onConfirmed, pendingGuest, presentationId])
+
+  // ── Dismiss on Escape (only when the gate is closable) ────────────────────
+  useEffect(() => {
+    if (!onDismiss) return undefined
+    const onKeyDown = (e) => { if (e.key === 'Escape') onDismiss() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onDismiss])
 
   // ── Mount: check localStorage fast-pass ──────────────────────────────────
   useEffect(() => {
@@ -573,11 +584,31 @@ export default function GuestGate({ presentationId, isAdmin = false, logoSrc, on
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+      onClick={(e) => { if (onDismiss && e.target === e.currentTarget) onDismiss() }}
+    >
       <GateBackground />
+
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Close"
+          style={{
+            position: 'absolute', top: 20, right: 20, zIndex: 20,
+            width: 36, height: 36, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            color: '#fff', fontSize: 20, lineHeight: 1,
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >×</button>
+      )}
 
       {phase === 'gate' && (
         <GateModal>

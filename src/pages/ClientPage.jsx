@@ -115,14 +115,50 @@ function ClientPage() {
   useSecurityLockdown()
 
   // ── Guest identity gate ───────────────────────────────────────────────────
-  const [isAdmin,        setIsAdmin]        = useState(false)
-  const [gateConfirmed,  setGateConfirmed]  = useState(false)
-  const [guestIdentity,  setGuestIdentity]  = useState(null)
+  // The gate no longer blocks viewing — anyone with the link can watch the
+  // stage right away. It only pops up (as an overlay) when a viewer tries to
+  // leave feedback and has no identity yet. See requireGuestIdentity() below.
+  const [isAdmin,          setIsAdmin]          = useState(false)
+  const [guestIdentity,    setGuestIdentity]    = useState(null)
+  const [feedbackGateOpen, setFeedbackGateOpen] = useState(false)
+  const pendingGuestActionRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) { setIsAdmin(true); setGateConfirmed(true) }
+      if (session) setIsAdmin(true)
     })
+  }, [])
+
+  useEffect(() => {
+    if (!projectId) return
+    const stored = getStoredGuest(projectId)
+    if (stored) setGuestIdentity(stored)
+  }, [projectId])
+
+  // Gate an action behind guest identity: admins and already-identified
+  // guests run it immediately, everyone else sees the gate modal first and
+  // the action fires once they complete (or resume) it.
+  const requireGuestIdentity = useCallback((action) => {
+    if (isAdmin || guestIdentity) { action(); return }
+    pendingGuestActionRef.current = action
+    setFeedbackGateOpen(true)
+  }, [isAdmin, guestIdentity])
+
+  const handleGuestGateConfirmed = useCallback((guest) => {
+    const resolved = guest || getStoredGuest(projectId)
+    setGuestIdentity(resolved)
+    setFeedbackGateOpen(false)
+    const action = pendingGuestActionRef.current
+    pendingGuestActionRef.current = null
+    // Pass the just-confirmed guest straight through — the action may run
+    // before the guestIdentity-driven reviewerName effect has had a chance
+    // to fire, so it can't rely on reading fresh state off the closure.
+    if (action) action(resolved)
+  }, [projectId])
+
+  const handleGuestGateDismiss = useCallback(() => {
+    setFeedbackGateOpen(false)
+    pendingGuestActionRef.current = null
   }, [])
 
   const { loadingManager, progress, status, loaded: stageLoaded, reset: resetStageLoading } = useStageLoading()
@@ -591,7 +627,6 @@ function ClientPage() {
 
   // ── Load project ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!gateConfirmed) return
     let cancelled = false
 
     async function fetchProject() {
@@ -759,7 +794,7 @@ function ClientPage() {
   // Intentional: applySlideDefaultCamera depends on cameraPresets which this
   // effect itself sets — including it in deps causes an infinite reload loop.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gateConfirmed, isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
+  }, [isAdmin, projectId, previewVersionId, activateClip, addBlob, revokeAllBlobs])
 
   // ── Apply client zoom guard once stage is ready ───────────────────────────
   useEffect(() => {
@@ -924,7 +959,7 @@ function ClientPage() {
   }, [])
 
 
-  const openMobileFeedbackSheet = useCallback(() => {
+  const openMobileFeedbackSheet = useCallback((guestOverride) => {
     if (isPreviewingVersion || !activeSlide?.id) return
 
     videoRef.current?.pause()
@@ -935,7 +970,10 @@ function ClientPage() {
     const vLabel = publishedVersion ? `v${publishedVersion.version_number}` : null
 
     const pendingDraft = loadPendingFeedbackDraft(activeSlide?.id)
-    setMobileFeedbackName(pendingDraft?.reviewerName ?? reviewerName)
+    // guestOverride covers the case where the identity gate just confirmed
+    // this call (see requireGuestIdentity) — reviewerName's own effect may
+    // not have run yet, so prefer the fresh guest name over stale state.
+    setMobileFeedbackName(pendingDraft?.reviewerName ?? guestOverride?.name ?? reviewerName)
     setMobileFeedbackComment(pendingDraft?.comment ?? '')
     setSubmitError(pendingDraft ? 'Unsaved feedback draft restored. Submit again when ready.' : null)
     setMobileFeedbackSheet({
@@ -1157,18 +1195,6 @@ function ClientPage() {
   const handleClearAllHdri   = useCallback(() => { setCustomHdriUrl(null); setHdriPreset('none') }, [])
 
   // ── Early exits ───────────────────────────────────────────────────────────
-  if (!gateConfirmed) {
-    return (
-      <GuestGate
-        presentationId={projectId}
-        isAdmin={isAdmin}
-        onConfirmed={(guest) => {
-          setGuestIdentity(guest || getStoredGuest(projectId))
-          setGateConfirmed(true)
-        }}
-      />
-    )
-  }
 
   if (projectNotFound) return <ClientProjectNotFound projectId={projectId} />
   if (clientLocked)    return <ClientLinkLocked />
@@ -1223,7 +1249,7 @@ function ClientPage() {
       },
       onCameraSelect: handleCameraPresetSelect,
       onOpenReference: openReferenceViewer,
-      onOpenFeedback: openMobileFeedbackSheet,
+      onOpenFeedback: () => requireGuestIdentity(openMobileFeedbackSheet),
       onCloseFeedback: closeMobileFeedbackSheet,
       onSubmitFeedback: handleSubmitMobileFeedback,
       onNoteClick: enterNoteFocusMode,
@@ -1274,6 +1300,13 @@ function ClientPage() {
         onTogglePanel={() => setMobilePanelCollapsed(v => !v)}
       />
       <ConsentBanner visible={consentUnset} onGrant={grantConsent} onDeny={denyConsent} />
+      {feedbackGateOpen && (
+        <GuestGate
+          presentationId={projectId}
+          onConfirmed={handleGuestGateConfirmed}
+          onDismiss={handleGuestGateDismiss}
+        />
+      )}
       </>
     )
   }
@@ -1510,7 +1543,7 @@ function ClientPage() {
             slide={activeSlide}
             feedbackItems={slideFeedback}
             onCollapse={() => setContextCollapsed(true)}
-            onLeaveFeedback={isPreviewingVersion ? null : enterFeedbackMode}
+            onLeaveFeedback={isPreviewingVersion ? null : () => requireGuestIdentity(enterFeedbackMode)}
             onUpdateFeedback={isPreviewingVersion ? null : handleUpdateClientFeedback}
             onDeleteFeedback={isPreviewingVersion ? null : handleDeleteClientFeedback}
             onNoteClick={enterNoteFocusMode}
@@ -1528,6 +1561,13 @@ function ClientPage() {
         onStep={stepReferenceViewer}
       />
       <ConsentBanner visible={consentUnset} onGrant={grantConsent} onDeny={denyConsent} />
+      {feedbackGateOpen && (
+        <GuestGate
+          presentationId={projectId}
+          onConfirmed={handleGuestGateConfirmed}
+          onDismiss={handleGuestGateDismiss}
+        />
+      )}
     </div>
   )
 }
