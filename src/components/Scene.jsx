@@ -5,6 +5,11 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import * as THREE from 'three'
 import { scanStageMeshes, scanStageMeshesAsync } from './pov/scanStageMeshes'
 import { detectLedSurfaceTarget, resolveLedTargetId } from '../utils/ledMaterialTargets'
+import {
+  DEFAULT_STAGE_MATERIAL,
+  normalizeMaterialTokens,
+  resolveStageMaterialPreset,
+} from '../utils/stageMaterialPresets'
 
 function createDracoLoader() {
   const draco = new DRACOLoader()
@@ -40,76 +45,6 @@ const DEFAULT_TRANSPARENT_LED = {
 }
 
 const LED_DEBUG_QUERY_PARAM = 'debugLed'
-
-const DEFAULT_STAGE_MATERIAL = {
-  color: '#5a5d62',
-  roughness: 0.72,
-  metalness: 0.08,
-  envMapIntensity: 0.75,
-}
-
-const STAGE_MATERIAL_PRESETS = [
-  {
-    id: 'truss-weathered',
-    patterns: ['TRUSS_RUST', 'RUST_TRUSS', 'TRUSS_STEEL', 'TRUSS_IRON', 'OXIDE', 'CORRODED'],
-    settings: {
-      color: '#74675d',
-      roughness: 0.74,
-      metalness: 0.52,
-      envMapIntensity: 0.95,
-      clearcoat: 0.08,
-      clearcoatRoughness: 0.9,
-    },
-  },
-  {
-    id: 'truss-aluminum',
-    patterns: ['TRUSS', 'ALUMINUM', 'ALUMINIUM', 'ALU', 'RIGGING', 'PIPE', 'TUBE'],
-    settings: {
-      color: '#949aa1',
-      roughness: 0.34,
-      metalness: 0.96,
-      envMapIntensity: 1.4,
-      clearcoat: 0.22,
-      clearcoatRoughness: 0.42,
-    },
-  },
-  {
-    id: 'stage-floor-black',
-    patterns: ['STAGE_FLOOR', 'FLOOR_BLACK', 'BLACK_FLOOR', 'RUNWAY', 'CATWALK', 'DECK', 'STEP', 'STAIR', 'PLATFORM'],
-    settings: {
-      color: '#0b0c0f',
-      roughness: 0.96,
-      metalness: 0.02,
-      envMapIntensity: 0.08,
-      specularIntensity: 0.32,
-      clearcoat: 0,
-    },
-  },
-  {
-    id: 'mask-panel-black',
-    patterns: ['FORMAT', 'FASCIA', 'MASK', 'CLADDING', 'COVER', 'CASING', 'SHROUD', 'SKIRT', 'PANEL_BLACK', 'TRIM_BLACK'],
-    settings: {
-      color: '#151619',
-      roughness: 0.8,
-      metalness: 0.03,
-      envMapIntensity: 0.4,
-      clearcoat: 0.02,
-      clearcoatRoughness: 0.95,
-    },
-  },
-  {
-    id: 'frame-black',
-    patterns: ['FRAME', 'BRACKET', 'STRUCT', 'SUPPORT', 'BEAM', 'BAR', 'RAIL'],
-    settings: {
-      color: '#2d3136',
-      roughness: 0.58,
-      metalness: 0.78,
-      envMapIntensity: 1.0,
-      clearcoat: 0.08,
-      clearcoatRoughness: 0.7,
-    },
-  },
-]
 
 function getLedSurfaceType(...names) {
   const meshName = names[names.length - 1] || ''
@@ -321,27 +256,6 @@ function disposeManagedMaterial(material) {
   material.dispose?.()
 }
 
-
-function normalizeMaterialTokens(...names) {
-  return names
-    .filter(Boolean)
-    .join(' ')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, ' ')
-}
-
-function resolveStageMaterialPreset(...names) {
-  const tokens = normalizeMaterialTokens(...names)
-  if (!tokens) return { id: 'default', settings: DEFAULT_STAGE_MATERIAL }
-
-  for (const preset of STAGE_MATERIAL_PRESETS) {
-    if (preset.patterns.some(pattern => tokens.includes(pattern))) {
-      return preset
-    }
-  }
-
-  return { id: 'default', settings: DEFAULT_STAGE_MATERIAL }
-}
 
 function applyStageMaterialPreset(material, presetSettings, envIntensity) {
   if (!material || (!material.isMeshStandardMaterial && !material.isMeshPhysicalMaterial)) return
