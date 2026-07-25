@@ -16,6 +16,11 @@ const ROLE_ALIASES = {
   left:   ['left', 'l', 'trai', 'canhtrai'],
   right:  ['right', 'r', 'phai', 'canhphai'],
   center: ['center', 'centre', 'c', 'giua', 'trung', 'middle'],
+  // Projection-mapping floor surface. Program convention: '_P' (short) or
+  // '_MAPPING' (long) — parallel to '_M' / '_MAIN' for the main LED. '_M' is
+  // taken by `main`, so mapping's short form is '_P', not '_M'. The group also
+  // links whether the target is named 'floor', 'p', or 'mapping'.
+  floor:  ['floor', 'p', 'mapping'],
 }
 
 function normalizeToken(token) {

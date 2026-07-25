@@ -28,6 +28,19 @@ test('matchSuffixToTarget matches role tokens, aliases, and numbers', () => {
   assert.equal(matchSuffixToTarget('zzz', TARGETS), null)
 })
 
+test('mapping-floor aliases route to the floor target', () => {
+  const T = [
+    { targetId: 'main', label: 'Main', order: 0 },
+    { targetId: 'floor', label: 'Floor', order: 1 },
+  ]
+  for (const s of ['FLOOR', 'P', 'MAPPING', 'mapping', 'p']) {
+    assert.equal(matchSuffixToTarget(s, T), 'floor', `_${s} should route to floor`)
+  }
+  // '_M' must stay on `main` — mapping's short form is '_P', not '_M'.
+  assert.equal(matchSuffixToTarget('M', T), 'main')
+  assert.equal(matchSuffixToTarget('MAIN', T), 'main')
+})
+
 test('groups two files into one multi-mapled clip with correct targets', () => {
   const { isMultiMapled, groups } = groupFilesIntoMapledClips(
     [f('Opening_MAIN.mp4'), f('Opening_SIDE.mp4')],
