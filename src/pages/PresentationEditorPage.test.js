@@ -42,6 +42,27 @@ test('presentation editor can enable audio playback for video clips', () => {
   assert.match(page, /title=\{audioEnabled \? 'Mute audio' : 'Play audio'\}/)
 })
 
+test('presentation editor can assign existing single clips to LED maps and combine them', () => {
+  const page = read('src/pages/PresentationEditorPage.jsx')
+
+  // State + handlers
+  assert.match(page, /const \[mapAssign, setMapAssign\] = useState\(\{\}\)/)
+  assert.match(page, /const assignClipToTarget = useCallback/)
+  assert.match(page, /const combineAssignedClips = useCallback/)
+  assert.match(page, /const resetMapAssign = useCallback/)
+
+  // Combine builds a real multi-mapled clip and removes the source singles
+  assert.match(page, /buildMultiMapledClip\(\{ name: combinedName, index, sources \}\)/)
+  assert.match(page, /filter\(e => e\.clip && !isMultiMapledClip\(e\.clip\)\)/)
+  assert.match(page, /currentPlaylist\.filter\(c => !usedClipIds\.has\(String\(c\.id\)\)\)/)
+  assert.match(page, /media_playlist:\s*serializeMediaPlaylistForDb\(nextPlaylist\)/)
+
+  // Wired into the SlideList UI
+  assert.match(page, /onAssignClipToTarget=\{assignClipToTarget\}/)
+  assert.match(page, /onCombineMaps=\{combineAssignedClips\}/)
+  assert.match(page, /onResetMapAssign=\{resetMapAssign\}/)
+})
+
 test('presentation editor + Clip button opens file picker instead of adding a blank slide', () => {
   const page = read('src/pages/PresentationEditorPage.jsx')
 

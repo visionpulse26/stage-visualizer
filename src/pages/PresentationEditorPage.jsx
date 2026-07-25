@@ -210,9 +210,15 @@ function ClipThumbnail({ src, active, width = 46, height = 30, radius = 5 }) {
   )
 }
 
-function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploading = false, uploadStatus = '', uploadError = '', ledMapsInfo = null }) {
+function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploading = false, uploadStatus = '', uploadError = '', ledMapsInfo = null, clipsById = [], ledTargets = [], mapAssign = {}, onAssignClipToTarget, onCombineMaps, onResetMapAssign }) {
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
+
+  // Manual map-assign helpers (multi-mapled stages only)
+  const clipById = (id) => clipsById.find(c => String(c.id) === String(id))
+  const clipName = (id) => clipById(id)?.name || ''
+  const assignedCount = Object.values(mapAssign).filter(Boolean).length
+  const canAssign = !!onAssignClipToTarget && ledMapsInfo?.multi && ledTargets.length > 1
 
   const handleDragStart = (e, id) => { setDragging(id); e.dataTransfer.effectAllowed = 'move' }
   const handleDragOver  = (e, id) => { e.preventDefault(); setDragOver(id) }
@@ -246,7 +252,43 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploadin
               {ledMapsInfo.count} LED MAPS · {ledMapsInfo.label}
             </div>
             <div style={{ fontSize: 9, color: T.text3, marginTop: 3, lineHeight: 1.45, fontFamily: 'Chakra Petch, sans-serif' }}>
-              Select all {ledMapsInfo.count} map videos <b style={{ color: T.text2 }}>together</b> in one + Clip to sync them as one visual.
+              Upload all {ledMapsInfo.count} map videos <b style={{ color: T.text2 }}>together</b> in one + Clip, or assign existing clips to maps below.
+            </div>
+          </div>
+        )}
+        {assignedCount > 0 && (
+          <div style={{ marginTop: 7, padding: '7px 8px', borderRadius: 6, background: 'rgba(31,160,238,0.08)', border: '1px solid rgba(31,160,238,0.28)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', color: T.cam, marginBottom: 4, fontFamily: 'Chakra Petch, sans-serif' }}>
+              COMBINE INTO 1 VISUAL
+            </div>
+            {ledTargets.map(t => (
+              <div key={t.targetId} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 9, marginBottom: 2, fontFamily: 'Chakra Petch, sans-serif' }}>
+                <span style={{ color: 'rgba(31,160,238,0.7)', textTransform: 'uppercase', width: 46, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                <span style={{ color: mapAssign[t.targetId] ? T.text2 : T.text4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {clipName(mapAssign[t.targetId]) || '— none —'}
+                </span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+              <button
+                onClick={onCombineMaps}
+                disabled={assignedCount < 2}
+                style={{
+                  flex: 1, padding: '5px 0', borderRadius: 5, border: 'none', fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                  fontFamily: 'Chakra Petch, sans-serif', textTransform: 'uppercase',
+                  cursor: assignedCount < 2 ? 'not-allowed' : 'pointer',
+                  background: assignedCount < 2 ? 'rgba(255,255,255,0.06)' : T.cam,
+                  color: assignedCount < 2 ? T.text4 : '#04121c',
+                }}
+              >
+                Combine {assignedCount} maps
+              </button>
+              <button
+                onClick={onResetMapAssign}
+                style={{ padding: '5px 8px', borderRadius: 5, border: `1px solid ${T.border}`, background: 'transparent', color: T.text3, fontSize: 9, cursor: 'pointer', fontFamily: 'Chakra Petch, sans-serif', textTransform: 'uppercase' }}
+              >
+                Clear
+              </button>
             </div>
           </div>
         )}
@@ -311,6 +353,34 @@ function SlideList({ slides, activeSlideId, onSelect, onAdd, onReorder, uploadin
                 <span style={{ fontSize: 9, color: T.text3, fontFamily: 'Chakra Petch, sans-serif' }}>
                   {formatDuration(slide.durationSeconds)} · #{idx + 1}
                 </span>
+                {canAssign && (() => {
+                  const clip = clipById(slide.clipId)
+                  if (!clip || isMultiMapledClip(clip)) return null
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }} onClick={e => e.stopPropagation()}>
+                      <span style={{ fontSize: 9, color: T.text4, alignSelf: 'center', marginRight: 1 }}>→</span>
+                      {ledTargets.map(t => {
+                        const on = String(mapAssign[t.targetId]) === String(clip.id)
+                        return (
+                          <button
+                            key={t.targetId}
+                            onClick={() => onAssignClipToTarget(clip.id, t.targetId)}
+                            title={`Assign this clip to ${t.label}`}
+                            style={{
+                              fontSize: 8, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                              padding: '2px 5px', borderRadius: 4, cursor: 'pointer', fontFamily: 'Chakra Petch, sans-serif',
+                              border: `1px solid ${on ? 'rgba(31,160,238,0.5)' : T.border}`,
+                              background: on ? 'rgba(31,160,238,0.22)' : 'rgba(255,255,255,0.04)',
+                              color: on ? T.cam : T.text3,
+                            }}
+                          >
+                            {t.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </Col>
 
               {/* Feedback badge */}
@@ -1188,6 +1258,7 @@ export default function PresentationEditorPage() {
   const [meshMetadata, setMeshMetadata] = useState([])
   const [ledTargetMap,  setLedTargetMap]  = useState({})   // surfaceKey → { targetId, label, order }
   const [mediaByTarget, setMediaByTarget] = useState(null) // multi-mapled preview: targetId → { videoElement }
+  const [mapAssign, setMapAssign] = useState({})           // targetId → clipId (manual combine builder)
   const mapledControllerRef = useRef(null)
   const { targets: ledTargets, isMultiMapled: stageIsMultiMapled } = useLedTargets(meshMetadata, ledTargetMap)
   useEffect(() => () => { mapledControllerRef.current?.destroy(); mapledControllerRef.current = null }, [])
@@ -2181,6 +2252,85 @@ export default function PresentationEditorPage() {
     markDirty()
   }, [activeSlide, activeSlideId, slides, broadcastOp, markDirty, projectId])
 
+  // ── Manual map-assign → combine into one multi-mapled clip ────────────────
+  // Auto-grouping on upload only pairs files that share a base name. When the
+  // maps were uploaded as separate clips (different base names), let the user
+  // assign each existing single clip to an LED map here, then merge them into a
+  // single multi-mapled visual that plays in sync and survives publish.
+  const assignClipToTarget = useCallback((clipId, targetId) => {
+    if (!clipId || !targetId) return
+    setMapAssign(prev => {
+      const next = { ...prev }
+      // A clip drives at most one map: clear it from any other target first.
+      for (const t of Object.keys(next)) {
+        if (String(next[t]) === String(clipId)) delete next[t]
+      }
+      // Toggle: clicking the same clip on the same map again clears it.
+      if (String(prev[targetId]) === String(clipId)) delete next[targetId]
+      else next[targetId] = clipId
+      return next
+    })
+  }, [])
+
+  const resetMapAssign = useCallback(() => setMapAssign({}), [])
+
+  const combineAssignedClips = useCallback(async () => {
+    const entries = ledTargets
+      .map(t => ({
+        target: t,
+        clip: videoPlaylistRef.current.find(c => String(c.id) === String(mapAssign[t.targetId])),
+      }))
+      .filter(e => e.clip && !isMultiMapledClip(e.clip))
+    if (entries.length < 2) return
+
+    const sources = entries.map(({ target, clip }) => ({
+      targetId: target.targetId,
+      targetLabel: target.label,
+      url: clip.url,
+      type: getClipMediaType(clip),
+      external: clip.external ?? true,
+      ...(clip.lqip ? { lqip: clip.lqip } : {}),
+    }))
+    const index = currentPlaylistClipCount(videoPlaylistRef.current, 0) + 1
+    // Name after the first clip, stripped of a trailing map suffix, so
+    // "Mapled_main" → "Mapled". Falls back to a generic combined name.
+    const rawName = entries[0].clip.name || ''
+    const combinedName = rawName.replace(/[\s._-]+(main|m|mapping|map|p|floor|side|s|left|l|right|r|center|c)$/i, '').trim()
+      || `Combined ${index}`
+    const combined = buildMultiMapledClip({ name: combinedName, index, sources })
+
+    const usedClipIds = new Set(entries.map(e => String(e.clip.id)))
+    const currentPlaylist = videoPlaylistRef.current
+    const nextPlaylist = [...currentPlaylist.filter(c => !usedClipIds.has(String(c.id))), combined]
+    videoPlaylistRef.current = nextPlaylist
+    setVideoPlaylist(nextPlaylist)
+    if (projectId) {
+      const { error } = await supabase
+        .from('projects')
+        .update({ media_playlist: serializeMediaPlaylistForDb(nextPlaylist) })
+        .eq('id', projectId)
+      if (error) { console.error('[PresentationEditor] combine persist failed', error); return }
+    }
+
+    setSlides(prev => {
+      const removedIds = []
+      const kept = prev.filter(s => {
+        const used = usedClipIds.has(String(s.clipId))
+        if (used) removedIds.push(s.id)
+        return !used
+      })
+      removedIds.forEach(id => broadcastOp({ type: 'slide_delete', slideId: id }))
+      const newSlide = makeSlideFromClip(combined, kept.length, cameraPresets)
+      broadcastOp({ type: 'slide_add', slide: newSlide, clip: combined })
+      return [...kept, newSlide]
+    })
+
+    setMapAssign({})
+    setActiveSlideId(`slide_${combined.id}`)
+    activatePlaylistClip(combined)
+    markDirty()
+  }, [ledTargets, mapAssign, projectId, cameraPresets, broadcastOp, activatePlaylistClip, markDirty])
+
   // Reorder media_playlist to match the presentation slide order. The snapshot is
   // the source of truth for order, but raw-playlist fallbacks (a client viewing a
   // project with no published snapshot, or the editor's first load) read
@@ -2654,6 +2804,12 @@ export default function PresentationEditorPage() {
           uploadStatus={clipUploadStatus}
           uploadError={clipUploadError}
           ledMapsInfo={{ multi: stageIsMultiMapled, count: ledTargets.length, label: ledTargets.map(t => t.label).join(' · ') }}
+          clipsById={videoPlaylist}
+          ledTargets={ledTargets}
+          mapAssign={mapAssign}
+          onAssignClipToTarget={assignClipToTarget}
+          onCombineMaps={combineAssignedClips}
+          onResetMapAssign={resetMapAssign}
         />
         <input
           ref={clipUploadInputRef}
