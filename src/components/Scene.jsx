@@ -39,8 +39,6 @@ const DEFAULT_TRANSPARENT_LED = {
   opacity: 0.95,
 }
 
-const LED_DEBUG_QUERY_PARAM = 'debugLed'
-
 const DEFAULT_STAGE_MATERIAL = {
   color: '#5a5d62',
   roughness: 0.72,
@@ -117,16 +115,6 @@ function getLedSurfaceType(...names) {
   return detectLedSurfaceTarget(matNames, meshName)?.surfaceType ?? null
 }
 
-function shouldDebugLed() {
-  if (typeof window === 'undefined') return false
-  try {
-    return new URLSearchParams(window.location.search).has(LED_DEBUG_QUERY_PARAM) ||
-      window.localStorage?.getItem('stageviz:debug-led') === '1'
-  } catch {
-    return false
-  }
-}
-
 function configureLedMediaTexture(texture) {
   if (!texture) return null
   texture.minFilter = THREE.LinearFilter
@@ -135,47 +123,6 @@ function configureLedMediaTexture(texture) {
   texture.wrapT = THREE.RepeatWrapping
   texture.needsUpdate = true
   return texture
-}
-
-function getUvRange(geometry) {
-  const uv = geometry?.attributes?.uv
-  if (!uv?.array?.length) return null
-  let minU = Infinity
-  let maxU = -Infinity
-  let minV = Infinity
-  let maxV = -Infinity
-  for (let i = 0; i < uv.array.length; i += 2) {
-    const u = uv.array[i]
-    const v = uv.array[i + 1]
-    if (!Number.isFinite(u) || !Number.isFinite(v)) continue
-    minU = Math.min(minU, u)
-    maxU = Math.max(maxU, u)
-    minV = Math.min(minV, v)
-    maxV = Math.max(maxV, v)
-  }
-  if (!Number.isFinite(minU) || !Number.isFinite(maxU) || !Number.isFinite(minV) || !Number.isFinite(maxV)) {
-    return null
-  }
-  return {
-    minU: Number(minU.toFixed(4)),
-    maxU: Number(maxU.toFixed(4)),
-    minV: Number(minV.toFixed(4)),
-    maxV: Number(maxV.toFixed(4)),
-  }
-}
-
-function getTextureDebugInfo(texture) {
-  if (!texture) return null
-  const image = texture.image
-  return {
-    type: texture.constructor?.name || 'Texture',
-    width: image?.videoWidth || image?.naturalWidth || image?.width || null,
-    height: image?.videoHeight || image?.naturalHeight || image?.height || null,
-    wrapS: texture.wrapS,
-    wrapT: texture.wrapT,
-    flipY: texture.flipY,
-    needsUpdate: texture.needsUpdate,
-  }
 }
 
 function createTransparentLedMaskTexture(transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
@@ -274,8 +221,10 @@ function createSourceTransparentLedMaterial(sourceMaterial, texture, transparent
   return material
 }
 
-function createTransparentLedMaterial(_sourceMaterial, texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
-  return createGeneratedTransparentLedMaterial(texture, transparentLedConfig)
+function createTransparentLedMaterial(sourceMaterial, texture, transparentLedConfig = DEFAULT_TRANSPARENT_LED) {
+  // Preserve the GLB material's original transparency, alpha mode, maps, and
+  // render settings so the browser stays as close as possible to the C4D look.
+  return createSourceTransparentLedMaterial(sourceMaterial, texture, transparentLedConfig)
 }
 
 function disposeManagedMaterial(material) {
@@ -675,7 +624,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
   // ── Material pass — LED + stage ───────────────────────────────────────────
   useEffect(() => {
     if (!clonedScene) return
-    const debugLed = shouldDebugLed()
 
     prevLedMaterialsRef.current.forEach(disposeManagedMaterial)
     prevLedMaterialsRef.current = []
@@ -732,18 +680,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
 
     const ledEntries = meshEntries.filter((entry) => entry.ledSurfaceType)
     const hasTransparentGrid = ledEntries.some((entry) => entry.ledSurfaceType === 'transparent-grid')
-    if (debugLed) {
-      console.warn('[StageViz LED debug] material pass', {
-        activeTexture: getTextureDebugInfo(activeTexture),
-        ledEntries: ledEntries.map((entry) => ({
-          mesh: entry.child.name,
-          materialNames: entry.mats.map((mat) => mat?.name).filter(Boolean),
-          ledSurfaceType: entry.ledSurfaceType,
-          uv: getUvRange(entry.child.geometry),
-          visible: entry.child.visible,
-        })),
-      })
-    }
 
     const duplicatePolicies = new Map(
       meshEntries
@@ -828,19 +764,6 @@ function ModelContent({ gltf, videoElement, activeImageUrl, onLedMaterialStatus,
             prevLedMaterialsRef.current.push(ledMat)
             if (Array.isArray(child.material)) child.material[i] = ledMat
             else child.material = ledMat
-            if (debugLed) {
-              console.warn('[StageViz LED debug] applied material', {
-                mesh: child.name,
-                sourceMaterial: mat.name,
-                ledSurfaceType,
-                appliedMaterial: ledMat.name,
-                hasMap: !!ledMat.map,
-                hasEmissiveMap: !!ledMat.emissiveMap,
-                map: getTextureDebugInfo(ledMat.map),
-                uv: getUvRange(child.geometry),
-                renderOrder: child.renderOrder,
-              })
-            }
           } catch {
             ledMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
             ledMat.name = ledSurfaceType === 'transparent-grid' ? TRANSPARENT_LED_MATERIAL_NAME : LED_MATERIAL_NAME
